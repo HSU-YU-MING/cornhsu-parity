@@ -15,6 +15,7 @@ public sealed record WebCaptureOptions(bool Headless = true, float? TimeoutMs = 
 public sealed class WebImplementationSource(WebCaptureOptions? options = null) : IImplementationSource, IAsyncDisposable
 {
     private readonly WebCaptureOptions _options = options ?? new WebCaptureOptions();
+    private static readonly JsonSerializerOptions CaptureParseOptions = new() { MaxDepth = 512 };
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private readonly Dictionary<string, byte[]> _screenshots = [];
@@ -46,7 +47,10 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                 mapSelectors = reference.MapSelectors ?? new Dictionary<string, string>(),
                 ignoreSelectors = reference.IgnoreSelectors ?? [],
             };
-            var json = await page.EvaluateAsync<JsonElement>(CaptureScript.Js, arg);
+            // 擷取腳本回傳 JSON 字串(見 CaptureScript:避開 Playwright 值序列化的深度放大)。
+            // 用放寬的 MaxDepth 解析——真實網站 DOM 常有十幾層巢狀,預設 64 不夠。
+            var raw = await page.EvaluateAsync<string>(CaptureScript.Js, arg);
+            var json = JsonSerializer.Deserialize<JsonElement>(raw, CaptureParseOptions);
             if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
                 throw new InvalidOperationException($"頁面擷取失敗(body 不可見?):{reference.Url}");
 

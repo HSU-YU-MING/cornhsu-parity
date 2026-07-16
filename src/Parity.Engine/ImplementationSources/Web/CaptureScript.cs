@@ -86,7 +86,10 @@ internal static class CaptureScript
             };
           };
 
-          return walk(document.body);
+          // 回傳 JSON 字串(而非物件):Playwright 的 JS→C# 值序列化外殼會把每層巢狀放大成
+          // 數層協定 JSON,~16 層以上的真實 DOM 就會超過 System.Text.Json 預設 MaxDepth(64)而 crash。
+          // 字串在協定裡只有一層,C# 端再自行用放寬的 MaxDepth 解析。
+          return JSON.stringify(walk(document.body));
         }
         """;
 }
