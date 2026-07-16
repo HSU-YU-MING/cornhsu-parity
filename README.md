@@ -85,11 +85,23 @@ tests/Parity.Tests/       單元測試(含 CIEDE2000 標準測資)
 samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 ```
 
+## 本機報告 UI(M3)
+
+```sh
+parity serve --watch    # http://127.0.0.1:4321,檔案變更自動重掃(SSE 即時更新)
+parity map              # 互動配對模式:點未配對圖層 → 點截圖上的元素 → 寫入 parity.map.json
+```
+
+- 落差清單(依嚴重度排序,精確數值 + 色票 + ΔE)
+- 截圖疊框視圖:實線 = 實作框(顏色 = 嚴重度)、藍虛線 = 設計框、紅虛線 = 未配對
+- **只綁 127.0.0.1**:報告含站點結構,不讓區網掃到
+- UI 是零建置的靜態 SPA,dotnet tool 不需要 node 工具鏈
+
 ## 里程碑
 
 - [x] **M1** 引擎 + CLI 雛形:設計端與實作端兩棵數值樹
 - [x] **M2** 比對引擎:配對 + 數值 diff + 容差 + 未配對清單 + gate exit code
-- [ ] **M3** 本機報告 UI(`parity serve --watch`,Kestrel 綁 127.0.0.1 + React)+ `parity map` 互動配對
+- [x] **M3** 本機報告 UI(`parity serve --watch`,Kestrel 綁 127.0.0.1)+ `parity map` 互動配對
 - [ ] **M4** GitHub Action:CI 還原度把關
 - [ ] **M5** EF Core + SQLite baseline / 歷史;`ImageDesignSource` 驗證抽象層
 - [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護

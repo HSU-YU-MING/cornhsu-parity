@@ -16,6 +16,10 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
     private readonly EngineOptions _opts = opts ?? EngineOptions.Default;
 
     public async Task<FidelityReport> RunAsync(ScanRequest req, CancellationToken ct = default)
+        => (await RunDetailedAsync(req, ct)).Report;
+
+    /// <summary>報告 + 兩棵正規化的樹 + 實作端原始原點——本機 UI 的疊圖與 hit-test 用(M3)。</summary>
+    public async Task<ScanResult> RunDetailedAsync(ScanRequest req, CancellationToken ct = default)
     {
         // 1. 設計來源 → DesignNode 樹 → 正規化(相對 frame 原點)
         var designTree = await _design.GetFrameAsync(req.Design, ct);
@@ -30,6 +34,7 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
                 ViewportHeight = (int)Math.Ceiling(designTree.Box.H),
             };
         var renderedTree = await _impl.CaptureAsync(implRef, ct);
+        var renderedOrigin = renderedTree.Box; // body 在頁面上的原始位置(截圖疊框要加回這個位移)
         renderedTree = Normalizer.NormalizeRendered(renderedTree);
 
         // 3. 配對(設計端為錨)
@@ -52,10 +57,18 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
             Minor: Count(Severity.Minor),
             MaxSeverity: nodes.Count == 0 ? Severity.None : nodes.Max(n => n.Severity));
 
-        return new FidelityReport(
+        var report = new FidelityReport(
             req.Route, req.Impl.Url, $"{req.Design.Source}#{req.Design.NodeId}",
             nodes, match.Unmatched, summary);
+        return new ScanResult(report, designTree, renderedTree, renderedOrigin);
 
         int Count(Severity s) => nodes.SelectMany(n => n.Diffs).Count(x => x.Severity == s);
     }
 }
+
+/// <summary>RunDetailedAsync 的完整輸出:報告之外,再給 UI 疊圖 / 配對 hit-test 所需的原料。</summary>
+public sealed record ScanResult(
+    FidelityReport Report,
+    DesignNode DesignTree,
+    RenderedNode RenderedTree,
+    Model.Box RenderedOrigin);

@@ -83,7 +83,7 @@ public sealed class DiffEngine(Tolerances tolerances)
         }
 
         var severity = diffs.Count == 0 ? Severity.None : diffs.Max(x => x.Severity);
-        return new NodeResult(d.Name, d.Id, r.Selector, pair.MatchedBy, severity, diffs);
+        return new NodeResult(d.Name, d.Id, r.Selector, pair.MatchedBy, severity, diffs, d.Box, r.Box);
     }
 
     // ---------- 個別比較 ----------

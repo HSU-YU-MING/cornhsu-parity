@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parity — 設計還原度報告</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">Parity</div>
+  <div id="gate-badge" class="badge">…</div>
+  <nav id="target-tabs" class="tabs"></nav>
+  <div class="spacer"></div>
+  <div id="watch-dot" class="watch-dot" title="watch 模式" hidden></div>
+  <span id="generated-at" class="muted"></span>
+  <div class="mode-switch">
+    <button id="mode-inspect" class="active">檢視</button>
+    <button id="mode-map">配對</button>
+  </div>
+  <button id="rerun" class="primary">重新掃描</button>
+</header>
+
+<main>
+  <aside id="sidebar"></aside>
+
+  <section class="viewer">
+    <div class="toolbar">
+      <label><input type="checkbox" id="show-design" checked> 設計框</label>
+      <label><input type="checkbox" id="show-rendered" checked> 實作框</label>
+      <label><input type="checkbox" id="only-diffs"> 只看有落差</label>
+      <span class="legend">
+        <i class="dot critical"></i>critical
+        <i class="dot serious"></i>serious
+        <i class="dot medium"></i>medium
+        <i class="dot none"></i>一致
+        <i class="dot design"></i>設計
+      </span>
+    </div>
+    <div id="stage" class="stage">
+      <img id="shot" alt="頁面截圖">
+      <div id="rects"></div>
+    </div>
+    <div id="map-bar" class="map-bar" hidden></div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

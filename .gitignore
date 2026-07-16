@@ -7,6 +7,9 @@ obj/
 # Parity 本機產物(報告、Figma 快取)
 .parity/
 
+# demo 的 map 檔由 parity map 互動產生,保持示範的「未配對」教學情境
+samples/demo/parity.map.json
+
 # Node(M3 報告 UI 用)
 node_modules/
 dist/

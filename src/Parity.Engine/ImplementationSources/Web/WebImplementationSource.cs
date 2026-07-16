@@ -5,7 +5,7 @@ using Parity.Engine.Model;
 
 namespace Parity.Engine.ImplementationSources.Web;
 
-public sealed record WebCaptureOptions(bool Headless = true, float? TimeoutMs = 30_000);
+public sealed record WebCaptureOptions(bool Headless = true, float? TimeoutMs = 30_000, bool CaptureScreenshot = false);
 
 /// <summary>
 /// 網頁實作來源(規畫書 4.5):Playwright 開 Chromium、視窗寬 = frame 寬、
@@ -17,6 +17,10 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
     private readonly WebCaptureOptions _options = options ?? new WebCaptureOptions();
     private IPlaywright? _playwright;
     private IBrowser? _browser;
+    private readonly Dictionary<string, byte[]> _screenshots = [];
+
+    /// <summary>CaptureScreenshot 開啟時,每次擷取後的整頁 PNG(key = URL)。本機報告 UI 的疊圖底圖。</summary>
+    public IReadOnlyDictionary<string, byte[]> Screenshots => _screenshots;
 
     public async Task<RenderedNode> CaptureAsync(ImplRef reference, CancellationToken ct = default)
     {
@@ -45,6 +49,10 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             var json = await page.EvaluateAsync<JsonElement>(CaptureScript.Js, arg);
             if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
                 throw new InvalidOperationException($"頁面擷取失敗(body 不可見?):{reference.Url}");
+
+            if (_options.CaptureScreenshot)
+                _screenshots[reference.Url] = await page.ScreenshotAsync(
+                    new PageScreenshotOptions { FullPage = true });
 
             return ParseNode(json);
         }

@@ -72,7 +72,7 @@ public static class Matcher
             var key = NormalizeName(d.Name);
             if (key.Length == 0)
             {
-                unmatched.Add(new UnmatchedNode(d.Name, d.Id, "no-anchor"));
+                unmatched.Add(new UnmatchedNode(d.Name, d.Id, "no-anchor", d.Box));
                 continue;
             }
 
@@ -87,7 +87,7 @@ public static class Matcher
             else
             {
                 var reason = !string.IsNullOrWhiteSpace(d.Characters) ? "ambiguous-or-missing-text" : "no-anchor";
-                unmatched.Add(new UnmatchedNode(d.Name, d.Id, reason));
+                unmatched.Add(new UnmatchedNode(d.Name, d.Id, reason, d.Box));
             }
         }
 

@@ -35,17 +35,19 @@ public sealed record PropDiff(
     DiffStatus Status = DiffStatus.Mismatch,
     bool Soft = false);
 
-/// <summary>一個配對成功的設計節點的比對結果。</summary>
+/// <summary>一個配對成功的設計節點的比對結果。兩個框給疊圖視圖用(M3)。</summary>
 public sealed record NodeResult(
     string DesignLayer,
     string DesignId,
     string Selector,
     string MatchedBy,
     Severity Severity,
-    IReadOnlyList<PropDiff> Diffs);
+    IReadOnlyList<PropDiff> Diffs,
+    Model.Box DesignBox = default,
+    Model.Box RenderedBox = default);
 
 /// <summary>只在設計端找得到、配不到實作的節點——誠實列出(規畫書 4.7)。</summary>
-public sealed record UnmatchedNode(string DesignLayer, string DesignId, string Reason);
+public sealed record UnmatchedNode(string DesignLayer, string DesignId, string Reason, Model.Box DesignBox = default);
 
 public sealed record ReportSummary(
     int DesignNodes,

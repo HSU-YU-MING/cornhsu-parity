@@ -41,6 +41,13 @@
     border-radius: 12px;
   }
   .feature-card h3 { font-size: 18px; font-weight: 600; color: #111827; }
+  /* 設計稿的 hero-badge 有做,但 class 名對不上、也沒有文字錨點
+     → 自動配對配不到,示範用 parity map 手動點選配對 */
+  .pill {
+    position: absolute; top: 40px; left: 640px;
+    width: 120px; height: 32px;
+    background: #DCFCE7; border-radius: 16px;
+  }
 </style>
 </head>
 <body>
@@ -52,6 +59,7 @@
     <div class="feature-card" id="feature-card-2"><h3>本機優先</h3></div>
     <div class="feature-card" id="feature-card-3"><h3>進 CI 把關</h3></div>
   </section>
-  <!-- 設計稿的 hero-badge 沒刻 → 應誠實出現在未配對清單 -->
+  <!-- hero-badge 的實作:名字對不上 → 未配對,用 parity map 手動配 -->
+  <div class="pill"></div>
 </body>
 </html>
