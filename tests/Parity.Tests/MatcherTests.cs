@@ -108,6 +108,69 @@ public class MatcherTests
         Assert.Equal("body > button", pair.Rendered.Selector);
     }
 
+    [Fact]
+    public void Container_without_anchor_is_inferred_from_matched_children()
+    {
+        // 卡片容器沒文字、圖層名也對不上 class,但兩個子節點都配上了
+        // → 用子節點的最近共同祖先(包住它們的 div)反推容器,不用手動 map
+        var design = Design("1", "frame",
+            children: Design("2", "product-card", DesignNodeType.Frame, box: new Box(0, 0, 200, 120),
+                children:
+                [
+                    Design("3", "card-title", DesignNodeType.Text, characters: "Widget"),
+                    Design("4", "card-price", DesignNodeType.Text, characters: "$9.99"),
+                ]));
+        var rendered = Rendered("body",
+            children: Rendered("body > div", "div", classes: "sc-1a2b3c",
+                children:
+                [
+                    Rendered("body > div > h3", "h3", text: "Widget"),
+                    Rendered("body > div > span", "span", text: "$9.99"),
+                ]));
+
+        var result = Matcher.Match(design, rendered);
+
+        var card = result.Pairs.Single(p => p.Design.Name == "product-card");
+        Assert.Equal("auto-container", card.MatchedBy);
+        Assert.Equal("body > div", card.Rendered.Selector);
+        Assert.Empty(result.Unmatched);
+    }
+
+    [Fact]
+    public void Empty_container_without_anchor_stays_unmatched()
+    {
+        // 空容器(無子節點可推)→ 仍誠實留白,不硬湊
+        var design = Design("1", "frame",
+            children: Design("2", "spacer", DesignNodeType.Frame, box: new Box(0, 0, 100, 40)));
+        var rendered = Rendered("body",
+            children: Rendered("body > div", "div", classes: "unrelated"));
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Empty(result.Pairs);
+        Assert.Single(result.Unmatched);
+    }
+
+    [Fact]
+    public void Ambiguous_text_is_disambiguated_by_layer_name()
+    {
+        // 同樣文字 "GOV.UK" 出現兩次;圖層名 "footer-copyright" 只對得上其中一個 class → 選它
+        var design = Design("1", "frame",
+            children: Design("2", "footer-copyright", DesignNodeType.Text, characters: "GOV.UK"));
+        var rendered = Rendered("body",
+            children:
+            [
+                Rendered("body > a", "a", text: "GOV.UK", classes: "header-logo"),
+                Rendered("body > span", "span", text: "GOV.UK", classes: "footer-copyright"),
+            ]);
+
+        var result = Matcher.Match(design, rendered);
+
+        var pair = Assert.Single(result.Pairs);
+        Assert.Equal("body > span", pair.Rendered.Selector);
+        Assert.Equal("auto-text", pair.MatchedBy);
+    }
+
     [Theory]
     [InlineData("CTA Button", "cta-button")]
     [InlineData("ctaButton", "cta-button")]

@@ -23,6 +23,16 @@ public sealed record DesignNode(
     /// <summary>auto-layout 主軸方向:"HORIZONTAL" / "VERTICAL"(比 itemSpacing 用)。</summary>
     public string? LayoutMode { get; init; }
 
+    /// <summary>
+    /// auto-layout 水平尺寸模式:"FIXED" / "HUG" / "FILL"。
+    /// HUG(隨內容)/FILL(隨父層)時,寬度由內容或版面決定,不是設計約束——比了會因
+    /// Figma 文字寬 ≠ 瀏覽器渲染寬而狂誤報。只有 FIXED(或未知)才比寬度。
+    /// </summary>
+    public string? LayoutSizingHorizontal { get; init; }
+
+    /// <summary>auto-layout 垂直尺寸模式;語意同水平,決定要不要比高度。</summary>
+    public string? LayoutSizingVertical { get; init; }
+
     /// <summary>走訪自己與所有子孫。</summary>
     public IEnumerable<DesignNode> DescendantsAndSelf()
     {

@@ -24,10 +24,14 @@ public sealed class DiffEngine(Tolerances tolerances)
         var r = pair.Rendered;
 
         // --- 尺寸(TEXT 節點跳過,避免文字框量測差異誤報)---
+        // 只比「設計上固定」的那一軸:HUG(隨內容)/FILL(隨父層)的尺寸不是設計約束,
+        // 比了會因 Figma 量測 ≠ 瀏覽器渲染而誤報(例如 auto-layout 按鈕寬度)。
         if (d.Type != DesignNodeType.Text)
         {
-            CompareNum(diffs, "width", d.Box.W, r.Box.W, _tol.SizePx);
-            CompareNum(diffs, "height", d.Box.H, r.Box.H, _tol.SizePx);
+            if (IsFixedSize(d.LayoutSizingHorizontal))
+                CompareNum(diffs, "width", d.Box.W, r.Box.W, _tol.SizePx);
+            if (IsFixedSize(d.LayoutSizingVertical))
+                CompareNum(diffs, "height", d.Box.H, r.Box.H, _tol.SizePx);
         }
 
         // --- 內距(設計端有 auto-layout padding 才比)---
@@ -85,6 +89,11 @@ public sealed class DiffEngine(Tolerances tolerances)
         var severity = diffs.Count == 0 ? Severity.None : diffs.Max(x => x.Severity);
         return new NodeResult(d.Name, d.Id, r.Selector, pair.MatchedBy, severity, diffs, d.Box, r.Box);
     }
+
+    /// <summary>尺寸該不該比:HUG/FILL 由內容或父層決定 → 不比;FIXED 或未知(手寫 JSON)→ 比。</summary>
+    private static bool IsFixedSize(string? sizing)
+        => !string.Equals(sizing, "HUG", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(sizing, "FILL", StringComparison.OrdinalIgnoreCase);
 
     // ---------- 個別比較 ----------
 

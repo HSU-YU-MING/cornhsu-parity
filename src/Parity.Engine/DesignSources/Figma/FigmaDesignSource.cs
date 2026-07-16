@@ -107,6 +107,8 @@ public static class FigmaNodeParser
         {
             Characters = node["characters"]?.GetValue<string>(),
             LayoutMode = node["layoutMode"]?.GetValue<string>(),
+            LayoutSizingHorizontal = node["layoutSizingHorizontal"]?.GetValue<string>(),
+            LayoutSizingVertical = node["layoutSizingVertical"]?.GetValue<string>(),
         };
     }
 

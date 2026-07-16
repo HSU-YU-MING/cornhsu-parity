@@ -164,6 +164,51 @@ public class DiffEngineTests
         Assert.Equal("8", spacing.Actual);
     }
 
+    [Fact]
+    public void Hug_contents_width_is_not_compared()
+    {
+        // auto-layout 按鈕隨內容決定寬度:Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,不該誤報
+        var pair = new NodePair(
+            Design("d1", "cta-button", box: new Box(0, 0, 210, 40), sizingH: "HUG"),
+            Rendered("button", "button", box: new Box(0, 0, 235, 40)),
+            "auto-text");
+
+        var result = Engine.Diff(pair);
+
+        Assert.DoesNotContain(result.Diffs, d => d.Prop == "width");
+    }
+
+    [Fact]
+    public void Fill_height_is_not_compared_but_fixed_axis_still_is()
+    {
+        // 垂直 FILL(隨父層)→ 不比高;水平 FIXED → 照比寬
+        var pair = new NodePair(
+            Design("d1", "sidebar", box: new Box(0, 0, 240, 600),
+                sizingH: "FIXED", sizingV: "FILL"),
+            Rendered("aside", box: new Box(0, 0, 200, 900)),
+            "auto-name");
+
+        var result = Engine.Diff(pair);
+
+        Assert.DoesNotContain(result.Diffs, d => d.Prop == "height");
+        var width = result.Diffs.Single(d => d.Prop == "width");
+        Assert.Equal("240", width.Expected);
+    }
+
+    [Fact]
+    public void Unknown_sizing_still_compares_size()
+    {
+        // 手寫 JSON / 非 auto-layout 沒有 sizing 欄位 → 維持原本行為(照比),向後相容
+        var pair = new NodePair(
+            Design("d1", "card", box: new Box(0, 0, 300, 200)),
+            Rendered("div.card", box: new Box(0, 0, 340, 200)),
+            "auto-name");
+
+        var result = Engine.Diff(pair);
+
+        Assert.Contains(result.Diffs, d => d.Prop == "width");
+    }
+
     [Theory]
     [InlineData(4.0, Severity.Medium)]    // 超容差 2 倍
     [InlineData(10.0, Severity.Serious)]  // 5 倍
