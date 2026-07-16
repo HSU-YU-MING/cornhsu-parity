@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Parity.Cli</RootNamespace>
+    <AssemblyName>parity</AssemblyName>
+
+    <!-- dotnet tool:使用者敲的是乾淨的 `parity`,套件掛 Cornhsu.* 前綴(規畫書第 9 節)-->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>parity</ToolCommandName>
+    <PackageId>Cornhsu.Parity</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Cornhsu</Authors>
+    <Description>Parity — 數值級設計還原度檢查工具。抓 Figma 與實作端的真實數值做程式比對,本機 / CI / 內網都能跑。</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parity.Engine\Parity.Engine.csproj" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

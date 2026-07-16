@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Parity.Cli/Parity.Cli.csproj" />
+    <Project Path="src/Parity.Engine/Parity.Engine.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Parity.Tests/Parity.Tests.csproj" />
+  </Folder>
+</Solution>

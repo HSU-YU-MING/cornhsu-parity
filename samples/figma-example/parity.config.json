@@ -1,0 +1,17 @@
+{
+  // 正式專案的設定範例(對接真實 Figma):
+  //   1. figmaFileKey:Figma 網址 figma.com/design/<fileKey>/... 那段
+  //   2. frame:在 Figma 裡右鍵圖層 → Copy link,URL 的 node-id(如 10:2)
+  //   3. 環境變數 FIGMA_TOKEN(scope 只需 file_content:read)
+  "figmaFileKey": "你的-figma-file-key",
+  "designToken": "env:FIGMA_TOKEN",
+  "mapFile": "parity.map.json",
+  "targets": [
+    { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" },
+    { "route": "/pricing", "frame": "12:345", "url": "http://localhost:8080/pricing" }
+  ],
+  "compare": { "position": "relative" },
+  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5 },
+  "ignore": ["[data-parity-ignore]"],
+  "gate": { "failOn": ["critical", "serious"] }
+}

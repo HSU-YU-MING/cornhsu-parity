@@ -1,0 +1,16 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Parity 本機產物(報告、Figma 快取)
+.parity/
+
+# Node(M3 報告 UI 用)
+node_modules/
+dist/
+
+# 環境變數 / secrets
+.env
+*.local.json

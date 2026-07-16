@@ -1,0 +1,12 @@
+{
+  // 離線示範:設計來源用本機 JSON(正式專案用 figmaFileKey + env:FIGMA_TOKEN)
+  "designFile": "design.json",
+  "mapFile": "parity.map.json",
+  "targets": [
+    { "route": "/", "frame": "", "url": "./index.html" }
+  ],
+  "compare": { "position": "relative" },
+  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5 },
+  "ignore": ["[data-parity-ignore]"],
+  "gate": { "failOn": ["critical", "serious"] }
+}
