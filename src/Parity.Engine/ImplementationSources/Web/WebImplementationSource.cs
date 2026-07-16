@@ -18,13 +18,20 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
     private static readonly JsonSerializerOptions CaptureParseOptions = new() { MaxDepth = 512 };
     private IPlaywright? _playwright;
     private IBrowser? _browser;
+    private IBrowser? _cdpBrowser; // attach 到既有 Chromium/Electron 的連線(與自啟的 _browser 分開)
     private readonly Dictionary<string, byte[]> _screenshots = [];
 
     /// <summary>CaptureScreenshot 開啟時,每次擷取後的整頁 PNG(key = URL)。本機報告 UI 的疊圖底圖。</summary>
     public IReadOnlyDictionary<string, byte[]> Screenshots => _screenshots;
 
+    /// <summary>"cdp:http://host:port" = attach 到已在跑的 Chromium/Electron(Electron 桌面 app 走這條)。</summary>
+    public static bool IsAttachUrl(string url) => url.StartsWith("cdp:", StringComparison.OrdinalIgnoreCase);
+
     public async Task<RenderedNode> CaptureAsync(ImplRef reference, CancellationToken ct = default)
     {
+        if (IsAttachUrl(reference.Url))
+            return await CaptureAttachedAsync(reference);
+
         var browser = await GetBrowserAsync();
         var page = await browser.NewPageAsync(new BrowserNewPageOptions
         {
@@ -41,29 +48,53 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                 WaitUntil = WaitUntilState.NetworkIdle,
                 Timeout = _options.TimeoutMs,
             });
-
-            var arg = new
-            {
-                mapSelectors = reference.MapSelectors ?? new Dictionary<string, string>(),
-                ignoreSelectors = reference.IgnoreSelectors ?? [],
-            };
-            // 擷取腳本回傳 JSON 字串(見 CaptureScript:避開 Playwright 值序列化的深度放大)。
-            // 用放寬的 MaxDepth 解析——真實網站 DOM 常有十幾層巢狀,預設 64 不夠。
-            var raw = await page.EvaluateAsync<string>(CaptureScript.Js, arg);
-            var json = JsonSerializer.Deserialize<JsonElement>(raw, CaptureParseOptions);
-            if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-                throw new InvalidOperationException($"頁面擷取失敗(body 不可見?):{reference.Url}");
-
-            if (_options.CaptureScreenshot)
-                _screenshots[reference.Url] = await page.ScreenshotAsync(
-                    new PageScreenshotOptions { FullPage = true });
-
-            return ParseNode(json);
+            return await CaptureFromPageAsync(page, reference);
         }
         finally
         {
             await page.CloseAsync();
         }
+    }
+
+    /// <summary>
+    /// 連到已在跑的 Chromium/Electron(它用 --remote-debugging-port 開了 CDP 端點)抓「活視窗」的 DOM。
+    /// 不啟自己的瀏覽器、不導頁、也不關對方的頁面——只讀取現況。Electron app 走這條。
+    /// </summary>
+    private async Task<RenderedNode> CaptureAttachedAsync(ImplRef reference)
+    {
+        var endpoint = reference.Url["cdp:".Length..];
+        var pw = await GetPlaywrightAsync();
+        _cdpBrowser ??= await pw.Chromium.ConnectOverCDPAsync(endpoint);
+
+        var context = _cdpBrowser.Contexts.FirstOrDefault()
+            ?? throw new InvalidOperationException($"CDP 端點沒有可用的 context:{endpoint}");
+        var page = context.Pages.FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"CDP 端點沒有開啟中的頁面(app 視窗還沒載入?):{endpoint}");
+
+        return await CaptureFromPageAsync(page, reference);
+    }
+
+    /// <summary>共用的擷取:在給定頁面上跑擷取腳本 → RenderedNode(啟動導頁與 CDP attach 兩條路都用)。</summary>
+    private async Task<RenderedNode> CaptureFromPageAsync(IPage page, ImplRef reference)
+    {
+        var arg = new
+        {
+            mapSelectors = reference.MapSelectors ?? new Dictionary<string, string>(),
+            ignoreSelectors = reference.IgnoreSelectors ?? [],
+        };
+        // 擷取腳本回傳 JSON 字串(見 CaptureScript:避開 Playwright 值序列化的深度放大)。
+        // 用放寬的 MaxDepth 解析——真實網站 DOM 常有十幾層巢狀,預設 64 不夠。
+        var raw = await page.EvaluateAsync<string>(CaptureScript.Js, arg);
+        var json = JsonSerializer.Deserialize<JsonElement>(raw, CaptureParseOptions);
+        if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            throw new InvalidOperationException($"頁面擷取失敗(body 不可見?):{reference.Url}");
+
+        if (_options.CaptureScreenshot)
+            _screenshots[reference.Url] = await page.ScreenshotAsync(
+                new PageScreenshotOptions { FullPage = true });
+
+        return ParseNode(json);
     }
 
     /// <summary>擷取腳本輸出 → RenderedNode。CSS 字串在這裡解析成數值(px、顏色)。</summary>
@@ -111,13 +142,16 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             => Rgba.TryParseCss(Str(e, prop), out var c) ? c : null;
     }
 
+    private async Task<IPlaywright> GetPlaywrightAsync()
+        => _playwright ??= await Playwright.CreateAsync();
+
     private async Task<IBrowser> GetBrowserAsync()
     {
         if (_browser is not null) return _browser;
-        _playwright = await Playwright.CreateAsync();
+        var pw = await GetPlaywrightAsync();
         try
         {
-            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            _browser = await pw.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
                 Headless = _options.Headless,
             });
@@ -132,6 +166,8 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
 
     public async ValueTask DisposeAsync()
     {
+        // CDP 連線 dispose 只斷線,不會關掉對方(Electron app)的視窗。
+        if (_cdpBrowser is not null) await _cdpBrowser.DisposeAsync();
         if (_browser is not null) await _browser.DisposeAsync();
         _playwright?.Dispose();
     }

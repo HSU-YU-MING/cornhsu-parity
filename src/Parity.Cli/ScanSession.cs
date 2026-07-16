@@ -110,7 +110,8 @@ public sealed class ScanSession : IAsyncDisposable
     /// <summary>相對路徑(如 "./index.html")→ file:// URI,方便離線示範;其餘原樣。</summary>
     internal static string ResolveUrl(string url, string baseDir)
     {
-        if (url.StartsWith("http://") || url.StartsWith("https://") || url.StartsWith("file://"))
+        if (url.StartsWith("http://") || url.StartsWith("https://") || url.StartsWith("file://")
+            || WebImplementationSource.IsAttachUrl(url)) // cdp:http://… = attach 到 Electron,原樣傳下去
             return url;
         return new Uri(Path.GetFullPath(Path.Combine(baseDir, url))).AbsoluteUri;
     }

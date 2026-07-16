@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Parity.Engine\Parity.Engine.csproj" />
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <InternalsVisibleTo Include="Parity.Tests" />
   </ItemGroup>
 
   <!-- parity serve:Kestrel 本機報告 UI(只綁 127.0.0.1) -->

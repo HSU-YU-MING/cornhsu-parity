@@ -170,6 +170,10 @@ internal static class HelpCommand
                   抓設計端與實作端真實數值比對,輸出報告 + exit code
                   --refresh   忽略 Figma 本機快取重抓
                   --headed    顯示瀏覽器視窗(除錯用)
+                  target 的 url 可以是:
+                    http(s):// 或 file://   一般網頁 / 本機頁面
+                    cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
+                    (Electron 端啟動時加 --remote-debugging-port=<port>)
               parity serve [--config <path>] [--port <n>] [--watch] [--open]
                   本機報告 UI(只綁 127.0.0.1):落差清單 + 截圖疊框視圖
                   --watch     設定/設計/頁面檔變更時自動重掃
