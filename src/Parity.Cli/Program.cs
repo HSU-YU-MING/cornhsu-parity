@@ -72,11 +72,16 @@ internal static class CheckCommand
             JsonSerializer.Serialize(scans.Select(s => s.Result.Report), JsonOptions));
         Console.WriteLine($"報告已寫入:{outPath}");
 
+        var reports = scans.Select(s => s.Result.Report).ToList();
+        Console.WriteLine($"還原度分數:\x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
+
         // --baseline:回歸模式——只擋「相對基準新增/惡化」的落差(適合已有一堆落差的專案漸進導入)
         if (opts.ContainsKey("--baseline"))
-            return await GateAgainstBaselineAsync(session, scans);
+            return await GateAgainstBaselineAsync(session, scans, opts);
 
-        if (session.ShouldFail(scans))
+        var gateFail = session.ShouldFail(scans);
+        WriteMarkdown(opts, reports, gateFail);
+        if (gateFail)
         {
             Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
             return 1;
@@ -85,10 +90,24 @@ internal static class CheckCommand
         return 0;
     }
 
-    /// <summary>回歸把關:比對現況與最新 baseline,只在有新增/惡化時 GATE FAIL(規畫書 M5)。</summary>
-    private static async Task<int> GateAgainstBaselineAsync(ScanSession session, List<TargetScan> scans)
+    /// <summary>--md &lt;path&gt;:把報告輸出成 Markdown(可分享 / 貼 PR 留言)。</summary>
+    private static void WriteMarkdown(
+        Dictionary<string, string?> opts, IReadOnlyList<FidelityReport> reports,
+        bool gateFail, BaselineComparison? baseline = null)
     {
-        var current = DiffRecord.FromReports(scans.Select(s => s.Result.Report));
+        if (opts.GetValueOrDefault("--md") is not { } mdPath) return;
+        var full = Path.GetFullPath(mdPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, MarkdownReport.Render(reports, gateFail, baseline));
+        Console.WriteLine($"Markdown 報告:{full}");
+    }
+
+    /// <summary>回歸把關:比對現況與最新 baseline,只在有新增/惡化時 GATE FAIL(規畫書 M5)。</summary>
+    private static async Task<int> GateAgainstBaselineAsync(
+        ScanSession session, List<TargetScan> scans, Dictionary<string, string?> opts)
+    {
+        var reports = scans.Select(s => s.Result.Report).ToList();
+        var current = DiffRecord.FromReports(reports);
         await using var store = new BaselineStore(BaselineCommand.BaselineDbPath(session.Config));
         var baseline = await store.GetLatestAsync();
 
@@ -96,11 +115,13 @@ internal static class CheckCommand
         {
             Console.WriteLine("\n\x1b[33m(尚無 baseline)\x1b[0m 先跑 `parity baseline save` 建立基準;這次退回一般 gate。");
             var fail = session.ShouldFail(scans);
+            WriteMarkdown(opts, reports, fail);
             Console.WriteLine(fail ? "\x1b[31m✘ GATE FAIL\x1b[0m" : "\x1b[32m✔ PASS\x1b[0m");
             return fail ? 1 : 0;
         }
 
         var cmp = BaselineComparer.Compare(current, baseline);
+        WriteMarkdown(opts, reports, cmp.HasRegressions, cmp);
         Console.WriteLine($"\n對比 baseline — \x1b[31m新增 {cmp.Regressions.Count}\x1b[0m、" +
             $"\x1b[33m惡化 {cmp.Worsened.Count}\x1b[0m、\x1b[32m修好 {cmp.Fixed.Count}\x1b[0m、不變 {cmp.Unchanged}");
         foreach (var d in cmp.Regressions)
@@ -216,6 +237,7 @@ internal static class HelpCommand
                   --refresh   忽略 Figma 本機快取重抓
                   --headed    顯示瀏覽器視窗(除錯用)
                   --baseline  回歸模式:只擋「相對基準新增/惡化」的落差(見 parity baseline)
+                  --md <path> 另外輸出 Markdown 報告(含還原度分數 + 建議修法,可貼 PR 留言)
                   target 的 url 可以是:
                     http(s):// 或 file://   一般網頁 / 本機頁面
                     cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
