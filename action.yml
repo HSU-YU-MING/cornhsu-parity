@@ -77,22 +77,33 @@ runs:
         parity "${args[@]}"
         echo "exit=$?" >> "$GITHUB_OUTPUT"
 
-    # 把還原度報告貼成 PR 留言(同一則留言反覆更新,不洗版)
+    # 把還原度報告貼成 PR 留言(同一則留言反覆更新,不洗版)。
+    # continue-on-error:fork PR 的 GITHUB_TOKEN 唯讀,貼留言會 403——那是預期的,
+    # 不該讓整個 job 紅在這步(gate 仍在最後一步照常擋)。
     - name: Comment report on PR
       if: ${{ github.event_name == 'pull_request' && inputs.comment == 'true' }}
+      continue-on-error: true
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        [ -f "$RUNNER_TEMP/parity-report.md" ] || { echo "無報告可貼"; exit 0; }
-        { echo '<!-- parity-report -->'; cat "$RUNNER_TEMP/parity-report.md"; } > "$RUNNER_TEMP/parity-comment.md"
+        report="$RUNNER_TEMP/parity-report.md"
+        out="$RUNNER_TEMP/parity-comment.md"
+        [ -f "$report" ] || { echo "無報告可貼"; exit 0; }
+        marker='<!-- parity-report -->'
+        # GitHub 留言上限 ~65536 字,超過就截斷並附提示(完整內容在 artifact)
+        if [ "$(wc -c < "$report")" -gt 60000 ]; then
+          { echo "$marker"; head -c 60000 "$report"; printf '\n\n<sub>⚠️ 報告過長已截斷,完整內容見 workflow 的 parity-report artifact。</sub>\n'; } > "$out"
+        else
+          { echo "$marker"; cat "$report"; } > "$out"
+        fi
         pr=${{ github.event.pull_request.number }}
         existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
           --jq 'map(select(.body | startswith("<!-- parity-report -->"))) | .[0].id // empty')
         if [ -n "$existing" ]; then
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$RUNNER_TEMP/parity-comment.md" >/dev/null
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$out" >/dev/null
         else
-          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -F body=@"$RUNNER_TEMP/parity-comment.md" >/dev/null
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -F body=@"$out" >/dev/null
         fi
 
     - name: Upload report

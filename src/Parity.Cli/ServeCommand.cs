@@ -53,6 +53,32 @@ internal static class ServeCommand
 
         var app = builder.Build();
 
+        // 資安:只綁 127.0.0.1 擋不掉 DNS-rebinding / 同瀏覽器惡意分頁。
+        //  - Host header 只允許 loopback(擋 rebinding:惡意網域解析到 127.0.0.1)
+        //  - 變更型(POST)再驗 Origin(擋其他站的 CSRF)
+        // 報告含站點結構與截圖,不能被別的頁面讀走或觸發寫入。
+        app.Use(async (ctx, next) =>
+        {
+            if (!IsLoopbackHost(ctx.Request.Host.Host))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsync("Parity serve 只接受本機請求。");
+                return;
+            }
+            if (HttpMethods.IsPost(ctx.Request.Method))
+            {
+                var origin = ctx.Request.Headers.Origin.ToString();
+                if (!string.IsNullOrEmpty(origin) &&
+                    !(Uri.TryCreate(origin, UriKind.Absolute, out var o) && IsLoopbackHost(o.Host)))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await ctx.Response.WriteAsync("跨來源請求被拒。");
+                    return;
+                }
+            }
+            await next();
+        });
+
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = new PhysicalFileProvider(wwwroot) });
         app.UseStaticFiles(new StaticFileOptions
@@ -168,12 +194,15 @@ internal static class ServeCommand
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         Timer? debounce = null;
+        var debounceLock = new object();
         void OnChange(object _, FileSystemEventArgs e)
         {
             if (!files.Contains(Path.GetFullPath(e.FullPath))) return;
-            debounce?.Dispose();
-            debounce = new Timer(async _ =>
+            lock (debounceLock) // 多個檔案事件可能同時進來,別在 debounce 欄位上打架
             {
+                debounce?.Dispose();
+                debounce = new Timer(async _ =>
+                {
                 try
                 {
                     await state.RescanAsync();
@@ -183,7 +212,8 @@ internal static class ServeCommand
                 {
                     Console.Error.WriteLine($"\x1b[31m重掃失敗:{ex.Message}\x1b[0m");
                 }
-            }, null, 400, Timeout.Infinite);
+                }, null, 400, Timeout.Infinite);
+            }
         }
 
         var watchers = new List<FileSystemWatcher>();
@@ -201,6 +231,9 @@ internal static class ServeCommand
         }
         return watchers;
     }
+
+    private static bool IsLoopbackHost(string host) =>
+        host is "127.0.0.1" or "localhost" or "::1" or "[::1]";
 
     private static void TryOpenBrowser(string url)
     {
