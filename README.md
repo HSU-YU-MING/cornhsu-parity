@@ -137,7 +137,7 @@ jobs:
       - run: |
           npm ci && npm run build
           npm run preview &   # 例:serve 在 localhost:8080
-      - uses: Cornhsu/Parity@v1
+      - uses: HSU-YU-MING/cornhsu-parity@v1
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # 設計來源用本機 JSON 時可省略

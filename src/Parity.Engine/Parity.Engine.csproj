@@ -4,6 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- 不單獨發套件:引擎會被打進 Cornhsu.Parity 這個 dotnet tool -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

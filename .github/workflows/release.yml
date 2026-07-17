@@ -1,0 +1,44 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']   # 推 v1.2.3 這種 tag 就發佈
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # Trusted Publishing:GitHub 簽發 OIDC token 與 NuGet 交換臨時金鑰
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # SourceLink 需要完整 git 歷史
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - run: dotnet restore Parity.slnx
+      - run: dotnet build Parity.slnx -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
+      - run: dotnet test Parity.slnx -c Release --no-build
+      - run: dotnet pack Parity.slnx -c Release --no-build -p:Version=${{ steps.ver.outputs.version }} -o ./artifacts
+
+      # Trusted Publishing:用 GitHub OIDC 向 nuget.org 換一把只活 1 小時的臨時金鑰,
+      # 不需保管長效 API key、也不需 repo secret(需先在 nuget.org 設定 trusted publisher policy)
+      - name: NuGet login (OIDC → temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: Cornhsu   # nuget.org 使用者名稱(不是 email)
+
+      - name: Push to NuGet
+        run: >
+          dotnet nuget push "./artifacts/*.nupkg"
+          -k ${{ steps.login.outputs.NUGET_API_KEY }}
+          -s https://api.nuget.org/v3/index.json
+          --skip-duplicate
