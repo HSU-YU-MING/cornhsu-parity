@@ -44,6 +44,15 @@ public class ReportingTests
     [Fact]
     public void Empty_reports_score_100() => Assert.Equal(100, FidelityScore.Compute([]));
 
+    [Fact]
+    public void Score_ignores_pure_soft_diff_nodes()
+    {
+        // 只有軟落差(font-family)的節點算「忠實」,不扣分(與 gate 判定一致)
+        var softOnly = Node("softOnly", Diff("fontFamily", "Arial", "Helvetica", Severity.Minor, soft: true));
+        var report = Report(2, [softOnly, Node("clean")]);
+        Assert.Equal(100, FidelityScore.Compute([report]));
+    }
+
     // ---------- 修法建議 ----------
 
     [Theory]
@@ -71,6 +80,14 @@ public class ReportingTests
         Assert.Equal("gap: 24px(token: space-6)", FixHint.For(Diff("itemSpacing", "24", "16"), tokens));
         // 沒對到 token → 維持純 CSS
         Assert.Equal("font-size: 15px", FixHint.For(Diff("fontSize", "15", "20"), tokens));
+    }
+
+    [Fact]
+    public void Token_size_index_does_not_leak_into_font_weight()
+    {
+        // 700px 的 size token 不該誤配到 font-weight 700
+        var tokens = new DesignTokens(new Dictionary<string, string> { ["weight-bold"] = "700px" });
+        Assert.Equal("font-weight: 700", FixHint.For(Diff("fontWeight", "700", "400"), tokens));
     }
 
     // ---------- 衝擊度排序 ----------

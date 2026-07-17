@@ -245,6 +245,7 @@ internal static class HelpCommand
                   target 的 url 可以是:
                     http(s):// 或 file://   一般網頁 / 本機頁面
                     cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
+                    cdp:http://host:port#url片段  多視窗時指定 URL 含該片段的視窗
                     (Electron 端啟動時加 --remote-debugging-port=<port>)
               parity serve [--config <path>] [--port <n>] [--watch] [--open]
                   本機報告 UI(只綁 127.0.0.1):落差清單 + 截圖疊框視圖

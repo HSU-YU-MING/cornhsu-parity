@@ -23,7 +23,9 @@ public static class FidelityScore
         var list = reports as IReadOnlyList<FidelityReport> ?? reports.ToList();
         var total = list.Sum(r => r.Summary.DesignNodes);
         if (total == 0) return 100;
-        var clean = list.Sum(r => r.Nodes.Count(n => n.Diffs.Count == 0));
+        // 「忠實」= 有配對且沒有硬落差;純軟落差(如 font-family stack 差異)不擋 gate,也不扣分,
+        // 與 gate 的判定一致。
+        var clean = list.Sum(r => r.Nodes.Count(n => !n.Diffs.Any(d => !d.Soft)));
         return (int)Math.Round(100.0 * clean / total);
     }
 }
@@ -46,6 +48,14 @@ public sealed class DesignTokens
         }
     }
 
+    // 真正以「px 尺寸」計的屬性。font-weight 是無單位數字,不能跟 px token 共用索引
+    // (否則 700px 的 size token 會誤配到 font-weight 700)。
+    private static readonly HashSet<string> SizeProps =
+    [
+        "width", "height", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+        "itemSpacing", "cornerRadius", "fontSize", "lineHeight", "letterSpacing",
+    ];
+
     /// <summary>這條落差的「期望值」對應到哪個 token(沒有就 null)。</summary>
     public string? NameFor(PropDiff d)
     {
@@ -55,7 +65,8 @@ public sealed class DesignTokens
                 return n;
             return null;
         }
-        if (double.TryParse(d.Expected, out var px) && _nameBySizePx.TryGetValue(px, out var sn))
+        if (SizeProps.Contains(d.Prop) && double.TryParse(d.Expected, out var px)
+            && _nameBySizePx.TryGetValue(px, out var sn))
             return sn;
         return null;
     }

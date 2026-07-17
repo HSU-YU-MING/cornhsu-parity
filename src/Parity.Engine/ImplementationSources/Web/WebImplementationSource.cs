@@ -62,15 +62,25 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
     /// </summary>
     private async Task<RenderedNode> CaptureAttachedAsync(ImplRef reference)
     {
-        var endpoint = reference.Url["cdp:".Length..];
+        // "cdp:http://host:port"           → 第一個頁面
+        // "cdp:http://host:port#index.html" → URL 含「index.html」的頁面(多視窗 Electron 指定用)
+        var rest = reference.Url["cdp:".Length..];
+        var hash = rest.IndexOf('#');
+        var endpoint = hash >= 0 ? rest[..hash] : rest;
+        var pageMatch = hash >= 0 ? rest[(hash + 1)..] : null;
+
         var pw = await GetPlaywrightAsync();
         _cdpBrowser ??= await pw.Chromium.ConnectOverCDPAsync(endpoint);
 
-        var context = _cdpBrowser.Contexts.FirstOrDefault()
-            ?? throw new InvalidOperationException($"CDP 端點沒有可用的 context:{endpoint}");
-        var page = context.Pages.FirstOrDefault()
-            ?? throw new InvalidOperationException(
-                $"CDP 端點沒有開啟中的頁面(app 視窗還沒載入?):{endpoint}");
+        var pages = _cdpBrowser.Contexts.SelectMany(c => c.Pages).ToList();
+        if (pages.Count == 0)
+            throw new InvalidOperationException($"CDP 端點沒有開啟中的頁面(app 視窗還沒載入?):{endpoint}");
+
+        var page = pageMatch is null
+            ? pages[0]
+            : pages.FirstOrDefault(p => p.Url.Contains(pageMatch, StringComparison.OrdinalIgnoreCase))
+              ?? throw new InvalidOperationException(
+                  $"CDP 端點找不到 URL 含「{pageMatch}」的頁面;現有:{string.Join(" 、 ", pages.Select(p => p.Url))}");
 
         return await CaptureFromPageAsync(page, reference);
     }
