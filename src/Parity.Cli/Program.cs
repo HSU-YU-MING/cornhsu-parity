@@ -17,7 +17,7 @@ try
         "serve" => await ServeCommand.RunAsync(rest),
         "map" => await ServeCommand.RunAsync(rest, mapMode: true),
         "init" => InitCommand.Run(rest),
-        "install-browser" => InstallBrowserCommand.Run(),
+        "install-browser" => InstallBrowserCommand.Run(rest),
         "help" or "--help" or "-h" => HelpCommand.Run(),
         "version" or "--version" => VersionCommand.Run(),
         _ => UnknownCommand(command),
@@ -149,10 +149,15 @@ internal static class InitCommand
 
 internal static class InstallBrowserCommand
 {
-    public static int Run()
+    public static int Run(string[] args)
     {
-        Console.WriteLine("下載 Playwright Chromium(第一次需要幾分鐘)…");
-        var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+        // --with-deps:連同系統相依一起裝(CI 的 Linux runner 需要,否則 Chromium 起不來)
+        var withDeps = args.Contains("--with-deps");
+        string[] pwArgs = withDeps ? ["install", "--with-deps", "chromium"] : ["install", "chromium"];
+        Console.WriteLine(withDeps
+            ? "下載 Chromium 並安裝系統相依(CI 用,第一次需要幾分鐘)…"
+            : "下載 Playwright Chromium(第一次需要幾分鐘)…");
+        var exitCode = Microsoft.Playwright.Program.Main(pwArgs);
         Console.WriteLine(exitCode == 0 ? "完成。" : "安裝失敗。");
         return exitCode;
     }
@@ -180,7 +185,8 @@ internal static class HelpCommand
               parity map [--config <path>] [--port <n>]
                   互動配對:點選未配對的設計節點 → 點頁面元素 → 寫入 parity.map.json
               parity init             產生 parity.config.json 範本
-              parity install-browser  下載 Playwright Chromium(第一次必要)
+              parity install-browser [--with-deps]
+                  下載 Playwright Chromium(第一次必要);--with-deps 連系統相依一起裝(CI 用)
 
             exit code:0 = 通過;1 = 落差超過 gate 門檻;2 = 執行錯誤
             """);

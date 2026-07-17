@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-test:
+    name: Build + Test + Parity 自我把關
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build Parity.slnx -c Release
+
+      - name: Unit tests
+        run: dotnet test Parity.slnx -c Release --no-build
+
+      # 用剛建好的工具本身裝瀏覽器(順便 dogfood --with-deps)
+      - name: Install Chromium (with system deps)
+        run: dotnet run --project src/Parity.Cli -c Release --no-build -- install-browser --with-deps
+
+      # 離線示範刻意做壞 → 預期 GATE FAIL(exit 1)。這正是 CI 把關該有的行為,
+      # 所以「跑出 exit 1」= 成功;跑出別的才是回歸。
+      - name: Parity check (offline demo, 預期 GATE FAIL)
+        run: |
+          set +e
+          dotnet run --project src/Parity.Cli -c Release --no-build -- \
+            check --config samples/demo/parity.config.json
+          code=$?
+          if [ "$code" -eq 1 ]; then
+            echo "✓ 離線示範如預期 GATE FAIL(exit 1)——CI 把關行為正確"
+            exit 0
+          else
+            echo "✗ 預期 exit 1(GATE FAIL),實際為 $code"
+            exit 1
+          fi
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-report
+          path: samples/demo/.parity/report.json
+          if-no-files-found: ignore

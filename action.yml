@@ -1,0 +1,75 @@
+name: 'Parity design-fidelity check'
+description: '數值級設計還原度檢查:比對 Figma 設計與實作端真實數值,落差超過 gate 門檻就讓 CI 失敗。'
+author: 'Cornhsu'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  config:
+    description: 'parity.config.json 路徑'
+    required: false
+    default: 'parity.config.json'
+  target:
+    description: '只檢查這個 route(省略 = 全部)'
+    required: false
+    default: ''
+  working-directory:
+    description: '執行目錄'
+    required: false
+    default: '.'
+  version:
+    description: 'Cornhsu.Parity 工具版本(省略 = 最新)'
+    required: false
+    default: ''
+  figma-token:
+    description: 'Figma token(帶進 FIGMA_TOKEN 環境變數;設計來源用本機 JSON 時可省略)'
+    required: false
+    default: ''
+  upload-report:
+    description: '把 .parity/report.json 當 artifact 上傳'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Install Parity
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          dotnet tool install --global Cornhsu.Parity --version "${{ inputs.version }}"
+        else
+          dotnet tool install --global Cornhsu.Parity
+        fi
+        echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+    - name: Install Chromium (with system deps)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: parity install-browser --with-deps
+
+    - name: Run Parity check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FIGMA_TOKEN: ${{ inputs.figma-token }}
+      run: |
+        args=(check --config "${{ inputs.config }}")
+        if [ -n "${{ inputs.target }}" ]; then
+          args+=(--target "${{ inputs.target }}")
+        fi
+        parity "${args[@]}"
+
+    - name: Upload report
+      if: ${{ always() && inputs.upload-report == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: parity-report
+        path: ${{ inputs.working-directory }}/.parity/report.json
+        if-no-files-found: ignore
