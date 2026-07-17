@@ -161,10 +161,12 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 已經有一堆落差的專案,不可能一開就「零落差才給過」。baseline 讓你**只擋新增/惡化**:
 
 ```sh
-parity baseline save     # 把當前落差存成基準快照(SQLite,存在 .parity/baseline.db,自動標 git commit)
+parity baseline save     # 把當前落差存成基準快照(SQLite,存 parity.baseline.db,自動標 git commit)
 parity check --baseline  # 比對現況 vs 最新基準:只有「新增或惡化」才 GATE FAIL
 parity baseline list     # 看歷史快照
 ```
+
+> **CI 要用 `--baseline`,記得 `git add parity.baseline.db` 一起 commit**——它刻意放 repo 根(不放 `.parity/`,那裡通常被 gitignore),否則 CI 找不到基準會靜默退回一般 gate。路徑可用 config `baselineFile` 改。
 
 - **新增**(基準沒有、現在有)或**惡化**(嚴重度變高)→ exit 1 擋 PR
 - **修好**(基準有、現在沒了)會列出來鼓勵;**不變**的既有落差不擋

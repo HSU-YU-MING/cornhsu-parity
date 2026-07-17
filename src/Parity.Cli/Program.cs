@@ -117,6 +117,7 @@ internal static class CheckCommand
         if (baseline is null)
         {
             Console.WriteLine("\n\x1b[33m(尚無 baseline)\x1b[0m 先跑 `parity baseline save` 建立基準;這次退回一般 gate。");
+            Console.WriteLine($"\x1b[90m  提示:CI 要用 --baseline,得把 {Path.GetFileName(BaselineCommand.BaselineDbPath(session.Config))} commit 進 repo。\x1b[0m");
             var fail = session.ShouldFail(scans);
             WriteMarkdown(opts, session.Config, reports, fail);
             Console.WriteLine(fail ? "\x1b[31m✘ GATE FAIL\x1b[0m" : "\x1b[32m✔ PASS\x1b[0m");

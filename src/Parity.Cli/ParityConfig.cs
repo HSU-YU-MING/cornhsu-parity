@@ -22,6 +22,12 @@ public sealed class ParityConfig
     /// <summary>design token 檔(平面 JSON:{"token 名":"值"})。有給時,建議修法會提示對應的 token。</summary>
     public string? TokensFile { get; set; }
 
+    /// <summary>
+    /// baseline(回歸把關基準)的 SQLite 檔路徑。預設 parity.baseline.db(放 repo 根、**應 commit**——
+    /// CI 的 check --baseline 才吃得到)。刻意不放 .parity/(那裡通常被 gitignore,會讓 CI 靜默失效)。
+    /// </summary>
+    public string? BaselineFile { get; set; }
+
     public List<TargetConfig> Targets { get; set; } = [];
     public CompareConfig Compare { get; set; } = new();
     public ToleranceConfig Tolerances { get; set; } = new();

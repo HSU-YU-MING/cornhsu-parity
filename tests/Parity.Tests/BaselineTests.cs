@@ -82,6 +82,19 @@ public class BaselineComparerTests
         Assert.Single(c.Regressions); // /pricing 的是新的
         Assert.Single(c.Fixed);       // / 的不見了
     }
+
+    [Fact]
+    public void Same_layer_and_prop_but_different_selector_are_distinct()
+    {
+        // 重複圖層名("Text"),不同元素(不同 selector)→ 不能被當成同一條
+        var baseline = new[] { new DiffRecord("/", "Text", "body > h1", "color", Severity.Serious, "#fff", "#000") };
+        var current = new[] { new DiffRecord("/", "Text", "body > h2", "color", Severity.Serious, "#fff", "#000") };
+
+        var c = BaselineComparer.Compare(current, baseline);
+
+        Assert.Single(c.Regressions); // h2 是新的
+        Assert.Single(c.Fixed);       // h1 不見了
+    }
 }
 
 public class BaselineStoreTests

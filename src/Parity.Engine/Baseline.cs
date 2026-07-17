@@ -13,8 +13,13 @@ public sealed record DiffRecord(
     string Expected,
     string Actual)
 {
-    /// <summary>跨次執行辨識同一條落差的鍵(不含數值:值變了仍是同一條,只是嚴重度可能變)。</summary>
-    public (string Route, string Layer, string Prop) Key => (Route, DesignLayer, Prop);
+    /// <summary>
+    /// 跨次執行辨識同一條落差的鍵(不含數值:值變了仍是同一條,只是嚴重度可能變)。
+    /// 含 Selector 是為了消歧「重複圖層名」——設計稿常有多個 "Frame"/"Text",
+    /// 只用圖層名會把不同元素的同屬性落差誤當成同一條。
+    /// </summary>
+    public (string Route, string Layer, string Selector, string Prop) Key
+        => (Route, DesignLayer, Selector, Prop);
 
     /// <summary>把一次掃描的所有報告攤平成落差清單(baseline 儲存與比對的輸入)。</summary>
     public static IReadOnlyList<DiffRecord> FromReports(IEnumerable<FidelityReport> reports)

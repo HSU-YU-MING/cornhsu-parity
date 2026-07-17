@@ -78,7 +78,7 @@ internal static class BaselineCommand
     }
 
     internal static string BaselineDbPath(ParityConfig config)
-        => Path.Combine(config.BaseDirectory, ".parity", "baseline.db");
+        => Path.Combine(config.BaseDirectory, config.BaselineFile ?? "parity.baseline.db");
 
     private static string ResolveConfig(Dictionary<string, string?> opts)
         => opts.GetValueOrDefault("--config")
@@ -107,8 +107,17 @@ internal static class GitInfo
                 CreateNoWindow = true,
             });
             if (p is null) return null;
-            var output = p.StandardOutput.ReadToEnd().Trim();
-            p.WaitForExit(2000);
+
+            // 兩個 stream 都要非同步排掉——只讀一個、另一個塞爆 buffer 會 deadlock
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(2000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { /* 已結束 */ }
+                return null;
+            }
+            _ = stderr.GetAwaiter().GetResult(); // 排掉 stderr
+            var output = stdout.GetAwaiter().GetResult().Trim();
             return p.ExitCode == 0 && output.Length > 0 ? output : null;
         }
         catch
