@@ -37,6 +37,7 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "figmaFileKey": "abcd1234",
   "designToken": "env:FIGMA_TOKEN",
   "mapFile": "parity.map.json",              // 手動補漏的對應檔(圖層名 → selector)
+  "tokensFile": "tokens.json",               // 選配:design token(名→值);建議修法會提示對應 token
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],

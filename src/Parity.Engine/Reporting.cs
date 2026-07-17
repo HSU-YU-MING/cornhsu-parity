@@ -1,4 +1,5 @@
 using System.Text;
+using Parity.Engine.Model;
 
 namespace Parity.Engine;
 
@@ -15,10 +16,64 @@ public static class FidelityScore
     }
 }
 
+/// <summary>
+/// 團隊的 design token(名稱 → 值)。用途:落差建議修法時,若期望值剛好是某個 token,
+/// 就提示「用這個 token」而不是生的數字/色碼——貼合設計系統,也是團隊真正想驗的東西。
+/// </summary>
+public sealed class DesignTokens
+{
+    private readonly Dictionary<string, string> _colorByHex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<double, string> _nameBySizePx = new();
+
+    public DesignTokens(IReadOnlyDictionary<string, string> tokens)
+    {
+        foreach (var (name, value) in tokens)
+        {
+            if (Rgba.TryParseCss(value, out var c)) _colorByHex.TryAdd(c.ToHex(), name);
+            else if (Comparison.Normalizer.ParseCssPx(value) is { } px) _nameBySizePx.TryAdd(px, name);
+        }
+    }
+
+    /// <summary>這條落差的「期望值」對應到哪個 token(沒有就 null)。</summary>
+    public string? NameFor(PropDiff d)
+    {
+        if (d.Prop is "color" or "background")
+        {
+            if (Rgba.TryParseCss(d.Expected, out var c) && _colorByHex.TryGetValue(c.ToHex(), out var n))
+                return n;
+            return null;
+        }
+        if (double.TryParse(d.Expected, out var px) && _nameBySizePx.TryGetValue(px, out var sn))
+            return sn;
+        return null;
+    }
+
+    /// <summary>從 JSON(平面的 {"name":"value"} 物件)載入;檔案不存在或解析失敗回 null。</summary>
+    public static DesignTokens? LoadJson(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var map = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
+            return map is { Count: > 0 } ? new DesignTokens(map) : null;
+        }
+        catch { return null; }
+    }
+}
+
 /// <summary>把一條落差翻成「該怎麼改」——開發者可直接照做的 CSS 目標值(規畫書外的加值:從挑錯變助手)。</summary>
 public static class FixHint
 {
-    public static string? For(PropDiff d) => d.Prop switch
+    /// <summary>tokens 有給且期望值命中某 token 時,附註「用哪個 token」。</summary>
+    public static string? For(PropDiff d, DesignTokens? tokens = null)
+    {
+        var css = Css(d);
+        if (css is null) return null;
+        var token = tokens?.NameFor(d);
+        return token is null ? css : $"{css}(token: {token})";
+    }
+
+    private static string? Css(PropDiff d) => d.Prop switch
     {
         "width" => $"width: {d.Expected}px",
         "height" => $"height: {d.Expected}px",
@@ -46,7 +101,8 @@ public static class FixHint
 public static class MarkdownReport
 {
     public static string Render(
-        IReadOnlyList<FidelityReport> reports, bool gateFail, BaselineComparison? baseline = null)
+        IReadOnlyList<FidelityReport> reports, bool gateFail,
+        BaselineComparison? baseline = null, DesignTokens? tokens = null)
     {
         var score = FidelityScore.Compute(reports);
         var total = reports.Sum(r => r.Summary.DesignNodes);
@@ -89,7 +145,7 @@ public static class MarkdownReport
                 var arrow = $"`{Esc(d.Expected)}` → `{Esc(d.Actual)}`" +
                     (d.Delta is { } dl ? $" (Δ{dl})" : "");
                 var sev = d.Soft ? $"{d.Severity.ToString().ToLowerInvariant()}(soft)" : d.Severity.ToString().ToLowerInvariant();
-                var fix = FixHint.For(d) is { } f ? $"`{Esc(f)}`" : "—";
+                var fix = FixHint.For(d, tokens) is { } f ? $"`{Esc(f)}`" : "—";
                 var cells = multi
                     ? $"| {Esc(route)} | `{Esc(n.DesignLayer)}` | {d.Prop} | {arrow} | {sev} | {fix} |"
                     : $"| `{Esc(n.DesignLayer)}` | {d.Prop} | {arrow} | {sev} | {fix} |";

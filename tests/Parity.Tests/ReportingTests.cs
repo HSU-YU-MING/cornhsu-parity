@@ -59,6 +59,20 @@ public class ReportingTests
     public void Fix_hint_null_for_unknown_prop()
         => Assert.Null(FixHint.For(Diff("mysteryProp", "1", "2")));
 
+    [Fact]
+    public void Fix_hint_references_token_when_expected_matches()
+    {
+        var tokens = new DesignTokens(new Dictionary<string, string>
+        {
+            ["color-primary"] = "#2563EB",
+            ["space-6"] = "24px",
+        });
+        Assert.Equal("background: #2563EB(token: color-primary)", FixHint.For(Diff("background", "#2563EB", "#000"), tokens));
+        Assert.Equal("gap: 24px(token: space-6)", FixHint.For(Diff("itemSpacing", "24", "16"), tokens));
+        // 沒對到 token → 維持純 CSS
+        Assert.Equal("font-size: 15px", FixHint.For(Diff("fontSize", "15", "20"), tokens));
+    }
+
     // ---------- Markdown ----------
 
     [Fact]

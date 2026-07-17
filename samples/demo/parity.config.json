@@ -2,6 +2,7 @@
   // 離線示範:設計來源用本機 JSON(正式專案用 figmaFileKey + env:FIGMA_TOKEN)
   "designFile": "design.json",
   "mapFile": "parity.map.json",
+  "tokensFile": "tokens.json",
   "targets": [
     { "route": "/", "frame": "", "url": "./index.html" }
   ],

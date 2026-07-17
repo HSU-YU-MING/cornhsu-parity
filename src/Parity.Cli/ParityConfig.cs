@@ -19,6 +19,9 @@ public sealed class ParityConfig
     /// <summary>parity map 存的手動對應檔(圖層名 → CSS selector)。</summary>
     public string? MapFile { get; set; }
 
+    /// <summary>design token 檔(平面 JSON:{"token 名":"值"})。有給時,建議修法會提示對應的 token。</summary>
+    public string? TokensFile { get; set; }
+
     public List<TargetConfig> Targets { get; set; } = [];
     public CompareConfig Compare { get; set; } = new();
     public ToleranceConfig Tolerances { get; set; } = new();

@@ -80,7 +80,7 @@ internal static class CheckCommand
             return await GateAgainstBaselineAsync(session, scans, opts);
 
         var gateFail = session.ShouldFail(scans);
-        WriteMarkdown(opts, reports, gateFail);
+        WriteMarkdown(opts, session.Config, reports, gateFail);
         if (gateFail)
         {
             Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
@@ -90,15 +90,18 @@ internal static class CheckCommand
         return 0;
     }
 
-    /// <summary>--md &lt;path&gt;:把報告輸出成 Markdown(可分享 / 貼 PR 留言)。</summary>
+    /// <summary>--md &lt;path&gt;:把報告輸出成 Markdown(可分享 / 貼 PR 留言);有設定 tokensFile 就帶進 token 提示。</summary>
     private static void WriteMarkdown(
-        Dictionary<string, string?> opts, IReadOnlyList<FidelityReport> reports,
+        Dictionary<string, string?> opts, ParityConfig config, IReadOnlyList<FidelityReport> reports,
         bool gateFail, BaselineComparison? baseline = null)
     {
         if (opts.GetValueOrDefault("--md") is not { } mdPath) return;
+        var tokens = config.TokensFile is { } tf
+            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
+            : null;
         var full = Path.GetFullPath(mdPath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        File.WriteAllText(full, MarkdownReport.Render(reports, gateFail, baseline));
+        File.WriteAllText(full, MarkdownReport.Render(reports, gateFail, baseline, tokens));
         Console.WriteLine($"Markdown 報告:{full}");
     }
 
@@ -115,13 +118,13 @@ internal static class CheckCommand
         {
             Console.WriteLine("\n\x1b[33m(尚無 baseline)\x1b[0m 先跑 `parity baseline save` 建立基準;這次退回一般 gate。");
             var fail = session.ShouldFail(scans);
-            WriteMarkdown(opts, reports, fail);
+            WriteMarkdown(opts, session.Config, reports, fail);
             Console.WriteLine(fail ? "\x1b[31m✘ GATE FAIL\x1b[0m" : "\x1b[32m✔ PASS\x1b[0m");
             return fail ? 1 : 0;
         }
 
         var cmp = BaselineComparer.Compare(current, baseline);
-        WriteMarkdown(opts, reports, cmp.HasRegressions, cmp);
+        WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp);
         Console.WriteLine($"\n對比 baseline — \x1b[31m新增 {cmp.Regressions.Count}\x1b[0m、" +
             $"\x1b[33m惡化 {cmp.Worsened.Count}\x1b[0m、\x1b[32m修好 {cmp.Fixed.Count}\x1b[0m、不變 {cmp.Unchanged}");
         foreach (var d in cmp.Regressions)
