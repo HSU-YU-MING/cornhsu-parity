@@ -1,5 +1,5 @@
 name: 'Parity design-fidelity check'
-description: '數值級設計還原度檢查:比對 Figma 設計與實作端真實數值,落差超過 gate 門檻就讓 CI 失敗。'
+description: '數值級設計還原度檢查:比對 Figma 設計與實作端真實數值,落差超過 gate 門檻就讓 CI 失敗,並把還原度報告貼上 PR。'
 author: 'Cornhsu'
 branding:
   icon: 'check-circle'
@@ -23,11 +23,19 @@ inputs:
     required: false
     default: ''
   figma-token:
-    description: 'Figma token(帶進 FIGMA_TOKEN 環境變數;設計來源用本機 JSON 時可省略)'
+    description: 'Figma token(帶進 FIGMA_TOKEN;設計來源用本機 JSON 時可省略)'
     required: false
     default: ''
+  baseline:
+    description: '回歸模式(check --baseline):只擋相對 .parity/baseline.db 新增/惡化的落差'
+    required: false
+    default: 'false'
+  comment:
+    description: '在 PR 上貼/更新還原度報告留言(需 pull-requests: write 權限)'
+    required: false
+    default: 'true'
   upload-report:
-    description: '把 .parity/report.json 當 artifact 上傳'
+    description: '把報告(report.json + Markdown)當 artifact 上傳'
     required: false
     default: 'true'
 
@@ -54,22 +62,50 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: parity install-browser --with-deps
 
+    # 先跑、先產報告,不在這步讓 job 失敗——要等報告貼上 PR 後再擋(見最後一步)
     - name: Run Parity check
+      id: check
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
         FIGMA_TOKEN: ${{ inputs.figma-token }}
       run: |
-        args=(check --config "${{ inputs.config }}")
-        if [ -n "${{ inputs.target }}" ]; then
-          args+=(--target "${{ inputs.target }}")
-        fi
+        set +e
+        args=(check --config "${{ inputs.config }}" --md "$RUNNER_TEMP/parity-report.md")
+        [ -n "${{ inputs.target }}" ] && args+=(--target "${{ inputs.target }}")
+        [ "${{ inputs.baseline }}" = "true" ] && args+=(--baseline)
         parity "${args[@]}"
+        echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+    # 把還原度報告貼成 PR 留言(同一則留言反覆更新,不洗版)
+    - name: Comment report on PR
+      if: ${{ github.event_name == 'pull_request' && inputs.comment == 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        [ -f "$RUNNER_TEMP/parity-report.md" ] || { echo "無報告可貼"; exit 0; }
+        { echo '<!-- parity-report -->'; cat "$RUNNER_TEMP/parity-report.md"; } > "$RUNNER_TEMP/parity-comment.md"
+        pr=${{ github.event.pull_request.number }}
+        existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
+          --jq 'map(select(.body | startswith("<!-- parity-report -->"))) | .[0].id // empty')
+        if [ -n "$existing" ]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$RUNNER_TEMP/parity-comment.md" >/dev/null
+        else
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -F body=@"$RUNNER_TEMP/parity-comment.md" >/dev/null
+        fi
 
     - name: Upload report
       if: ${{ always() && inputs.upload-report == 'true' }}
       uses: actions/upload-artifact@v4
       with:
         name: parity-report
-        path: ${{ inputs.working-directory }}/.parity/report.json
+        path: |
+          ${{ inputs.working-directory }}/.parity/report.json
+          ${{ runner.temp }}/parity-report.md
         if-no-files-found: ignore
+
+    # 報告貼完了,現在才依 gate 結論決定 job 成敗
+    - name: Enforce gate
+      shell: bash
+      run: exit ${{ steps.check.outputs.exit }}

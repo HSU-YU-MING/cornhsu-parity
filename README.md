@@ -131,6 +131,9 @@ on: [pull_request]
 jobs:
   parity:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # 讓 action 把還原度報告貼成 PR 留言
     steps:
       - uses: actions/checkout@v4
       # 起你的站(或改成部署到 preview URL,讓 config 的 url 指過去)
@@ -143,7 +146,12 @@ jobs:
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # 設計來源用本機 JSON 時可省略
 ```
 
-落差超過 `gate.failOn` 門檻 → `parity check` 回傳 exit 1 → PR 被打紅;`report.json` 會當 artifact 上傳供下載。action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `upload-report`。
+行為:
+- **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
+- **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
+- **artifact**:`report.json` + Markdown 報告上傳供下載。
+
+action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
 
 > action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝,需先把套件發佈到 nuget.org(發佈是 release 步驟,尚未做)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 
