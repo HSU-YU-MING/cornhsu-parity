@@ -73,6 +73,25 @@ public class ReportingTests
         Assert.Equal("font-size: 15px", FixHint.For(Diff("fontSize", "15", "20"), tokens));
     }
 
+    // ---------- 衝擊度排序 ----------
+
+    [Fact]
+    public void Impact_orders_by_severity_then_area()
+    {
+        NodeResult N(string layer, Severity sev, double w, double h)
+            => new(layer, layer, "sel", "m", sev, [Diff("width", "1", "2")],
+                default, new Parity.Engine.Model.Box(0, 0, w, h));
+
+        var minorBig = N("minorBig", Severity.Minor, 100, 100);      // 面積 10000,但只 minor
+        var seriousSmall = N("seriousSmall", Severity.Serious, 10, 10); // 面積 100
+        var seriousBig = N("seriousBig", Severity.Serious, 200, 200);   // 面積 40000
+
+        var ordered = Impact.Order([minorBig, seriousSmall, seriousBig]).Select(n => n.DesignLayer).ToList();
+
+        // 嚴重度優先(serious 都在 minor 前);同嚴重度時面積大的先
+        Assert.Equal(["seriousBig", "seriousSmall", "minorBig"], ordered);
+    }
+
     // ---------- Markdown ----------
 
     [Fact]

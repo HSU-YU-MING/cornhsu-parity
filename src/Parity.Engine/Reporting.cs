@@ -3,6 +3,18 @@ using Parity.Engine.Model;
 
 namespace Parity.Engine;
 
+/// <summary>
+/// 落差排序的「衝擊度」——照人眼在意的順序:嚴重度為主,元素在畫面上的面積為輔
+/// (同樣嚴重時,大的、顯眼的先看)。只影響報告呈現順序,不動 gate。
+/// </summary>
+public static class Impact
+{
+    public static double Area(NodeResult n) => Math.Max(0, n.RenderedBox.W) * Math.Max(0, n.RenderedBox.H);
+
+    public static IEnumerable<NodeResult> Order(IEnumerable<NodeResult> nodes)
+        => nodes.OrderByDescending(n => (int)n.Severity).ThenByDescending(Area);
+}
+
 /// <summary>還原度分數(0–100):給 PM 看的一個好消化的數字——忠實實作的設計節點比例(有配對且零落差)。</summary>
 public static class FidelityScore
 {
@@ -128,10 +140,12 @@ public static class MarkdownReport
                 AppendChangeList(sb, "🟢 已修好", baseline.Fixed);
         }
 
-        // 落差表(附建議修法)
-        var rows = reports.SelectMany(r => r.Nodes
-            .Where(n => n.Diffs.Count > 0)
-            .SelectMany(n => n.Diffs.Select(d => (r.Route, n, d)))).ToList();
+        // 落差表(附建議修法)——依衝擊度排序:嚴重度為主、畫面面積為輔,重要的先看
+        var rows = reports
+            .SelectMany(r => r.Nodes.Where(n => n.Diffs.Count > 0).Select(n => (r.Route, Node: n)))
+            .OrderByDescending(x => (int)x.Node.Severity).ThenByDescending(x => Impact.Area(x.Node))
+            .SelectMany(x => x.Node.Diffs.Select(d => (x.Route, x.Node, d)))
+            .ToList();
 
         if (rows.Count > 0)
         {

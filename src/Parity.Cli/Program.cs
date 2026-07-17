@@ -156,7 +156,7 @@ internal static class CheckCommand
         var s = report.Summary;
         Console.WriteLine($"  已配對 {s.Matched}/{s.DesignNodes} 個設計節點;{s.NodesWithDiffs} 個有落差");
 
-        foreach (var node in report.Nodes.Where(n => n.Diffs.Count > 0))
+        foreach (var node in Impact.Order(report.Nodes.Where(n => n.Diffs.Count > 0)))
         {
             Console.WriteLine($"  \x1b[33m✘ {node.DesignLayer}\x1b[0m ‹{node.Selector}› " +
                 $"[{node.Severity.ToString().ToLowerInvariant()}] ({node.MatchedBy})");
