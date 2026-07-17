@@ -263,10 +263,24 @@ function drawRects() {
 
 function select(designId, rerender = true) {
   state.selected = designId;
-  if (rerender) render();
+  // 右側疊框一定要重畫,套用 .selected——即使清單那邊不整個 rerender
+  if (rerender) render(); else drawRects();
+
   const item = document.querySelector(`.node[data-id="${CSS.escape(designId)}"]`);
-  if (item) { item.open = true; item.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
-  else drawRects();
+  if (item) item.open = true;
+
+  // 關鍵:把右側對應的框捲到中央並閃一下,讓「左邊點的 → 右邊在這」一目了然
+  requestAnimationFrame(() => {
+    const rect = $('#rects .rect.rendered.selected')
+      || $('#rects .rect.unmatched.selected')
+      || $('#rects .rect.selected');
+    if (rect) {
+      rect.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+      rect.classList.remove('flash');
+      void rect.offsetWidth;      // 重觸發動畫
+      rect.classList.add('flash');
+    }
+  });
 }
 
 // ---------- 配對模式 ----------
