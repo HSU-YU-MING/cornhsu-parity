@@ -181,6 +181,8 @@ parity baseline list     # 看歷史快照
 - [x] **M3** 本機報告 UI(`parity serve --watch`,Kestrel 綁 127.0.0.1)+ `parity map` 互動配對
 - [x] **M4** GitHub Action:可重用 composite action(`action.yml`)+ 本 repo CI(build / test / 離線示範自我把關)
 - [~] **M5** EF Core + SQLite baseline / 歷史(✓ 回歸把關 `baseline` + `check --baseline`);`ImageDesignSource` 驗證抽象層(待做)
+
+> 未完成、已知盲點與下一步優先序見 [ROADMAP.md](ROADMAP.md);版本變更見 [CHANGELOG.md](CHANGELOG.md)。
 - [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護
 
 ## 安全
