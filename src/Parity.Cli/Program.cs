@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Parity.Cli;
 using Parity.Engine;
+using Parity.Storage;
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -16,6 +17,7 @@ try
         "check" => await CheckCommand.RunAsync(rest),
         "serve" => await ServeCommand.RunAsync(rest),
         "map" => await ServeCommand.RunAsync(rest, mapMode: true),
+        "baseline" => await BaselineCommand.RunAsync(rest),
         "init" => InitCommand.Run(rest),
         "install-browser" => InstallBrowserCommand.Run(rest),
         "help" or "--help" or "-h" => HelpCommand.Run(),
@@ -70,12 +72,50 @@ internal static class CheckCommand
             JsonSerializer.Serialize(scans.Select(s => s.Result.Report), JsonOptions));
         Console.WriteLine($"報告已寫入:{outPath}");
 
+        // --baseline:回歸模式——只擋「相對基準新增/惡化」的落差(適合已有一堆落差的專案漸進導入)
+        if (opts.ContainsKey("--baseline"))
+            return await GateAgainstBaselineAsync(session, scans);
+
         if (session.ShouldFail(scans))
         {
             Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
             return 1;
         }
         Console.WriteLine($"\n\x1b[32m✔ PASS\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
+        return 0;
+    }
+
+    /// <summary>回歸把關:比對現況與最新 baseline,只在有新增/惡化時 GATE FAIL(規畫書 M5)。</summary>
+    private static async Task<int> GateAgainstBaselineAsync(ScanSession session, List<TargetScan> scans)
+    {
+        var current = DiffRecord.FromReports(scans.Select(s => s.Result.Report));
+        await using var store = new BaselineStore(BaselineCommand.BaselineDbPath(session.Config));
+        var baseline = await store.GetLatestAsync();
+
+        if (baseline is null)
+        {
+            Console.WriteLine("\n\x1b[33m(尚無 baseline)\x1b[0m 先跑 `parity baseline save` 建立基準;這次退回一般 gate。");
+            var fail = session.ShouldFail(scans);
+            Console.WriteLine(fail ? "\x1b[31m✘ GATE FAIL\x1b[0m" : "\x1b[32m✔ PASS\x1b[0m");
+            return fail ? 1 : 0;
+        }
+
+        var cmp = BaselineComparer.Compare(current, baseline);
+        Console.WriteLine($"\n對比 baseline — \x1b[31m新增 {cmp.Regressions.Count}\x1b[0m、" +
+            $"\x1b[33m惡化 {cmp.Worsened.Count}\x1b[0m、\x1b[32m修好 {cmp.Fixed.Count}\x1b[0m、不變 {cmp.Unchanged}");
+        foreach (var d in cmp.Regressions)
+            Console.WriteLine($"  \x1b[31m+ 新增\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+        foreach (var d in cmp.Worsened)
+            Console.WriteLine($"  \x1b[33m↑ 惡化\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+        foreach (var d in cmp.Fixed)
+            Console.WriteLine($"  \x1b[32m- 修好\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop}");
+
+        if (cmp.HasRegressions)
+        {
+            Console.WriteLine("\n\x1b[31m✘ GATE FAIL\x1b[0m(相對 baseline 有新增/惡化)");
+            return 1;
+        }
+        Console.WriteLine("\n\x1b[32m✔ PASS\x1b[0m(相對 baseline 無回歸)");
         return 0;
     }
 
@@ -171,10 +211,11 @@ internal static class HelpCommand
             Parity — 數值級設計還原度檢查工具
 
             用法:
-              parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed]
+              parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline]
                   抓設計端與實作端真實數值比對,輸出報告 + exit code
                   --refresh   忽略 Figma 本機快取重抓
                   --headed    顯示瀏覽器視窗(除錯用)
+                  --baseline  回歸模式:只擋「相對基準新增/惡化」的落差(見 parity baseline)
                   target 的 url 可以是:
                     http(s):// 或 file://   一般網頁 / 本機頁面
                     cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
@@ -184,6 +225,8 @@ internal static class HelpCommand
                   --watch     設定/設計/頁面檔變更時自動重掃
               parity map [--config <path>] [--port <n>]
                   互動配對:點選未配對的設計節點 → 點頁面元素 → 寫入 parity.map.json
+              parity baseline save|list
+                  存/看落差基準快照(SQLite);搭配 check --baseline 做回歸把關
               parity init             產生 parity.config.json 範本
               parity install-browser [--with-deps]
                   下載 Playwright Chromium(第一次必要);--with-deps 連系統相依一起裝(CI 用)

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Parity.Engine\Parity.Engine.csproj" />
+    <ProjectReference Include="..\Parity.Storage\Parity.Storage.csproj" />
     <InternalsVisibleTo Include="Parity.Tests" />
   </ItemGroup>
 

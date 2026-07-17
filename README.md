@@ -147,13 +147,29 @@ jobs:
 
 > action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝,需先把套件發佈到 nuget.org(發佈是 release 步驟,尚未做)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 
+## 回歸把關:baseline(M5)
+
+已經有一堆落差的專案,不可能一開就「零落差才給過」。baseline 讓你**只擋新增/惡化**:
+
+```sh
+parity baseline save     # 把當前落差存成基準快照(SQLite,存在 .parity/baseline.db,自動標 git commit)
+parity check --baseline  # 比對現況 vs 最新基準:只有「新增或惡化」才 GATE FAIL
+parity baseline list     # 看歷史快照
+```
+
+- **新增**(基準沒有、現在有)或**惡化**(嚴重度變高)→ exit 1 擋 PR
+- **修好**(基準有、現在沒了)會列出來鼓勵;**不變**的既有落差不擋
+- 適合漸進導入:先 `baseline save` 記錄現況,之後 CI 用 `check --baseline`,團隊只需「不要讓還原度更差」
+
+儲存層是獨立的 `Parity.Storage`(EF Core + SQLite,`Pooling=False` 即時釋放檔案),引擎裡的 `BaselineComparer` 是純函式、可單元測試。
+
 ## 里程碑
 
 - [x] **M1** 引擎 + CLI 雛形:設計端與實作端兩棵數值樹
 - [x] **M2** 比對引擎:配對 + 數值 diff + 容差 + 未配對清單 + gate exit code
 - [x] **M3** 本機報告 UI(`parity serve --watch`,Kestrel 綁 127.0.0.1)+ `parity map` 互動配對
 - [x] **M4** GitHub Action:可重用 composite action(`action.yml`)+ 本 repo CI(build / test / 離線示範自我把關)
-- [ ] **M5** EF Core + SQLite baseline / 歷史;`ImageDesignSource` 驗證抽象層
+- [~] **M5** EF Core + SQLite baseline / 歷史(✓ 回歸把關 `baseline` + `check --baseline`);`ImageDesignSource` 驗證抽象層(待做)
 - [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護
 
 ## 安全

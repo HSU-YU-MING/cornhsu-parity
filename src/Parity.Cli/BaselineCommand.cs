@@ -1,0 +1,119 @@
+using System.Diagnostics;
+using Parity.Engine;
+using Parity.Storage;
+
+namespace Parity.Cli;
+
+/// <summary>parity baseline:把當前落差存成基準 / 看歷史(規畫書 M5)。搭配 `check --baseline` 做回歸把關。</summary>
+internal static class BaselineCommand
+{
+    public static async Task<int> RunAsync(string[] args)
+    {
+        var sub = args.Length > 0 ? args[0].ToLowerInvariant() : "help";
+        var rest = args.Skip(1).ToArray();
+        return sub switch
+        {
+            "save" => await SaveAsync(rest),
+            "list" => await ListAsync(rest),
+            _ => Help(),
+        };
+    }
+
+    /// <summary>跑一次掃描,把當前落差存成新的 baseline 快照。</summary>
+    private static async Task<int> SaveAsync(string[] args)
+    {
+        var opts = CliOptions.Parse(args);
+        var configPath = ResolveConfig(opts);
+
+        await using var session = new ScanSession(configPath, headless: !opts.ContainsKey("--headed"));
+        var scans = await session.RunAsync(opts.GetValueOrDefault("--target"));
+        var diffs = DiffRecord.FromReports(scans.Select(s => s.Result.Report));
+
+        var (commit, branch) = GitInfo.TryRead(session.Config.BaseDirectory);
+        await using var store = new BaselineStore(BaselineDbPath(session.Config));
+        var id = await store.SaveAsync(diffs, DateTime.UtcNow, commit, branch);
+
+        var at = commit is null ? "" : $" @ {Short(commit)}{(branch is null ? "" : $" ({branch})")}";
+        Console.WriteLine($"\x1b[32m✔\x1b[0m 已存 baseline #{id}:{diffs.Count} 條落差{at}");
+        Console.WriteLine("之後用 `parity check --baseline` 只擋「相對此基準新增/惡化」的落差。");
+        return 0;
+    }
+
+    /// <summary>列出歷史 baseline 快照(新到舊)。</summary>
+    private static async Task<int> ListAsync(string[] args)
+    {
+        var opts = CliOptions.Parse(args);
+        var configPath = ResolveConfig(opts);
+        var config = ParityConfig.Load(configPath);
+
+        await using var store = new BaselineStore(BaselineDbPath(config));
+        var history = await store.HistoryAsync();
+        if (history.Count == 0)
+        {
+            Console.WriteLine("尚無 baseline。先跑 `parity baseline save`。");
+            return 0;
+        }
+        Console.WriteLine("\x1b[1mbaseline 歷史\x1b[0m(新→舊):");
+        foreach (var (id, createdAt, commit, diffCount) in history)
+            Console.WriteLine($"  #{id,-4} {createdAt:yyyy-MM-dd HH:mm}  {diffCount,3} 條落差" +
+                (commit is null ? "" : $"  @ {Short(commit)}"));
+        return 0;
+    }
+
+    private static int Help()
+    {
+        Console.WriteLine("""
+            parity baseline — 落差基準 / 歷史(規畫書 M5)
+
+            用法:
+              parity baseline save [--config <path>] [--target <route>]
+                  跑一次掃描,把當前落差存成新的基準快照
+              parity baseline list [--config <path>]
+                  列出歷史基準快照
+
+            搭配:parity check --baseline
+                  比對現況與最新基準,只在「新增或惡化」時才 GATE FAIL(適合已有一堆落差的專案漸進導入)
+            """);
+        return 0;
+    }
+
+    internal static string BaselineDbPath(ParityConfig config)
+        => Path.Combine(config.BaseDirectory, ".parity", "baseline.db");
+
+    private static string ResolveConfig(Dictionary<string, string?> opts)
+        => opts.GetValueOrDefault("--config")
+           ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
+           ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+
+    private static string Short(string commit) => commit.Length > 7 ? commit[..7] : commit;
+}
+
+/// <summary>盡力讀取 git commit / branch(讀不到就回 null,不當錯誤)——給 baseline 快照標記出處。</summary>
+internal static class GitInfo
+{
+    public static (string? Commit, string? Branch) TryRead(string workingDir)
+        => (Run(workingDir, "rev-parse HEAD"), Run(workingDir, "rev-parse --abbrev-ref HEAD"));
+
+    private static string? Run(string workingDir, string args)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("git", args)
+            {
+                WorkingDirectory = workingDir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            if (p is null) return null;
+            var output = p.StandardOutput.ReadToEnd().Trim();
+            p.WaitForExit(2000);
+            return p.ExitCode == 0 && output.Length > 0 ? output : null;
+        }
+        catch
+        {
+            return null; // 沒裝 git / 不是 repo → 靜默略過
+        }
+    }
+}

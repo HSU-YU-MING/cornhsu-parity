@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Parity.Engine\Parity.Engine.csproj" />
     <ProjectReference Include="..\..\src\Parity.Cli\Parity.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Parity.Storage\Parity.Storage.csproj" />
   </ItemGroup>
 
 </Project>
