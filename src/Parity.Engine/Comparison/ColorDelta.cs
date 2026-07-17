@@ -8,7 +8,18 @@ namespace Parity.Engine.Comparison;
 /// </summary>
 public static class ColorDelta
 {
-    public static double Ciede2000(Rgba x, Rgba y) => Ciede2000(ToLab(x), ToLab(y));
+    public static double Ciede2000(Rgba x, Rgba y) => Ciede2000(ToLab(Flatten(x)), ToLab(Flatten(y)));
+
+    /// <summary>
+    /// 半透明色先合成到白底,讓 ΔE 反映「實際看到的顏色」——否則只差 alpha 的兩色會算成 0。
+    /// 不透明(A≥1)原樣回傳,對既有(不透明)比對完全向後相容。假設底色為白(常見預設)。
+    /// </summary>
+    private static Rgba Flatten(Rgba c)
+    {
+        if (c.A >= 1.0) return c;
+        byte Over(byte v) => (byte)Math.Clamp(Math.Round(v * c.A + 255 * (1 - c.A)), 0, 255);
+        return new Rgba(Over(c.R), Over(c.G), Over(c.B), 1.0);
+    }
 
     /// <summary>sRGB(0–255)→ CIELAB,D65 白點。</summary>
     public static (double L, double A, double B) ToLab(Rgba c)

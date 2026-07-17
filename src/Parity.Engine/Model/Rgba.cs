@@ -33,23 +33,56 @@ public readonly record struct Rgba(byte R, byte G, byte B, double A = 1.0)
             return true;
         }
 
-        if (s.StartsWith("rgb", StringComparison.OrdinalIgnoreCase))
-        {
-            var open = s.IndexOf('(');
-            var close = s.IndexOf(')');
-            if (open < 0 || close <= open) return false;
-            var parts = s[(open + 1)..close].Split(',', StringSplitOptions.TrimEntries);
-            if (parts.Length is not (3 or 4)) return false;
-            if (!double.TryParse(parts[0], CultureInfo.InvariantCulture, out var r) ||
-                !double.TryParse(parts[1], CultureInfo.InvariantCulture, out var g) ||
-                !double.TryParse(parts[2], CultureInfo.InvariantCulture, out var b)) return false;
-            var a2 = 1.0;
-            if (parts.Length == 4 && !double.TryParse(parts[3], CultureInfo.InvariantCulture, out a2)) return false;
-            color = new Rgba(ClampByte(r), ClampByte(g), ClampByte(b), Math.Clamp(a2, 0, 1));
-            return true;
-        }
+        // 函式式:rgb()/rgba()、以及 color(srgb …)。分隔支援逗號或空白、斜線 alpha、百分比
+        // (新版 Chrome computed style 可能回 "rgb(37 99 235 / .5)" 或 "color(srgb …)")。
+        var open = s.IndexOf('(');
+        var close = s.LastIndexOf(')');
+        if (open < 0 || close <= open) return false;
+        var head = s[..open].Trim().ToLowerInvariant();
+        var inner = s[(open + 1)..close];
 
+        if (head is "rgb" or "rgba")
+            return TryParseComponents(inner, srgb01: false, out color);
+        if (head == "color")
+        {
+            inner = inner.TrimStart();
+            if (inner.StartsWith("srgb", StringComparison.OrdinalIgnoreCase))
+                return TryParseComponents(inner[4..], srgb01: true, out color);
+            return false; // display-p3 / oklch / lab 等色域暫不支援
+        }
         return false;
+    }
+
+    /// <summary>解析 "r g b [/ a]"(逗號/空白/斜線分隔;% 允許)。srgb01=true 時分量是 0–1。</summary>
+    private static bool TryParseComponents(string inner, bool srgb01, out Rgba color)
+    {
+        color = default;
+        var tok = inner.Replace(',', ' ').Replace('/', ' ')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tok.Length is not (3 or 4)) return false;
+
+        var scale = srgb01 ? 255.0 : 1.0;
+        if (!Comp(tok[0], scale, out var r) || !Comp(tok[1], scale, out var g) || !Comp(tok[2], scale, out var b))
+            return false;
+        var a = 1.0;
+        if (tok.Length == 4 && !Alpha(tok[3], out a)) return false;
+
+        color = new Rgba(ClampByte(r), ClampByte(g), ClampByte(b), Math.Clamp(a, 0, 1));
+        return true;
+
+        static bool Comp(string t, double scale, out double v)
+        {
+            if (t.EndsWith('%') && double.TryParse(t[..^1], CultureInfo.InvariantCulture, out var p))
+            { v = p / 100.0 * 255.0; return true; }
+            var ok = double.TryParse(t, CultureInfo.InvariantCulture, out var n);
+            v = n * scale; return ok;
+        }
+        static bool Alpha(string t, out double a)
+        {
+            if (t.EndsWith('%') && double.TryParse(t[..^1], CultureInfo.InvariantCulture, out var p))
+            { a = p / 100.0; return true; }
+            return double.TryParse(t, CultureInfo.InvariantCulture, out a);
+        }
     }
 
     private static byte ClampByte(double v) => (byte)Math.Clamp(Math.Round(v), 0, 255);

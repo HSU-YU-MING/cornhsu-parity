@@ -38,6 +38,17 @@ public class ColorDeltaTests
     }
 
     [Fact]
+    public void Alpha_difference_produces_nonzero_delta()
+    {
+        // 只差 alpha 的兩色不該算成 0(半透明先合成到白底)
+        var opaqueBlack = new Rgba(0, 0, 0, 1.0);
+        var halfBlack = new Rgba(0, 0, 0, 0.5); // 合成到白 → 灰
+        Assert.True(ColorDelta.Ciede2000(opaqueBlack, halfBlack) > 1.0);
+        // 不透明相同色仍為 0(向後相容)
+        Assert.Equal(0, ColorDelta.Ciede2000(opaqueBlack, opaqueBlack), 6);
+    }
+
+    [Fact]
     public void White_lab_is_100_0_0()
     {
         var (l, a, b) = ColorDelta.ToLab(new Rgba(255, 255, 255));
@@ -55,6 +66,11 @@ public class RgbaParseTests
     [InlineData("rgb(37, 99, 235)", 37, 99, 235, 1.0)]
     [InlineData("rgba(37, 99, 235, 0.5)", 37, 99, 235, 0.5)]
     [InlineData("rgba(0, 0, 0, 0)", 0, 0, 0, 0.0)]
+    // 現代 CSS Color 4 / 新版 Chrome computed style
+    [InlineData("rgb(37 99 235)", 37, 99, 235, 1.0)]
+    [InlineData("rgb(37 99 235 / 0.5)", 37, 99, 235, 0.5)]
+    [InlineData("rgba(37 99 235 / 50%)", 37, 99, 235, 0.5)]
+    [InlineData("color(srgb 0.145 0.388 0.922)", 37, 99, 235, 1.0)]
     public void Parses_css_colors(string css, int r, int g, int b, double a)
     {
         Assert.True(Rgba.TryParseCss(css, out var c));
