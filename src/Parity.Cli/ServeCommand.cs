@@ -55,7 +55,13 @@ internal static class ServeCommand
 
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = new PhysicalFileProvider(wwwroot) });
-        app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(wwwroot) });
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new PhysicalFileProvider(wwwroot),
+            // 本機報告 UI:每次都跟伺服器核對(no-cache)。工具更新後 app.js/css/index.html
+            // 不會卡在瀏覽器舊快取——檔案沒變靠 ETag 回 304(便宜),變了就拿到新版。
+            OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+        });
 
         // ---- API ----
 
