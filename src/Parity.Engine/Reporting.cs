@@ -134,17 +134,29 @@ public static class MarkdownReport
     public static string Render(
         IReadOnlyList<FidelityReport> reports, bool gateFail,
         BaselineComparison? baseline = null, DesignTokens? tokens = null,
-        IReadOnlyList<string>? gateNotes = null)
+        IReadOnlyList<string>? gateNotes = null,
+        string? figmaFileKey = null, int? baselineScore = null)
     {
         var score = FidelityScore.Compute(reports);
         var total = reports.Sum(r => r.Summary.DesignNodes);
         var clean = reports.Sum(r => r.Nodes.Count(FidelityScore.IsFaithful));
         var multi = reports.Count > 1;
 
+        // 圖層名連回 Figma 節點(設計來源是 Figma 才有;設計師點了直接跳到那個圖層)
+        string Layer(string name, string designId)
+            => figmaFileKey is not null && designId.Length > 0
+                ? $"[`{Esc(name)}`](https://www.figma.com/design/{Uri.EscapeDataString(figmaFileKey)}?node-id={Uri.EscapeDataString(designId.Replace(':', '-'))})"
+                : $"`{Esc(name)}`";
+
+        // 分數走勢(baseline 模式且基準有存分數):PM 一眼看到方向
+        var trend = baselineScore is { } bs
+            ? $"(基準 {bs} {(score > bs ? $"↑ +{score - bs}" : score < bs ? $"↓ {score - bs}" : "→ ±0")})"
+            : "";
+
         var sb = new StringBuilder();
         sb.AppendLine("## Parity — 設計還原度報告");
         sb.AppendLine();
-        sb.AppendLine($"**還原度 {score}/100** · {(gateFail ? "❌ **GATE FAIL**" : "✅ PASS")} · " +
+        sb.AppendLine($"**還原度 {score}/100**{trend} · {(gateFail ? "❌ **GATE FAIL**" : "✅ PASS")} · " +
             $"{clean}/{total} 個設計節點忠實實作");
         sb.AppendLine();
 
@@ -189,8 +201,8 @@ public static class MarkdownReport
                 var sev = d.Soft ? $"{d.Severity.ToString().ToLowerInvariant()}(soft)" : d.Severity.ToString().ToLowerInvariant();
                 var fix = FixHint.For(d, tokens) is { } f ? $"`{Esc(f)}`" : "—";
                 var cells = multi
-                    ? $"| {Esc(route)} | `{Esc(n.DesignLayer)}` | {d.Prop} | {arrow} | {sev} | {fix} |"
-                    : $"| `{Esc(n.DesignLayer)}` | {d.Prop} | {arrow} | {sev} | {fix} |";
+                    ? $"| {Esc(route)} | {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |"
+                    : $"| {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |";
                 sb.AppendLine(cells);
             }
             sb.AppendLine();
@@ -203,7 +215,7 @@ public static class MarkdownReport
             sb.AppendLine($"### 未配對({unmatched.Count})— 需 `data-parity` 或 `parity map` 補");
             sb.AppendLine();
             foreach (var (route, u) in unmatched)
-                sb.AppendLine($"- {(multi ? $"`{Esc(route)}` " : "")}`{Esc(u.DesignLayer)}` — {u.Reason}");
+                sb.AppendLine($"- {(multi ? $"`{Esc(route)}` " : "")}{Layer(u.DesignLayer, u.DesignId)} — {u.Reason}");
             sb.AppendLine();
         }
 

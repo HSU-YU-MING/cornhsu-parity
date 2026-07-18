@@ -110,16 +110,18 @@ public class BaselineStoreTests
             await using (var store = new BaselineStore(path))
                 await store.SaveAsync(
                     [new DiffRecord("/", "btn", "sel", "color", Severity.Serious, "e", "a")],
-                    new DateTime(2026, 7, 16), commit: "abc1234", branch: "main");
+                    new DateTime(2026, 7, 16), commit: "abc1234", branch: "main", score: 83);
 
             await using (var store = new BaselineStore(path))
             {
                 var latest = await store.GetLatestAsync();
                 Assert.NotNull(latest);
-                var d = Assert.Single(latest);
+                var d = Assert.Single(latest.Diffs);
                 Assert.Equal("btn", d.DesignLayer);
                 Assert.Equal(Severity.Serious, d.Severity);
-                Assert.Single(await store.HistoryAsync());
+                Assert.Equal(83, latest.Score);
+                var h = Assert.Single(await store.HistoryAsync());
+                Assert.Equal(83, h.Score);
             }
         }
         finally { if (File.Exists(path)) File.Delete(path); }
@@ -138,7 +140,8 @@ public class BaselineStoreTests
                 new DateTime(2026, 7, 16));
 
             var latest = await store.GetLatestAsync();
-            Assert.Equal("new", Assert.Single(latest!).DesignLayer);
+            Assert.Equal("new", Assert.Single(latest!.Diffs).DesignLayer);
+            Assert.Null(latest.Score); // 沒給分數的快照(舊版行為)→ null,不炸
             Assert.Equal(2, (await store.HistoryAsync()).Count);
         }
         finally { if (File.Exists(path)) File.Delete(path); }

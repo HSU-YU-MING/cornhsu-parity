@@ -86,6 +86,8 @@ electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
 - **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
 - **字體**:size / weight / line-height / letter-spacing 精確比;font-family 是**軟落差**(不擋 gate)
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
+
+> 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
 
 ## 配對策略(以設計端為錨)
@@ -169,9 +171,9 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 已經有一堆落差的專案,不可能一開就「零落差才給過」。baseline 讓你**只擋新增/惡化**:
 
 ```sh
-parity baseline save     # 把當前落差存成基準快照(SQLite,存 parity.baseline.db,自動標 git commit)
-parity check --baseline  # 比對現況 vs 最新基準:只有「新增或惡化」才 GATE FAIL
-parity baseline list     # 看歷史快照
+parity baseline save     # 把當前落差 + 還原度分數存成基準快照(SQLite,存 parity.baseline.db,自動標 git commit)
+parity check --baseline  # 比對現況 vs 最新基準:只有「新增或惡化」才 GATE FAIL;並顯示分數走勢(基準 75 → 現在 83 ↑)
+parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM 看方向)
 ```
 
 > **CI 要用 `--baseline`,記得 `git add parity.baseline.db` 一起 commit**——它刻意放 repo 根(不放 `.parity/`,那裡通常被 gitignore),否則 CI 找不到基準會靜默退回一般 gate。路徑可用 config `baselineFile` 改。

@@ -43,6 +43,14 @@ header {
 .badge.pass { background: #14532d; color: var(--ok); }
 .badge.fail { background: #7f1d1d; color: var(--critical); }
 
+.score { font-size: 12px; font-weight: 600; color: var(--accent); }
+
+a.fig {
+  color: var(--accent); text-decoration: none;
+  font-size: 12px; margin-left: 2px; flex-shrink: 0;
+}
+a.fig:hover { filter: brightness(1.3); }
+
 .tabs { display: flex; gap: 4px; }
 .tabs button {
   background: transparent; color: var(--muted);

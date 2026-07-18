@@ -39,14 +39,16 @@ internal static class BaselineCommand
             return 2;
         }
 
-        var diffs = DiffRecord.FromReports(scans.Select(s => s.Result.Report));
+        var reports = scans.Select(s => s.Result.Report).ToList();
+        var diffs = DiffRecord.FromReports(reports);
+        var score = FidelityScore.Compute(reports);
 
         var (commit, branch) = GitInfo.TryRead(session.Config.BaseDirectory);
         await using var store = new BaselineStore(BaselineDbPath(session.Config));
-        var id = await store.SaveAsync(diffs, DateTime.UtcNow, commit, branch);
+        var id = await store.SaveAsync(diffs, DateTime.UtcNow, commit, branch, score);
 
         var at = commit is null ? "" : $" @ {Short(commit)}{(branch is null ? "" : $" ({branch})")}";
-        Console.WriteLine($"\x1b[32m✔\x1b[0m 已存 baseline #{id}:{diffs.Count} 條落差{at}");
+        Console.WriteLine($"\x1b[32m✔\x1b[0m 已存 baseline #{id}:{diffs.Count} 條落差 · 還原度 {score}/100{at}");
         Console.WriteLine("之後用 `parity check --baseline` 只擋「相對此基準新增/惡化」的落差。");
         return 0;
     }
@@ -65,9 +67,9 @@ internal static class BaselineCommand
             Console.WriteLine("尚無 baseline。先跑 `parity baseline save`。");
             return 0;
         }
-        Console.WriteLine("\x1b[1mbaseline 歷史\x1b[0m(新→舊):");
-        foreach (var (id, createdAt, commit, diffCount) in history)
-            Console.WriteLine($"  #{id,-4} {createdAt:yyyy-MM-dd HH:mm}  {diffCount,3} 條落差" +
+        Console.WriteLine("\x1b[1mbaseline 歷史\x1b[0m(新→舊,分數欄 = 還原度走勢):");
+        foreach (var (id, createdAt, commit, diffCount, score) in history)
+            Console.WriteLine($"  #{id,-4} {createdAt:yyyy-MM-dd HH:mm}  {diffCount,3} 條落差  {(score is { } s ? $"{s,3}/100" : "  —  ")}" +
                 (commit is null ? "" : $"  @ {Short(commit)}"));
         return 0;
     }

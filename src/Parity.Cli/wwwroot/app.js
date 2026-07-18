@@ -47,6 +47,7 @@ function render() {
   badge.className = 'badge ' + (d.gateFail ? 'fail' : 'pass');
   // 不過的原因(例如 0 配對——畫面上沒半條落差,卻 FAIL)滑鼠移上去要看得到
   badge.title = (d.gateReasons || []).join('\n');
+  $('#score').textContent = `還原度 ${d.score}/100`;
   $('#generated-at').textContent = new Date(d.generatedAt).toLocaleTimeString();
   $('#watch-dot').hidden = !d.watch;
 
@@ -117,6 +118,8 @@ function renderSidebar() {
       el.dataset.id = u.designId;
       el.innerHTML = `<span class="sev critical"></span><span class="name"></span><span class="reason">${u.reason}</span>`;
       el.querySelector('.name').textContent = u.designLayer;
+      const fig = figmaLink(u.designId);
+      if (fig) el.querySelector('.name').after(fig);
       el.onclick = () => select(u.designId);
       side.appendChild(el);
     }
@@ -139,6 +142,8 @@ function nodeItem(n, open) {
     <span class="how">${matchedByLabel[n.matchedBy] ?? n.matchedBy}</span><span class="sel"></span>`;
   sum.querySelector('.name').textContent = n.designLayer;
   sum.querySelector('.sel').textContent = n.selector;
+  const fig = figmaLink(n.designId);
+  if (fig) sum.querySelector('.name').after(fig);
   sum.addEventListener('click', () => select(n.designId, false));
   det.appendChild(sum);
 
@@ -164,6 +169,20 @@ function nodeItem(n, open) {
     det.appendChild(table);
   }
   return det;
+}
+
+// 設計來源是 Figma 時,給「跳回那個圖層」的小連結(設計師的入口)
+function figmaLink(designId) {
+  if (!state.data.figmaFileKey || !designId) return null;
+  const a = document.createElement('a');
+  a.className = 'fig';
+  a.textContent = '↗';
+  a.title = '在 Figma 開啟這個圖層';
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.href = `https://www.figma.com/design/${encodeURIComponent(state.data.figmaFileKey)}?node-id=${encodeURIComponent(designId.replaceAll(':', '-'))}`;
+  a.onclick = (e) => e.stopPropagation();
+  return a;
 }
 
 function renderStage() {

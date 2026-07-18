@@ -149,6 +149,31 @@ public class ReportingTests
     }
 
     [Fact]
+    public void Markdown_links_layers_to_figma_when_filekey_given()
+    {
+        // 設計來源是 Figma → 圖層名連回該節點(node-id 的 ":" 要換 "-");沒給 fileKey 就是純文字
+        var node = new NodeResult("cta", "10:2", "sel", "auto-text", Severity.Serious,
+            [Diff("fontSize", "32", "30")]);
+        var report = Report(2, [node], [new UnmatchedNode("badge", "10:7", "no-anchor")]);
+
+        var linked = MarkdownReport.Render([report], gateFail: true, figmaFileKey: "abcKey");
+        Assert.Contains("[`cta`](https://www.figma.com/design/abcKey?node-id=10-2)", linked);
+        Assert.Contains("[`badge`](https://www.figma.com/design/abcKey?node-id=10-7)", linked);
+
+        var plain = MarkdownReport.Render([report], gateFail: true);
+        Assert.DoesNotContain("figma.com", plain);
+    }
+
+    [Fact]
+    public void Markdown_shows_score_trend_against_baseline()
+    {
+        // 2 個節點 1 個乾淨 → 50 分;基準 75 → 顯示走勢往下
+        var report = Report(2, [Node("bad", Diff("fontSize", "32", "30")), Node("ok")]);
+        var md = MarkdownReport.Render([report], gateFail: true, baselineScore: 75);
+        Assert.Contains("**還原度 50/100**(基準 75 ↓ -25)", md);
+    }
+
+    [Fact]
     public void Markdown_pipe_in_value_is_escaped()
     {
         // 值裡有 | 不能破壞表格

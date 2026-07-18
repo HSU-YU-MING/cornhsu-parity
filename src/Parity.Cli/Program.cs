@@ -100,7 +100,8 @@ internal static class CheckCommand
     /// <summary>--md &lt;path&gt;:把報告輸出成 Markdown(可分享 / 貼 PR 留言);有設定 tokensFile 就帶進 token 提示。</summary>
     private static void WriteMarkdown(
         Dictionary<string, string?> opts, ParityConfig config, IReadOnlyList<FidelityReport> reports,
-        bool gateFail, BaselineComparison? baseline = null, IReadOnlyList<string>? gateNotes = null)
+        bool gateFail, BaselineComparison? baseline = null, IReadOnlyList<string>? gateNotes = null,
+        int? baselineScore = null)
     {
         if (opts.GetValueOrDefault("--md") is not { } mdPath) return;
         var tokens = config.TokensFile is { } tf
@@ -108,7 +109,9 @@ internal static class CheckCommand
             : null;
         var full = Path.GetFullPath(mdPath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        File.WriteAllText(full, MarkdownReport.Render(reports, gateFail, baseline, tokens, gateNotes));
+        File.WriteAllText(full, MarkdownReport.Render(
+            reports, gateFail, baseline, tokens, gateNotes,
+            figmaFileKey: config.FigmaFileKey, baselineScore: baselineScore));
         Console.WriteLine($"Markdown 報告:{full}");
     }
 
@@ -143,10 +146,19 @@ internal static class CheckCommand
             return fail ? 1 : 0;
         }
 
-        var cmp = BaselineComparer.Compare(current, baseline);
-        WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp);
+        var cmp = BaselineComparer.Compare(current, baseline.Diffs);
+        WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp, baselineScore: baseline.Score);
         Console.WriteLine($"\n對比 baseline — \x1b[31m新增 {cmp.Regressions.Count}\x1b[0m、" +
             $"\x1b[33m惡化 {cmp.Worsened.Count}\x1b[0m、\x1b[32m修好 {cmp.Fixed.Count}\x1b[0m、不變 {cmp.Unchanged}");
+
+        // 分數走勢——PM 要的「方向」:相對基準是往上還是往下
+        if (baseline.Score is { } baseScore)
+        {
+            var score = FidelityScore.Compute(reports);
+            var trend = score > baseScore ? $"\x1b[32m↑ +{score - baseScore}\x1b[0m"
+                : score < baseScore ? $"\x1b[31m↓ {score - baseScore}\x1b[0m" : "→ ±0";
+            Console.WriteLine($"還原度走勢:基準 {baseScore}/100 → 現在 {score}/100({trend})");
+        }
         foreach (var d in cmp.Regressions)
             Console.WriteLine($"  \x1b[31m+ 新增\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
         foreach (var d in cmp.Worsened)

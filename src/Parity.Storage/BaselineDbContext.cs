@@ -10,6 +10,8 @@ public sealed class BaselineSnapshot
     public DateTime CreatedAt { get; set; }
     public string? Commit { get; set; }
     public string? Branch { get; set; }
+    /// <summary>存檔當下的還原度分數(0–100)。快照序列 = 分數走勢,給 PM 看方向。0.6.0 加入,舊快照為 null。</summary>
+    public int? Score { get; set; }
     public List<StoredDiff> Diffs { get; set; } = [];
 }
 

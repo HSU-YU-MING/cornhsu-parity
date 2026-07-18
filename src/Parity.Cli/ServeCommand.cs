@@ -92,6 +92,8 @@ internal static class ServeCommand
             generatedAt = state.GeneratedAt,
             gateFail = state.GateFail,
             gateReasons = state.GateReasons,
+            score = state.Score,
+            figmaFileKey = session.Config.FigmaFileKey,
             failOn = session.Config.Gate.FailOn,
             watch,
             targets = state.Scans.Select((s, i) => new
@@ -260,6 +262,7 @@ internal static class ServeCommand
         public List<TargetScan> Scans { get; private set; } = [];
         public bool GateFail { get; private set; }
         public List<string> GateReasons { get; private set; } = [];
+        public int Score { get; private set; } = 100;
         public DateTimeOffset GeneratedAt { get; private set; }
 
         public async Task RescanAsync()
@@ -270,6 +273,7 @@ internal static class ServeCommand
                 Scans = await session.RunAsync();
                 GateReasons = session.GateFailReasons(Scans);
                 GateFail = GateReasons.Count > 0;
+                Score = FidelityScore.Compute(Scans.Select(s => s.Result.Report));
                 GeneratedAt = DateTimeOffset.Now;
             }
             finally { _gate.Release(); }
