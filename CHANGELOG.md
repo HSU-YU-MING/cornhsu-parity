@@ -2,6 +2,14 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發布
+
+實作端覆蓋率的兩塊大拼圖:
+
+- **Shadow DOM / iframe 走訪**:擷取腳本改走「組合樹」——open shadow root、`<slot>` 實際塞進的內容、同源 iframe(含 `srcdoc`)全部看得到、比得到,web components 網站不再整塊隱形。內部座標平移回外層頁面座標系;selector 以 `host >>> 內部路徑` 表示。closed shadow root / 跨域 iframe 拿不到 → 誠實跳過;map 檔 selector 搆不到 shadow 內(`data-parity` 不受限)。實測:shadow 內改背景色、iframe 內改尺寸都精準抓到,demo 輸出零變化。
+- **RWD 多斷點**:同一 URL 各斷點對各自的 Figma frame 就能測(渲染視窗 = frame 尺寸,media query 自然生效)——這其實一直可行,本次補上文件、實測(桌機綠/手機紅的精準隔離),並新增 target 級 `width`/`height` 覆蓋(frame 寬 ≠ 視窗寬的少數情況;snapshot 也吃)。
+- M6 雲端外殼:明文**不做**(除非出現真實使用者)——設計 QA 是上線前的活,報告分享 PR 留言已覆蓋;決定記 ROADMAP。
+
 ## 0.7.0
 
 **M5 下半完工,M1–M5 全部收官**——兩種新設計來源:

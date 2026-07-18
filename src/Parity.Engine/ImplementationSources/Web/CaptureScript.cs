@@ -6,6 +6,11 @@ namespace Parity.Engine.ImplementationSources.Web;
 ///   - getBoundingClientRect 相對視窗 → 加 scroll 位移變「相對頁面 root」
 ///   - getComputedStyle 拿實際樣式;背景 transparent 時沿祖先鏈找有效背景(避免顏色誤報)
 ///   - data-parity 屬性與 map 檔 selector 都標成 explicitMatch(手動錨點)
+///   - 走「組合樹」:shadow host 走 shadowRoot(open)、&lt;slot&gt; 走 assignedElements、
+///     同源 iframe(含 srcdoc)走進去並把座標平移回外層頁面座標系——
+///     web components 網站的內容不再整塊看不見。closed shadow root 與跨域 iframe 拿不到,誠實跳過。
+///     限制:map 檔的 selector 用 document.querySelector 解析,搆不到 shadow/iframe 內
+///     (data-parity 屬性不受限,照常可用);shadow/iframe 內的 selector 以「host &gt;&gt;&gt; 內部路徑」表示,僅供人讀與 UI 顯示。
 /// </summary>
 internal static class CaptureScript
 {
@@ -13,7 +18,7 @@ internal static class CaptureScript
         (input) => {
           const { mapSelectors, ignoreSelectors } = input || {};
 
-          // map 檔:在頁面內解析 selector,把命中的元素標上圖層名
+          // map 檔:在頁面內解析 selector,把命中的元素標上圖層名(light DOM 限定)
           const mapped = new Map();
           for (const [name, sel] of Object.entries(mapSelectors || {})) {
             try { const el = document.querySelector(sel); if (el) mapped.set(el, name); } catch {}
@@ -24,20 +29,25 @@ internal static class CaptureScript
             try { document.querySelectorAll(sel).forEach(el => ignored.add(el)); } catch {}
           }
 
-          const cssPath = (el) => {
-            if (el === document.body) return 'body';
-            if (el.id) return '#' + CSS.escape(el.id);
+          // el 在自己的 root(body / shadowRoot / iframe body)內的路徑;prefix 帶上外層脈絡
+          const pathIn = (el, stopNode, prefix, rootLabel) => {
+            if (el === stopNode) return prefix + rootLabel;
+            if (el.id) return prefix + '#' + CSS.escape(el.id);
             const parts = [];
             let cur = el;
-            while (cur && cur.nodeType === 1 && cur !== document.body) {
+            while (cur && cur.nodeType === 1 && cur !== stopNode) {
               let idx = 1, sib = cur;
               while ((sib = sib.previousElementSibling)) if (sib.tagName === cur.tagName) idx++;
               parts.unshift(cur.tagName.toLowerCase() + ':nth-of-type(' + idx + ')');
-              cur = cur.parentElement;
-              if (cur && cur.id) { parts.unshift('#' + CSS.escape(cur.id)); return parts.join(' > '); }
+              const parent = cur.parentElement;
+              if (parent && parent !== stopNode && parent.id) {
+                parts.unshift('#' + CSS.escape(parent.id));
+                return prefix + parts.join(' > ');
+              }
+              cur = parent; // shadow 頂端 parentElement 為 null → 自然離開迴圈
             }
-            parts.unshift('body');
-            return parts.join(' > ');
+            if (rootLabel) parts.unshift(rootLabel);
+            return prefix + parts.join(' > ');
           };
 
           const effectiveBg = (el) => {
@@ -45,34 +55,69 @@ internal static class CaptureScript
             while (cur && cur.nodeType === 1) {
               const bg = getComputedStyle(cur).backgroundColor;
               if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
-              cur = cur.parentElement;
+              // 穿過 shadow 邊界往 host 找(組合樹的視覺祖先)
+              cur = cur.parentElement ?? (cur.parentNode && cur.parentNode.host ? cur.parentNode.host : null);
             }
             return null;
           };
 
           const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'META', 'LINK']);
 
-          const walk = (el) => {
+          // ctx = { ox, oy(座標平移), stop(路徑的 root), prefix, rootLabel }
+          const walk = (el, ctx) => {
             if (SKIP.has(el.tagName) || ignored.has(el)) return null;
-            const s = getComputedStyle(el);
+            const win = el.ownerDocument.defaultView;
+            const s = win.getComputedStyle(el);
             if (s.display === 'none' || s.visibility === 'hidden') return null;
             const r = el.getBoundingClientRect();
+            const selfPath = pathIn(el, ctx.stop, ctx.prefix, ctx.rootLabel);
+
+            // 組合樹的子節點(kidCtx 必須是區域變數:遞迴共用會互相污染脈絡)
+            let kids, ctxForKids;
+            if (el.shadowRoot) {
+              // host → 走 shadowRoot(slot 會把 light 子節點帶回來,不會重複)
+              kids = [...el.shadowRoot.children];
+              ctxForKids = { ...ctx, stop: el.shadowRoot, prefix: selfPath + ' >>> ', rootLabel: '' };
+            } else if (el.tagName === 'SLOT') {
+              const assigned = el.assignedElements();
+              kids = assigned.length ? assigned : [...el.children];
+              ctxForKids = ctx; // 塞進來的是外層 light DOM 的元素,脈絡沿用
+            } else {
+              kids = [...el.children];
+              ctxForKids = ctx;
+            }
 
             const children = [];
-            for (const c of el.children) { const n = walk(c); if (n) children.push(n); }
+            for (const c of kids) { const n = walk(c, ctxForKids); if (n) children.push(n); }
+
+            // 同源 iframe(含 srcdoc):走進去,座標平移回外層頁面座標系;跨域拿不到 → 誠實跳過
+            if (el.tagName === 'IFRAME') {
+              try {
+                const doc = el.contentDocument;
+                if (doc && doc.body) {
+                  const iox = r.x + ctx.ox + el.clientLeft - (el.contentWindow.scrollX || 0);
+                  const ioy = r.y + ctx.oy + el.clientTop - (el.contentWindow.scrollY || 0);
+                  const inner = walk(doc.body, {
+                    ox: iox, oy: ioy,
+                    stop: doc.body, prefix: selfPath + ' >>> ', rootLabel: 'body',
+                  });
+                  if (inner) children.push(inner);
+                }
+              } catch { /* 跨域 */ }
+            }
 
             let ownText = '';
             for (const n of el.childNodes) if (n.nodeType === 3) ownText += n.textContent;
             ownText = ownText.replace(/\s+/g, ' ').trim();
 
             return {
-              selector: cssPath(el),
+              selector: selfPath,
               tag: el.tagName.toLowerCase(),
               text: ownText || null,
               domId: el.id || null,
               classes: (typeof el.className === 'string' && el.className) ? el.className : null,
               ariaLabel: el.getAttribute('aria-label') || el.getAttribute('data-testid') || null,
-              box: { x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height },
+              box: { x: r.x + ctx.ox, y: r.y + ctx.oy, w: r.width, h: r.height },
               color: s.color,
               background: s.backgroundColor,
               effectiveBackground: effectiveBg(el),
@@ -89,7 +134,8 @@ internal static class CaptureScript
           // 回傳 JSON 字串(而非物件):Playwright 的 JS→C# 值序列化外殼會把每層巢狀放大成
           // 數層協定 JSON,~16 層以上的真實 DOM 就會超過 System.Text.Json 預設 MaxDepth(64)而 crash。
           // 字串在協定裡只有一層,C# 端再自行用放寬的 MaxDepth 解析。
-          return JSON.stringify(walk(document.body));
+          return JSON.stringify(walk(document.body,
+            { ox: scrollX, oy: scrollY, stop: document.body, prefix: '', rootLabel: 'body' }));
         }
         """;
 }

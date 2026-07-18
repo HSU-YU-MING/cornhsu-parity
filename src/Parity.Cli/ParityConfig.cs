@@ -167,6 +167,14 @@ public sealed class TargetConfig
     /// <summary>Figma frame 的 nodeId(如 "10:2");DesignFile 模式下可留空(整棵樹)。</summary>
     public string Frame { get; set; } = "";
     public string Url { get; set; } = "";
+
+    /// <summary>
+    /// 視窗寬/高(選填)。預設 = 設計 frame 尺寸——RWD 多斷點通常**不用填**:
+    /// 手機 frame 畫 375 寬,渲染就用 375 寬,media query 自然生效。
+    /// 只有「frame 寬 ≠ 想測的視窗寬」時才需要覆蓋(snapshot 模式也吃這裡)。
+    /// </summary>
+    public int? Width { get; set; }
+    public int? Height { get; set; }
 }
 
 public sealed class CompareConfig

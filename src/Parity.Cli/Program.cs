@@ -293,7 +293,7 @@ internal static class SnapshotCommand
         foreach (var (t, i) in targets.Select((t, i) => (t, i)))
         {
             var url = ScanSession.ResolveUrl(t.Url, config.BaseDirectory);
-            var tree = await impl.CaptureAsync(new ImplRef(url, width, height)
+            var tree = await impl.CaptureAsync(new ImplRef(url, t.Width ?? width, t.Height ?? height)
             {
                 IgnoreSelectors = config.Ignore,
             });

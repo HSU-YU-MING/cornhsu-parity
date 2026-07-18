@@ -107,6 +107,25 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 > 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
 
+## RWD 多斷點
+
+同一個 URL、不同斷點,各對一個 Figma frame 即可——**渲染視窗 = frame 尺寸**,手機 frame 畫 375 寬,media query 自然生效:
+
+```jsonc
+"targets": [
+  { "route": "/desktop", "frame": "10:2",  "url": "http://localhost:8080/" },
+  { "route": "/mobile",  "frame": "10:99", "url": "http://localhost:8080/" }   // frame 是 375 寬的手機版
+]
+```
+
+route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測的視窗寬時,才需要在 target 加 `width` / `height` 覆蓋。
+
+## Shadow DOM / iframe
+
+擷取走**組合樹**:open shadow root、`<slot>` 塞進來的內容、同源 iframe(含 `srcdoc`)都看得到、都會比——web components 網站不再整塊隱形。shadow / iframe 內的元素 selector 以 `host >>> 內部路徑` 表示。
+
+限制(誠實列):closed shadow root 與跨域 iframe 拿不到,跳過;map 檔的 selector 搆不到 shadow 內(`data-parity` 屬性不受限,照常可用)。
+
 ## 配對策略(以設計端為錨)
 
 1. **自動文字錨定**:設計 TEXT 文字 ↔ 頁面文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)

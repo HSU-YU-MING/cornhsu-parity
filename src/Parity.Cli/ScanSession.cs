@@ -63,7 +63,8 @@ public sealed class ScanSession : IAsyncDisposable
                 NodeId: target.Frame);
 
             var url = ResolveUrl(target.Url, Config.BaseDirectory);
-            var implRef = new ImplRef(url)
+            // target 有給視窗尺寸就用它(RWD 覆蓋);沒給 → 引擎照舊用設計 frame 尺寸
+            var implRef = new ImplRef(url, target.Width, target.Height ?? (target.Width is null ? null : 800))
             {
                 MapSelectors = mapSelectors,
                 IgnoreSelectors = Config.Ignore,

@@ -5,7 +5,7 @@
 ## 里程碑層級
 
 - ~~**M5 下半 — `ImageDesignSource`**~~ **完成(2026-07-18)**,且超出原案:除了「圖片+標註+像素取樣」(其他設計工具的萬用轉接頭),還加了 `parity snapshot`(把現況凍結成基準,重構守門,selector 身分配對)。**M5 全部完成,M1–M5 收官。**
-- **M6 — 雲端外殼**(選配):公開網址掃描 + SSRF 防護 + 報告分享。規畫書列為「最後、選配」;有真實需求再做。做的話,只有這個對外多人共用的外殼有 SSRF 問題。
+- **M6 — 雲端外殼:明文不做**(2026-07-18 決定,除非出現真實使用者)。理由:設計 QA 是上線前的活,雲端只碰得到公開網址(最不重要的階段);「報告分享給非技術人」PR 留言 + Markdown 已覆蓋;架伺服器的成本(Docker/Chromium/SSRF/月費/維運)換不到新價值。
 
 ## 其他設計工具的決定(2026-07-18)
 
@@ -33,7 +33,7 @@
 - ~~**`compare.position` 無作用**(規畫書 4.8「比相對位置」沒兌現)~~ **已補(0.5.0)**:相對最近可靠兄弟/父層的偏移比對,誤報防護見 README。
 - **Cornhsu.Labeling 落差分類:決定不接**。規畫書 M5 原案要接,但嚴重度/維度分類引擎內建已足,為兩個 enum 欄位引套件是儀式性依賴。此為明文決定,非遺漏。
 - **Figma frame PNG 疊圖**(規畫書 4.4 的 images API):可選增強。現行「實作截圖 + 設計框線」足以對位;設計師若要「看設計稿本人」再做。
-- **Shadow DOM / iframe 不走訪**:擷取腳本只走 light DOM,web components 的站內容整塊看不見——真實網站的下一個大盲點,實作端功能缺口。
+- ~~**Shadow DOM / iframe 不走訪**~~ **已補(0.8.0)**:組合樹走訪(open shadow root / slot / 同源 iframe);closed shadow 與跨域 iframe 為原生限制,誠實跳過。RWD 多斷點同版補文件 + target 級 width/height。
 - **頁面整體 `transform: scale` 未還原**(規畫書 4.6 有提):量測會被縮放污染,冷門但存在。
 - **EF `EnsureCreated` 無 migration**:未來 baseline schema 變更時,舊 `parity.baseline.db` 需處理相容。
 
