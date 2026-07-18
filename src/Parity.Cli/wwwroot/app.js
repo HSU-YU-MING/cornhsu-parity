@@ -101,7 +101,7 @@ function renderSidebar() {
     <div class="section-title">摘要</div>
     <div class="node" style="padding:8px 10px">
       已配對 ${s.matched}/${s.designNodes} 個設計節點,${s.nodesWithDiffs} 個有落差<br>
-      <span class="muted">critical ${s.critical}、serious ${s.serious}、medium ${s.medium}、minor ${s.minor}</span>
+      <span class="muted">落差數:critical ${s.critical}、serious ${s.serious}、medium ${s.medium}、minor ${s.minor}</span>
     </div>`);
 
   side.insertAdjacentHTML('beforeend', `<div class="section-title">有落差(${withDiffs.length})</div>`);
@@ -114,6 +114,7 @@ function renderSidebar() {
     for (const u of t.unmatched) {
       const el = document.createElement('div');
       el.className = 'unmatched-item' + (state.selected === u.designId ? ' selected' : '');
+      el.dataset.id = u.designId;
       el.innerHTML = `<span class="sev critical"></span><span class="name"></span><span class="reason">${u.reason}</span>`;
       el.querySelector('.name').textContent = u.designLayer;
       el.onclick = () => select(u.designId);
@@ -266,10 +267,15 @@ function drawRects() {
 function select(designId, rerender = true) {
   state.selected = designId;
   // 右側疊框一定要重畫,套用 .selected——即使清單那邊不整個 rerender
-  if (rerender) render(); else drawRects();
-
-  const item = document.querySelector(`.node[data-id="${CSS.escape(designId)}"]`);
-  if (item) item.open = true;
+  if (rerender) {
+    render();
+  } else {
+    drawRects();
+    // 左側清單同步高亮(不重建 DOM——重建或改 open 都會打斷 <summary> 的原生開合:
+    // listener 裡設 open=true 會被緊接著的預設 toggle 動作翻回去,落差表就永遠展不開)
+    for (const el of document.querySelectorAll('#sidebar .node, #sidebar .unmatched-item'))
+      el.classList.toggle('selected', el.dataset.id === designId);
+  }
 
   // 關鍵:把右側對應的框捲到中央並閃一下,讓「左邊點的 → 右邊在這」一目了然
   requestAnimationFrame(() => {
