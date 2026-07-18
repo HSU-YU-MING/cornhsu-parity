@@ -193,7 +193,13 @@ internal static class ServeCommand
         var debounceLock = new object();
         void OnChange(object _, FileSystemEventArgs e)
         {
-            if (!files.Contains(Path.GetFullPath(e.FullPath))) return;
+            var full = Path.GetFullPath(e.FullPath);
+            if (!files.Contains(full)) return;
+            // map 檔若是「自己剛寫的」(API /api/map 已重掃過)就略過,避免同一次配對掃兩遍
+            if (string.Equals(full, Path.GetFullPath(session.MapFilePath), StringComparison.OrdinalIgnoreCase)
+                && session.LastMapSaveAt is { } saved
+                && DateTimeOffset.UtcNow - saved < TimeSpan.FromSeconds(2))
+                return;
             lock (debounceLock) // 多個檔案事件可能同時進來,別在 debounce 欄位上打架
             {
                 debounce?.Dispose();

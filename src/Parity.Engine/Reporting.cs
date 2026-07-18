@@ -18,14 +18,19 @@ public static class Impact
 /// <summary>還原度分數(0–100):給 PM 看的一個好消化的數字——忠實實作的設計節點比例(有配對且零落差)。</summary>
 public static class FidelityScore
 {
+    /// <summary>
+    /// 「忠實」= 有配對且沒有硬落差;純軟落差(如 font-family stack 差異)不擋 gate、不扣分。
+    /// 分數與 Markdown 表頭的計數都用這一個判準——兩處口徑不一致會出現
+    /// 「100/100 卻 11/12 忠實」的自相矛盾標題。
+    /// </summary>
+    public static bool IsFaithful(NodeResult n) => !n.Diffs.Any(d => !d.Soft);
+
     public static int Compute(IEnumerable<FidelityReport> reports)
     {
         var list = reports as IReadOnlyList<FidelityReport> ?? reports.ToList();
         var total = list.Sum(r => r.Summary.DesignNodes);
         if (total == 0) return 100;
-        // 「忠實」= 有配對且沒有硬落差;純軟落差(如 font-family stack 差異)不擋 gate,也不扣分,
-        // 與 gate 的判定一致。
-        var clean = list.Sum(r => r.Nodes.Count(n => !n.Diffs.Any(d => !d.Soft)));
+        var clean = list.Sum(r => r.Nodes.Count(IsFaithful));
         return (int)Math.Round(100.0 * clean / total);
     }
 }
@@ -130,7 +135,7 @@ public static class MarkdownReport
     {
         var score = FidelityScore.Compute(reports);
         var total = reports.Sum(r => r.Summary.DesignNodes);
-        var clean = reports.Sum(r => r.Nodes.Count(n => n.Diffs.Count == 0));
+        var clean = reports.Sum(r => r.Nodes.Count(FidelityScore.IsFaithful));
         var multi = reports.Count > 1;
 
         var sb = new StringBuilder();

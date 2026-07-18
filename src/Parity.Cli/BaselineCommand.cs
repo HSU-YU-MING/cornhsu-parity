@@ -27,6 +27,18 @@ internal static class BaselineCommand
 
         await using var session = new ScanSession(configPath, headless: !opts.ContainsKey("--headed"));
         var scans = await session.RunAsync(opts.GetValueOrDefault("--target"));
+
+        // 配對不可信(0 配對等)時拒存:存下去的會是「0 條落差」的空基準,
+        // 之後設定修好,所有真實落差全變「新增」——比不存更糟。
+        var integrity = session.MatchIntegrityFailures(scans);
+        if (integrity.Count > 0)
+        {
+            Console.Error.WriteLine("\x1b[31m✘ 不存 baseline:配對可信度不足(基準會是殘缺的)\x1b[0m");
+            foreach (var r in integrity)
+                Console.Error.WriteLine($"  \x1b[31m·\x1b[0m {r}");
+            return 2;
+        }
+
         var diffs = DiffRecord.FromReports(scans.Select(s => s.Result.Report));
 
         var (commit, branch) = GitInfo.TryRead(session.Config.BaseDirectory);

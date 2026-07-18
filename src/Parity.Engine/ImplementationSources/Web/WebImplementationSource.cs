@@ -18,7 +18,9 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
     private static readonly JsonSerializerOptions CaptureParseOptions = new() { MaxDepth = 512 };
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-    private IBrowser? _cdpBrowser; // attach 到既有 Chromium/Electron 的連線(與自啟的 _browser 分開)
+    // attach 到既有 Chromium/Electron 的連線,按 endpoint 各一條(與自啟的 _browser 分開)。
+    // 只留一條的話,多 target 指向不同 cdp 端點時,第二個會沿用第一條連線抓錯 app。
+    private readonly Dictionary<string, IBrowser> _cdpBrowsers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, byte[]> _screenshots = [];
 
     /// <summary>CaptureScreenshot 開啟時,每次擷取後的整頁 PNG(key = URL)。本機報告 UI 的疊圖底圖。</summary>
@@ -43,11 +45,21 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
         });
         try
         {
-            await page.GotoAsync(reference.Url, new PageGotoOptions
+            try
             {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = _options.TimeoutMs,
-            });
+                await page.GotoAsync(reference.Url, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.NetworkIdle,
+                    Timeout = _options.TimeoutMs,
+                });
+            }
+            catch (TimeoutException)
+            {
+                // 長輪詢/websocket/分析心跳的頁面永遠不會 network idle——頁面本身多半早就載好了。
+                // 別讓整份報告因此炸掉:確認 DOM load 完成、再給一點渲染緩衝,照常擷取。
+                await page.WaitForLoadStateAsync(LoadState.Load, new() { Timeout = 5_000 });
+                await page.WaitForTimeoutAsync(500);
+            }
             return await CaptureFromPageAsync(page, reference);
         }
         finally
@@ -69,10 +81,14 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
         var endpoint = hash >= 0 ? rest[..hash] : rest;
         var pageMatch = hash >= 0 ? rest[(hash + 1)..] : null;
 
-        var pw = await GetPlaywrightAsync();
-        _cdpBrowser ??= await pw.Chromium.ConnectOverCDPAsync(endpoint);
+        if (!_cdpBrowsers.TryGetValue(endpoint, out var cdpBrowser))
+        {
+            var pw = await GetPlaywrightAsync();
+            cdpBrowser = await pw.Chromium.ConnectOverCDPAsync(endpoint);
+            _cdpBrowsers[endpoint] = cdpBrowser;
+        }
 
-        var pages = _cdpBrowser.Contexts.SelectMany(c => c.Pages).ToList();
+        var pages = cdpBrowser.Contexts.SelectMany(c => c.Pages).ToList();
         if (pages.Count == 0)
             throw new InvalidOperationException($"CDP 端點沒有開啟中的頁面(app 視窗還沒載入?):{endpoint}");
 
@@ -177,7 +193,8 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
     public async ValueTask DisposeAsync()
     {
         // CDP 連線 dispose 只斷線,不會關掉對方(Electron app)的視窗。
-        if (_cdpBrowser is not null) await _cdpBrowser.DisposeAsync();
+        foreach (var cdp in _cdpBrowsers.Values) await cdp.DisposeAsync();
+        _cdpBrowsers.Clear();
         if (_browser is not null) await _browser.DisposeAsync();
         _playwright?.Dispose();
     }

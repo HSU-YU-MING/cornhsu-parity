@@ -17,7 +17,7 @@ const state = {
 };
 
 const sevRank = { critical: 4, serious: 3, medium: 2, minor: 1, none: 0 };
-const matchedByLabel = { explicit: '手動', 'auto-text': '文字', 'auto-name': '名稱' };
+const matchedByLabel = { explicit: '手動', 'auto-text': '文字', 'auto-name': '名稱', 'auto-container': '容器' };
 
 // ---------- 資料 ----------
 

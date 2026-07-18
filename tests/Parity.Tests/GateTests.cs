@@ -104,6 +104,21 @@ public class GateTests
 
     // ---------- 設定檔解析 ----------
 
+    [Theory]
+    [InlineData("""{ "targets": [{ "route": "/", "url": "x" }], "gate": { "failOn": ["blocker"] } }""", "blocker")]
+    [InlineData("""{ "targets": [{ "route": "/", "url": "x" }], "gate": { "minMatchRate": 1.5 } }""", "minMatchRate")]
+    public void Invalid_gate_config_fails_at_load_with_friendly_message(string json, string expectInMessage)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"parity-badcfg-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, json);
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => ParityConfig.Load(path));
+            Assert.Contains(expectInMessage, ex.Message);
+        }
+        finally { File.Delete(path); }
+    }
+
     [Fact]
     public void MinMatchRate_parses_from_config_json()
     {

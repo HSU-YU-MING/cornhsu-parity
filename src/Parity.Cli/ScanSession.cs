@@ -87,11 +87,15 @@ public sealed class ScanSession : IAsyncDisposable
     public List<string> MatchIntegrityFailures(IEnumerable<TargetScan> scans)
         => Config.MatchIntegrityFailures(scans.Select(s => s.Result.Report));
 
+    /// <summary>最後一次由本程式寫 map 檔的時間——watch 模式用來略過「自己寫檔」觸發的重掃(API 已經掃了)。</summary>
+    public DateTimeOffset? LastMapSaveAt { get; private set; }
+
     /// <summary>把一筆「圖層名 → selector」寫進 map 檔(parity map 的儲存動作)。</summary>
     public void SaveMapping(string designLayer, string selector)
     {
         var map = LoadMapFile() ?? [];
         map[designLayer] = selector;
+        LastMapSaveAt = DateTimeOffset.UtcNow;
         File.WriteAllText(MapFilePath, JsonSerializer.Serialize(map,
             new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
     }

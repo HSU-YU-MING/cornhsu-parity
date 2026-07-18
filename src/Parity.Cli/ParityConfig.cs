@@ -53,7 +53,20 @@ public sealed class ParityConfig
         var config = JsonSerializer.Deserialize<ParityConfig>(File.ReadAllText(path), SerializerOptions)
             ?? throw new InvalidOperationException($"設定檔解析失敗:{path}");
         config.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+        config.Validate(path);
         return config;
+    }
+
+    /// <summary>設定值驗證——拼錯的 gate 等級或超界的門檻,在載入時就給看得懂的錯,而不是跑到一半炸。</summary>
+    private void Validate(string path)
+    {
+        foreach (var s in Gate.FailOn)
+            if (!Enum.TryParse<Severity>(s, ignoreCase: true, out _))
+                throw new InvalidOperationException(
+                    $"設定檔 {path}:gate.failOn 的「{s}」不是有效等級(可用:minor、medium、serious、critical)。");
+        if (Gate.MinMatchRate is < 0 or > 1)
+            throw new InvalidOperationException(
+                $"設定檔 {path}:gate.minMatchRate 必須在 0–1 之間(目前:{Gate.MinMatchRate})。");
     }
 
     /// <summary>從 cwd 往上找 parity.config.json。</summary>

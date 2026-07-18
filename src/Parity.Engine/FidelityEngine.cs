@@ -27,6 +27,10 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
 
         // 2. 實作來源 → RenderedNode 樹;視窗大小 = frame 尺寸(規畫書:在 frame 設計寬度下渲染)
         var implRef = req.Impl;
+        if (implRef.ViewportWidth is null && (designTree.Box.W <= 0 || designTree.Box.H <= 0))
+            throw new InvalidOperationException(
+                $"設計 frame「{designTree.Name}」尺寸是 {designTree.Box.W}×{designTree.Box.H}——" +
+                "沒有有效尺寸就無法決定渲染視窗(frame/designFile 可能指錯)。");
         if (implRef.ViewportWidth is null)
             implRef = implRef with
             {

@@ -71,6 +71,19 @@ public class FigmaParserTests
     }
 
     [Fact]
+    public void Per_corner_radii_fall_back_to_top_left()
+    {
+        // 每角不同時 Figma 不給 cornerRadius,只給 rectangleCornerRadii[TL,TR,BR,BL]
+        // → 取 top-left(與實作端只讀 border-top-left-radius 口徑一致)
+        var node = FigmaNodeParser.Parse(JsonNode.Parse("""
+            { "id": "1:1", "name": "card", "type": "RECTANGLE",
+              "absoluteBoundingBox": { "x": 0, "y": 0, "width": 100, "height": 50 },
+              "rectangleCornerRadii": [12, 12, 0, 0] }
+            """)!);
+        Assert.Equal(12, node.CornerRadius);
+    }
+
+    [Fact]
     public void Parses_text_typography_and_layout_sizing()
     {
         var title = Parse().Children[0];

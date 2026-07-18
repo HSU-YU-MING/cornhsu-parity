@@ -102,7 +102,7 @@ public static class FigmaNodeParser
             Text: type == DesignNodeType.Text ? ParseTypography(node["style"]) : null,
             Padding: ParsePadding(node),
             ItemSpacing: GetDouble(node, "itemSpacing"),
-            CornerRadius: GetDouble(node, "cornerRadius"),
+            CornerRadius: ParseCornerRadius(node),
             Children: children)
         {
             Characters = node["characters"]?.GetValue<string>(),
@@ -172,6 +172,25 @@ public static class FigmaNodeParser
         var left = GetDouble(node, "paddingLeft");
         if (top is null && right is null && bottom is null && left is null) return null;
         return new Insets(top ?? 0, right ?? 0, bottom ?? 0, left ?? 0);
+    }
+
+    /// <summary>
+    /// 圓角:均一時 Figma 給 cornerRadius;每角不同時只給 rectangleCornerRadii[TL,TR,BR,BL]。
+    /// 取 top-left——與實作端(只讀 borderTopLeftRadius)口徑一致,每角不同的細節不比。
+    /// </summary>
+    private static double? ParseCornerRadius(JsonNode node)
+    {
+        if (GetDouble(node, "cornerRadius") is { } uniform) return uniform;
+        return node["rectangleCornerRadii"] is JsonArray { Count: > 0 } radii
+            ? GetArrayDouble(radii, 0)
+            : null;
+
+        static double? GetArrayDouble(JsonArray arr, int i)
+        {
+            try { return arr[i]?.GetValue<double>(); }
+            catch (InvalidOperationException) { return null; }
+            catch (FormatException) { return null; }
+        }
     }
 
     private static double? GetDouble(JsonNode? node, string prop)

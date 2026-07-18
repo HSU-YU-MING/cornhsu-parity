@@ -112,6 +112,17 @@ public class ReportingTests
     // ---------- Markdown ----------
 
     [Fact]
+    public void Markdown_faithful_count_matches_score_for_soft_only_nodes()
+    {
+        // 只有軟落差的節點:分數不扣分 → 表頭計數也要算「忠實」,不然標題自相矛盾
+        var softOnly = Node("softOnly", Diff("fontFamily", "Arial", "Helvetica", Severity.Minor, soft: true));
+        var md = MarkdownReport.Render([Report(2, [softOnly, Node("clean")])], gateFail: false);
+
+        Assert.Contains("還原度 100/100", md);
+        Assert.Contains("2/2 個設計節點忠實實作", md);
+    }
+
+    [Fact]
     public void Markdown_has_score_gate_and_fix_hints()
     {
         var report = Report(2, [Node("cta", Diff("paddingLeft", "20", "8")), Node("ok")]);
