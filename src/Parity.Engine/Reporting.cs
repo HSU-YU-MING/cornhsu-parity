@@ -125,7 +125,8 @@ public static class MarkdownReport
 {
     public static string Render(
         IReadOnlyList<FidelityReport> reports, bool gateFail,
-        BaselineComparison? baseline = null, DesignTokens? tokens = null)
+        BaselineComparison? baseline = null, DesignTokens? tokens = null,
+        IReadOnlyList<string>? gateNotes = null)
     {
         var score = FidelityScore.Compute(reports);
         var total = reports.Sum(r => r.Summary.DesignNodes);
@@ -138,6 +139,14 @@ public static class MarkdownReport
         sb.AppendLine($"**還原度 {score}/100** · {(gateFail ? "❌ **GATE FAIL**" : "✅ PASS")} · " +
             $"{clean}/{total} 個設計節點忠實實作");
         sb.AppendLine();
+
+        // 配對可信度警示(如 0 配對):放最前面——這種情況下面的表是空的,分數也不可信
+        if (gateNotes is { Count: > 0 })
+        {
+            foreach (var note in gateNotes)
+                sb.AppendLine($"> ⚠️ {Esc(note)}");
+            sb.AppendLine();
+        }
 
         // baseline 模式:先講「相對基準變了什麼」——PM/reviewer 最在意的
         if (baseline is not null)

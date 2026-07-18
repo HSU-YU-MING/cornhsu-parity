@@ -44,9 +44,15 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "compare": { "position": "relative" },     // 預設不比絕對 x/y
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0 },
   "ignore": ["[data-parity-ignore]"],
-  "gate": { "failOn": ["critical", "serious"] }
+  "gate": {
+    "failOn": ["critical", "serious"],
+    "minMatchRate": 0                        // 選配:配對率低於此值(0–1)直接 FAIL;0 = 不設門檻
+  }
 }
 ```
+
+> gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律 GATE FAIL——
+> 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。`--baseline` 模式也不豁免。
 
 ## 目標:網頁或 Electron 桌面 app
 

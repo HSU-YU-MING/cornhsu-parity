@@ -79,6 +79,21 @@ public sealed class ScanSession : IAsyncDisposable
     public bool ShouldFail(IEnumerable<TargetScan> scans)
         => scans.Any(s => Config.ShouldFail(s.Result.Report));
 
+    /// <summary>各 target 的 gate 不通過原因(空 = 全過),附 route 前綴。</summary>
+    public List<string> GateFailReasons(IEnumerable<TargetScan> scans)
+        => CollectReasons(scans, Config.GateFailReason);
+
+    /// <summary>各 target 的配對可信度問題(空 = 可信)。baseline 模式也不可豁免。</summary>
+    public List<string> MatchIntegrityFailures(IEnumerable<TargetScan> scans)
+        => CollectReasons(scans, Config.MatchIntegrityFailure);
+
+    private static List<string> CollectReasons(
+        IEnumerable<TargetScan> scans, Func<FidelityReport, string?> check)
+        => scans.Select(s => (s.Target.Route, Reason: check(s.Result.Report)))
+            .Where(x => x.Reason is not null)
+            .Select(x => $"{x.Route}:{x.Reason}")
+            .ToList();
+
     /// <summary>把一筆「圖層名 → selector」寫進 map 檔(parity map 的儲存動作)。</summary>
     public void SaveMapping(string designLayer, string selector)
     {

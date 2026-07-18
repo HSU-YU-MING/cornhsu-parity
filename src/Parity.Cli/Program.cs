@@ -75,15 +75,21 @@ internal static class CheckCommand
         var reports = scans.Select(s => s.Result.Report).ToList();
         Console.WriteLine($"還原度分數:\x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
 
+        // 配對可信度(0 配對 / 低於 minMatchRate):沒配到就沒落差可擋,不能沉默 PASS
+        var integrity = session.MatchIntegrityFailures(scans);
+
         // --baseline:回歸模式——只擋「相對基準新增/惡化」的落差(適合已有一堆落差的專案漸進導入)
         if (opts.ContainsKey("--baseline"))
-            return await GateAgainstBaselineAsync(session, scans, opts);
+            return await GateAgainstBaselineAsync(session, scans, opts, integrity);
 
-        var gateFail = session.ShouldFail(scans);
-        WriteMarkdown(opts, session.Config, reports, gateFail);
+        var gateReasons = session.GateFailReasons(scans);
+        var gateFail = gateReasons.Count > 0;
+        WriteMarkdown(opts, session.Config, reports, gateFail, gateNotes: integrity);
         if (gateFail)
         {
             Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
+            foreach (var r in gateReasons)
+                Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
             return 1;
         }
         Console.WriteLine($"\n\x1b[32m✔ PASS\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
@@ -93,7 +99,7 @@ internal static class CheckCommand
     /// <summary>--md &lt;path&gt;:把報告輸出成 Markdown(可分享 / 貼 PR 留言);有設定 tokensFile 就帶進 token 提示。</summary>
     private static void WriteMarkdown(
         Dictionary<string, string?> opts, ParityConfig config, IReadOnlyList<FidelityReport> reports,
-        bool gateFail, BaselineComparison? baseline = null)
+        bool gateFail, BaselineComparison? baseline = null, IReadOnlyList<string>? gateNotes = null)
     {
         if (opts.GetValueOrDefault("--md") is not { } mdPath) return;
         var tokens = config.TokensFile is { } tf
@@ -101,15 +107,27 @@ internal static class CheckCommand
             : null;
         var full = Path.GetFullPath(mdPath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        File.WriteAllText(full, MarkdownReport.Render(reports, gateFail, baseline, tokens));
+        File.WriteAllText(full, MarkdownReport.Render(reports, gateFail, baseline, tokens, gateNotes));
         Console.WriteLine($"Markdown 報告:{full}");
     }
 
     /// <summary>回歸把關:比對現況與最新 baseline,只在有新增/惡化時 GATE FAIL(規畫書 M5)。</summary>
     private static async Task<int> GateAgainstBaselineAsync(
-        ScanSession session, List<TargetScan> scans, Dictionary<string, string?> opts)
+        ScanSession session, List<TargetScan> scans, Dictionary<string, string?> opts,
+        List<string> integrity)
     {
         var reports = scans.Select(s => s.Result.Report).ToList();
+
+        // 配對可信度不過就不做 baseline 比對:殘缺的 current 會把 baseline 裡的一切誤判成「修好」
+        if (integrity.Count > 0)
+        {
+            WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: integrity);
+            Console.WriteLine("\n\x1b[31m✘ GATE FAIL\x1b[0m(配對可信度不足,不做 baseline 比對)");
+            foreach (var r in integrity)
+                Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
+            return 1;
+        }
+
         var current = DiffRecord.FromReports(reports);
         await using var store = new BaselineStore(BaselineCommand.BaselineDbPath(session.Config));
         var baseline = await store.GetLatestAsync();

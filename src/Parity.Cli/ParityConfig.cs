@@ -85,10 +85,34 @@ public sealed class ParityConfig
         FontSizePx: Tolerances.FontSizePx);
 
     /// <summary>gate 判定:報告裡有任何 failOn 等級的落差 → 該擋(規畫書「還原度把關」)。</summary>
-    public bool ShouldFail(FidelityReport report)
+    public bool ShouldFail(FidelityReport report) => GateFailReason(report) is not null;
+
+    /// <summary>gate 不通過的原因(null = 通過)。先驗配對可信度,再看 failOn 等級落差。</summary>
+    public string? GateFailReason(FidelityReport report)
     {
+        if (MatchIntegrityFailure(report) is { } untrusted) return untrusted;
         var failOn = Gate.FailOn.Select(s => Enum.Parse<Severity>(s, ignoreCase: true)).ToHashSet();
-        return report.Nodes.SelectMany(n => n.Diffs).Any(diff => failOn.Contains(diff.Severity));
+        return report.Nodes.SelectMany(n => n.Diffs).Any(diff => failOn.Contains(diff.Severity))
+            ? $"有 {string.Join("/", Gate.FailOn)} 等級落差"
+            : null;
+    }
+
+    /// <summary>
+    /// 配對可信度檢查(null = 可信)。gate 只看落差——沒配到就沒落差可擋,所以「全部沒配到」
+    /// 會給假的 PASS(通常是 url/frame 指錯)。這是「結果可不可信」的底線:與 failOn 無關,
+    /// baseline 模式也不可豁免(殘缺的 current 拿去比 baseline,會把一切誤判成「修好」)。
+    /// </summary>
+    public string? MatchIntegrityFailure(FidelityReport report)
+    {
+        var s = report.Summary;
+        if (s.DesignNodes == 0)
+            return "設計端 0 個節點——frame/designFile 可能指錯,沒有東西可驗";
+        if (s.Matched == 0)
+            return $"0/{s.DesignNodes} 個設計節點配對成功——沒有東西可比,結果不可信" +
+                "(檢查 target 的 url/frame,或用 parity map 補配對)";
+        if (Gate.MinMatchRate > 0 && (double)s.Matched / s.DesignNodes < Gate.MinMatchRate)
+            return $"配對率 {s.Matched}/{s.DesignNodes} 低於 gate.minMatchRate({Gate.MinMatchRate})";
+        return null;
     }
 }
 
@@ -117,4 +141,10 @@ public sealed class ToleranceConfig
 public sealed class GateConfig
 {
     public List<string> FailOn { get; set; } = ["critical", "serious"];
+
+    /// <summary>
+    /// 最低配對率(0–1)。低於此值 gate 直接不過——配不到的節點驗不到,配對率太低時
+    /// 「沒落差」不代表「沒問題」。預設 0 = 不設門檻;但「完全 0 配對」永遠擋(那必是設定錯)。
+    /// </summary>
+    public double MinMatchRate { get; set; }
 }

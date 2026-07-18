@@ -45,6 +45,8 @@ function render() {
   const badge = $('#gate-badge');
   badge.textContent = d.gateFail ? '✘ GATE FAIL' : '✔ PASS';
   badge.className = 'badge ' + (d.gateFail ? 'fail' : 'pass');
+  // 不過的原因(例如 0 配對——畫面上沒半條落差,卻 FAIL)滑鼠移上去要看得到
+  badge.title = (d.gateReasons || []).join('\n');
   $('#generated-at').textContent = new Date(d.generatedAt).toLocaleTimeString();
   $('#watch-dot').hidden = !d.watch;
 

@@ -96,6 +96,7 @@ internal static class ServeCommand
             configPath = Path.GetFullPath(configPath),
             generatedAt = state.GeneratedAt,
             gateFail = state.GateFail,
+            gateReasons = state.GateReasons,
             failOn = session.Config.Gate.FailOn,
             watch,
             targets = state.Scans.Select((s, i) => new
@@ -257,6 +258,7 @@ internal static class ServeCommand
 
         public List<TargetScan> Scans { get; private set; } = [];
         public bool GateFail { get; private set; }
+        public List<string> GateReasons { get; private set; } = [];
         public DateTimeOffset GeneratedAt { get; private set; }
 
         public async Task RescanAsync()
@@ -265,7 +267,8 @@ internal static class ServeCommand
             try
             {
                 Scans = await session.RunAsync();
-                GateFail = session.ShouldFail(Scans);
+                GateReasons = session.GateFailReasons(Scans);
+                GateFail = GateReasons.Count > 0;
                 GeneratedAt = DateTimeOffset.Now;
             }
             finally { _gate.Release(); }
