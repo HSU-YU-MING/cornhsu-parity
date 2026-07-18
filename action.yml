@@ -27,7 +27,7 @@ inputs:
     required: false
     default: ''
   baseline:
-    description: '回歸模式(check --baseline):只擋相對 .parity/baseline.db 新增/惡化的落差'
+    description: '回歸模式(check --baseline):只擋相對 parity.baseline.db(需 commit 進 repo)新增/惡化的落差'
     required: false
     default: 'false'
   comment:

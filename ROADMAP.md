@@ -11,7 +11,7 @@
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。
-- **CI 裡的 `--baseline` 沒實跑**:邏輯有測,但沒在真實 PR 流程走過(需 commit `parity.baseline.db`)。可沿用 parity-action-test 驗。
+- ~~**CI 裡的 `--baseline` 沒實跑**~~ **已實證**(2026-07-18,parity-action-test):main 留一條既有落差 + commit `parity.baseline.db` + `baseline: true` → ✓ CI 綠(舊債不擋)✓ PR 新增一條落差 → 精確只擋那條(留言列「相對基準:新增 1、不變 1」)。
 
 ## 檢視留下的整潔項(非 bug)
 
@@ -29,4 +29,5 @@
 
 1. ~~gate 盲點(0 配對 → PASS)~~ 已補。
 2. ~~實證 action 消費者流程~~ 已實證(真 PR:PASS / FAIL+留言 / 留言原地更新)。
-3. **CI 的 `--baseline` 實跑**(可沿用 parity-action-test),之後才輪到整潔項、M5 下半 / M6。
+3. ~~CI 的 `--baseline` 實跑~~ 已實證(舊債不擋、新落差精確擋)。
+4. 接下來輪到整潔項、M5 下半 / M6。**已知盲點全數清空。**
