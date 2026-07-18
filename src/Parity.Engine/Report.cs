@@ -11,11 +11,16 @@ public sealed record Tolerances(
     double SizePx = 2.0,
     double SpacingPx = 2.0,
     double ColorDeltaE = 2.0,
-    double FontSizePx = 0.5);
+    double FontSizePx = 0.5,
+    // 位置容差比尺寸鬆:flow 版面裡文字行高的自然差異會讓後續元素有 2–4px 漂移
+    double PositionPx = 4.0);
 
 public sealed record EngineOptions(Tolerances Tolerances)
 {
     public static EngineOptions Default { get; } = new(new Tolerances());
+
+    /// <summary>相對位置比對(offsetX/offsetY)。compare.position = "none" 時關閉。</summary>
+    public bool ComparePosition { get; init; } = true;
 }
 
 /// <summary>落差嚴重度。</summary>

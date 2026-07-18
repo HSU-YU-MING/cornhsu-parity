@@ -35,7 +35,7 @@ public sealed class ScanSession : IAsyncDisposable
         _implSource = new WebImplementationSource(
             new WebCaptureOptions(Headless: headless, CaptureScreenshot: captureScreenshots));
         _engine = new FidelityEngine(_designSource, _implSource,
-            new EngineOptions(Config.ToEngineTolerances()));
+            new EngineOptions(Config.ToEngineTolerances()) { ComparePosition = Config.ComparePosition });
     }
 
     /// <summary>map 檔路徑(未設定時預設 parity.map.json,parity map 寫入用)。</summary>

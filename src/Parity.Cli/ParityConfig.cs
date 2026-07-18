@@ -67,6 +67,10 @@ public sealed class ParityConfig
         if (Gate.MinMatchRate is < 0 or > 1)
             throw new InvalidOperationException(
                 $"設定檔 {path}:gate.minMatchRate 必須在 0–1 之間(目前:{Gate.MinMatchRate})。");
+        if (!string.Equals(Compare.Position, "relative", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(Compare.Position, "none", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"設定檔 {path}:compare.position 的「{Compare.Position}」無效(可用:relative、none)。");
     }
 
     /// <summary>從 cwd 往上找 parity.config.json。</summary>
@@ -95,7 +99,11 @@ public sealed class ParityConfig
         SizePx: Tolerances.SizePx,
         SpacingPx: Tolerances.SpacingPx,
         ColorDeltaE: Tolerances.ColorDeltaE,
-        FontSizePx: Tolerances.FontSizePx);
+        FontSizePx: Tolerances.FontSizePx,
+        PositionPx: Tolerances.PositionPx);
+
+    /// <summary>compare.position:"relative"(預設,比相對位置)/ "none"(不比位置)。</summary>
+    public bool ComparePosition => !string.Equals(Compare.Position, "none", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>gate 判定:報告裡有任何 failOn 等級的落差 → 該擋(規畫書「還原度把關」)。</summary>
     public bool ShouldFail(FidelityReport report) => GateFailReason(report) is not null;
@@ -154,7 +162,10 @@ public sealed class TargetConfig
 
 public sealed class CompareConfig
 {
-    /// <summary>"relative":預設不比絕對 x/y(規畫書 4.8)。目前唯一支援值。</summary>
+    /// <summary>
+    /// "relative"(預設):比「相對位置」——相對最近兄弟/父層的偏移(規畫書 4.8),不比絕對 x/y。
+    /// "none":位置完全不比。
+    /// </summary>
     public string Position { get; set; } = "relative";
 }
 
@@ -164,6 +175,8 @@ public sealed class ToleranceConfig
     public double SpacingPx { get; set; } = 2;
     public double ColorDeltaE { get; set; } = 2.0;
     public double FontSizePx { get; set; } = 0.5;
+    /// <summary>相對位置容差。比尺寸鬆:flow 版面裡文字行高的自然差異會讓後續元素有 2–4px 漂移。</summary>
+    public double PositionPx { get; set; } = 4;
 }
 
 public sealed class GateConfig

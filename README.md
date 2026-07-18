@@ -42,8 +42,8 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
-  "compare": { "position": "relative" },     // 預設不比絕對 x/y
-  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0 },
+  "compare": { "position": "relative" },     // relative = 比相對位置(預設);none = 不比位置
+  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],
@@ -83,6 +83,7 @@ electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
 - **自身尺寸**(寬高;TEXT 節點例外——文字框量測天生不同,比了狂誤報)
   - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
 - **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
+- **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
 - **字體**:size / weight / line-height / letter-spacing 精確比;font-family 是**軟落差**(不擋 gate)
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任

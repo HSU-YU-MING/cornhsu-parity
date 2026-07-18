@@ -118,6 +118,9 @@ public static class FixHint
         "color" => $"color: {d.Expected}",
         "background" => $"background: {d.Expected}",
         "fontFamily" => $"font-family 應含 {d.Expected}",
+        // 相對位置:沒有單一 CSS 可以給(取決於版面做法),給人話方向提示
+        "offsetX" => $"水平位置與鄰/父的距離應為 {d.Expected}px",
+        "offsetY" => $"垂直位置與鄰/父的距離應為 {d.Expected}px",
         _ => null,
     };
 }

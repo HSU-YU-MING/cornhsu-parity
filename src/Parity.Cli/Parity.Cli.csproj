@@ -10,7 +10,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>parity</ToolCommandName>
     <PackageId>Cornhsu.Parity</PackageId>
-    <Version>0.4.1</Version>
+    <Version>0.5.0</Version>
     <!-- 授權 / 作者 / README / icon / SourceLink 等共用中繼資料在根目錄 Directory.Build.props -->
     <Description>Parity — 數值級設計還原度檢查工具。抓 Figma 與實作端的真實數值做程式比對,本機 / CI / 內網都能跑。</Description>
     <!-- NU5111:Playwright 套件內含的 .ps1(非 install 腳本),打包時的無害提醒 -->

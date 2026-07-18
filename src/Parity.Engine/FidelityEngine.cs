@@ -44,9 +44,14 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         // 3. 配對(設計端為錨)
         var match = Matcher.Match(designTree, renderedTree);
 
-        // 4. 數值 diff + 容差
+        // 4. 數值 diff + 容差(含相對位置:非 auto-layout 父層的子節點才給參照)
         var diffEngine = new DiffEngine(_opts.Tolerances);
-        var nodes = match.Pairs.Select(diffEngine.Diff).ToList();
+        var positionOf = _opts.ComparePosition
+            ? BuildPositionContexts(designTree, renderedTree, match.Pairs)
+            : new Dictionary<string, PositionContext>();
+        var nodes = match.Pairs
+            .Select(p => diffEngine.Diff(p, positionOf.GetValueOrDefault(p.Design.Id)))
+            .ToList();
 
         // 5. 彙總
         var withDiffs = nodes.Where(n => n.Diffs.Count > 0).ToList();
@@ -67,6 +72,41 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         return new ScanResult(report, designTree, renderedTree, renderedOrigin);
 
         int Count(Severity s) => nodes.SelectMany(n => n.Diffs).Count(x => x.Severity == s);
+    }
+
+    /// <summary>
+    /// 每個已配對節點的相對位置參照(設計節點 Id → context)。
+    /// 只給「父層不是 auto-layout」的節點——auto-layout 的子節點位置由 padding/gap 決定
+    /// (那邊已有比對,再比偏移會把同一個根因報兩次)。父層本身也要已配對(root 視為隱含配對)。
+    /// </summary>
+    private static Dictionary<string, PositionContext> BuildPositionContexts(
+        DesignNode designRoot, RenderedNode renderedRoot, IReadOnlyList<Comparison.NodePair> pairs)
+    {
+        var renderedBy = new Dictionary<string, RenderedNode>();
+        foreach (var p in pairs) renderedBy.TryAdd(p.Design.Id, p.Rendered);
+
+        var result = new Dictionary<string, PositionContext>();
+        void Walk(DesignNode parent, Model.Box parentDesignBox, Model.Box? parentRenderedBox)
+        {
+            // 版面容器(auto-layout,或雖沒 layoutMode 但有 padding——手寫 JSON 常這樣)的子節點
+            // 位置由 padding/gap 決定,那邊已有比對;只有「自由擺放」的父層才比子節點位置。
+            var qualifies = parent.LayoutMode is null && parent.Padding is null && parentRenderedBox is not null;
+            foreach (var child in parent.Children)
+            {
+                var childRendered = renderedBy.GetValueOrDefault(child.Id);
+                if (qualifies && childRendered is not null)
+                    result[child.Id] = new PositionContext(
+                        parentDesignBox, parentRenderedBox!.Value,
+                        parent.Children
+                            .Where(c => c.Id != child.Id && renderedBy.ContainsKey(c.Id))
+                            .Select(c => (c, renderedBy[c.Id].Box))
+                            .ToList());
+                Walk(child, child.Box, childRendered?.Box);
+            }
+        }
+        // root 隱含配對:兩棵樹的原點都正規化到 (0,0)
+        Walk(designRoot, designRoot.Box, renderedRoot.Box);
+        return result;
     }
 }
 
