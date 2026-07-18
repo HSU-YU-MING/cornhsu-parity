@@ -97,6 +97,21 @@ public sealed class ParityConfig
             : null;
     }
 
+    /// <summary>各報告的 gate 不通過原因(空 = 全過),附 route 前綴。</summary>
+    public List<string> GateFailReasons(IEnumerable<FidelityReport> reports)
+        => CollectReasons(reports, GateFailReason);
+
+    /// <summary>各報告的配對可信度問題(空 = 可信)。baseline 模式也不可豁免。</summary>
+    public List<string> MatchIntegrityFailures(IEnumerable<FidelityReport> reports)
+        => CollectReasons(reports, MatchIntegrityFailure);
+
+    private static List<string> CollectReasons(
+        IEnumerable<FidelityReport> reports, Func<FidelityReport, string?> check)
+        => reports.Select(r => (r.Route, Reason: check(r)))
+            .Where(x => x.Reason is not null)
+            .Select(x => $"{x.Route}:{x.Reason}")
+            .ToList();
+
     /// <summary>
     /// 配對可信度檢查(null = 可信)。gate 只看落差——沒配到就沒落差可擋,所以「全部沒配到」
     /// 會給假的 PASS(通常是 url/frame 指錯)。這是「結果可不可信」的底線:與 failOn 無關,

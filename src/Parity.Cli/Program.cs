@@ -15,6 +15,7 @@ try
     return command switch
     {
         "check" => await CheckCommand.RunAsync(rest),
+        "report" => ReportCommand.Run(rest),
         "serve" => await ServeCommand.RunAsync(rest),
         "map" => await ServeCommand.RunAsync(rest, mapMode: true),
         "baseline" => await BaselineCommand.RunAsync(rest),
@@ -69,7 +70,7 @@ internal static class CheckCommand
             ?? Path.Combine(session.Config.BaseDirectory, ".parity", "report.json");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
         await File.WriteAllTextAsync(outPath,
-            JsonSerializer.Serialize(scans.Select(s => s.Result.Report), JsonOptions));
+            JsonSerializer.Serialize(scans.Select(s => s.Result.Report), ReportJson.Indented));
         Console.WriteLine($"報告已寫入:{outPath}");
 
         var reports = scans.Select(s => s.Result.Report).ToList();
@@ -162,14 +163,6 @@ internal static class CheckCommand
         return 0;
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     private static void PrintReport(FidelityReport report)
     {
         var s = report.Summary;
@@ -194,6 +187,52 @@ internal static class CheckCommand
         if (report.Unmatched.Count > 0)
             Console.WriteLine($"  \x1b[90m未配對:{string.Join("、", report.Unmatched.Select(u => $"{u.DesignLayer} ({u.Reason})"))}\x1b[0m");
         Console.WriteLine();
+    }
+}
+
+internal static class ReportCommand
+{
+    /// <summary>
+    /// parity report:從既有 report.json 重生 Markdown,免重掃(重掃要開瀏覽器,幾十秒;
+    /// 這裡只是重排版,毫秒級)。CI 已上傳 report.json artifact 時,本機也能重現同一份報告。
+    /// </summary>
+    public static int Run(string[] args)
+    {
+        var opts = CliOptions.Parse(args);
+        var configPath = opts.GetValueOrDefault("--config")
+            ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
+            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+        var config = ParityConfig.Load(configPath);
+
+        var inPath = opts.GetValueOrDefault("--in")
+            ?? Path.Combine(config.BaseDirectory, ".parity", "report.json");
+        if (!File.Exists(inPath))
+            throw new FileNotFoundException($"找不到報告:{inPath}(先跑 `parity check`,或用 --in 指定路徑)", inPath);
+
+        var reports = JsonSerializer.Deserialize<List<FidelityReport>>(File.ReadAllText(inPath), ReportJson.Indented)
+            ?? throw new InvalidOperationException($"報告解析失敗:{inPath}");
+
+        var tokens = config.TokensFile is { } tf
+            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
+            : null;
+        var md = MarkdownReport.Render(
+            reports,
+            gateFail: config.GateFailReasons(reports).Count > 0,
+            tokens: tokens,
+            gateNotes: config.MatchIntegrityFailures(reports));
+
+        if (opts.GetValueOrDefault("--md") is { } mdPath)
+        {
+            var full = Path.GetFullPath(mdPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, md);
+            Console.WriteLine($"Markdown 報告:{full}");
+        }
+        else
+        {
+            Console.Write(md); // 沒給 --md 就印到 stdout,方便管線接走
+        }
+        return 0;
     }
 }
 
@@ -265,6 +304,9 @@ internal static class HelpCommand
                     cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
                     cdp:http://host:port#url片段  多視窗時指定 URL 含該片段的視窗
                     (Electron 端啟動時加 --remote-debugging-port=<port>)
+              parity report [--config <path>] [--in <report.json>] [--md <path>]
+                  從既有 report.json 重生 Markdown 報告,免重掃(預設讀 .parity/report.json;
+                  沒給 --md 就印到 stdout)
               parity serve [--config <path>] [--port <n>] [--watch] [--open]
                   本機報告 UI(只綁 127.0.0.1):落差清單 + 截圖疊框視圖
                   --watch     設定/設計/頁面檔變更時自動重掃

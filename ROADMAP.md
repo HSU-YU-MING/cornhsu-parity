@@ -15,10 +15,11 @@
 
 ## 檢視留下的整潔項(非 bug)
 
-- GitHub Actions 的 `actions/checkout@v4` 等吃 Node 20 淘汰警告 → 之後升 v5。
-- `JsonOptions` 在 check / serve 兩處重複 → 抽共用。
-- 沒有 `parity report` 指令(從既有 `report.json` 重生 Markdown,免重掃)。
-- 現代色域:已支援 `rgb()` / `color(srgb …)`,但 `oklch` / `display-p3` 仍不支援。
+**全部完成(2026-07-18)**:
+- ~~GitHub Actions 升版~~ → checkout@v7 / setup-dotnet@v6 / upload-artifact@v7(脫離 Node 20 淘汰線)。
+- ~~`JsonOptions` 兩處重複~~ → 抽 `ReportJson`(check 落地 / serve API / report 回讀共用)。
+- ~~沒有 `parity report` 指令~~ → 已加:從既有 `report.json` 重生 Markdown(`--in`/`--md`,預設印 stdout)。
+- ~~`oklch` / `display-p3` 不支援~~ → 已支援(OKLCH→OKLab→sRGB、P3 矩陣轉換,超色域 clamp;`lab`/`rec2020` 等仍不支援)。
 
 ## 更遠的
 

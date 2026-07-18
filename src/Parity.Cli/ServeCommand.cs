@@ -19,12 +19,7 @@ namespace Parity.Cli;
 /// </summary>
 internal static class ServeCommand
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
+    private static JsonSerializerOptions JsonOptions => ReportJson.Compact;
 
     public static async Task<int> RunAsync(string[] args, bool mapMode = false)
     {

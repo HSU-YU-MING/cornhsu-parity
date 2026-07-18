@@ -2,6 +2,15 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發布
+
+整潔項清空:
+
+- **新指令 `parity report`**:從既有 `.parity/report.json` 重生 Markdown 報告,免重掃(`--in` 指定來源、`--md` 寫檔,預設印 stdout)。CI 上傳的 report.json artifact 抓下來就能在本機重現同一份報告。
+- **現代色域**:顏色解析新增 `oklch()` 與 `color(display-p3 …)`(OKLCH→OKLab→sRGB、P3 線性矩陣轉換;超出 sRGB 色域 clamp)。`lab` / `rec2020` 等仍不支援。
+- GitHub Actions 升版:checkout@v7、setup-dotnet@v6、upload-artifact@v7(脫離 Node 20 淘汰警告)。
+- 內部:check / serve / report 的報告 JSON 序列化設定抽共用 `ReportJson`,避免兩處定義漂移。
+
 ## 0.3.0
 
 ROADMAP 已知盲點全數清空的版本:一個功能修補 + 兩條主打路徑的真實實證。

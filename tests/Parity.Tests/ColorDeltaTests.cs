@@ -80,11 +80,50 @@ public class RgbaParseTests
         Assert.Equal(a, c.A, 3);
     }
 
+    // oklch / display-p3(CSS Color 4):端點色精確、色域內色允許 ±2/頻道的轉換捨入
+    [Theory]
+    [InlineData("oklch(1 0 0)", 255, 255, 255, 1.0)]
+    [InlineData("oklch(0 0 0)", 0, 0, 0, 1.0)]
+    [InlineData("oklch(100% 0 0)", 255, 255, 255, 1.0)]
+    [InlineData("color(display-p3 1 1 1)", 255, 255, 255, 1.0)]
+    [InlineData("color(display-p3 1 0 0)", 255, 0, 0, 1.0)]           // 超出 sRGB → clamp 到紅
+    [InlineData("color(display-p3 0 1 0 / 50%)", 0, 255, 0, 0.5)]
+    public void Parses_wide_gamut_exact(string css, int r, int g, int b, double a)
+    {
+        Assert.True(Rgba.TryParseCss(css, out var c));
+        Assert.Equal((byte)r, c.R);
+        Assert.Equal((byte)g, c.G);
+        Assert.Equal((byte)b, c.B);
+        Assert.Equal(a, c.A, 3);
+    }
+
+    [Theory]
+    [InlineData("oklch(0.6279 0.2577 29.23)", 255, 0, 0)]        // sRGB 紅的 oklch 座標
+    [InlineData("oklch(62.79% 0.2577 29.23deg)", 255, 0, 0)]     // % 與 deg 寫法
+    [InlineData("oklch(0.452 0.3132 264.05)", 0, 0, 255)]        // sRGB 藍的 oklch 座標
+    [InlineData("color(display-p3 0.5 0.5 0.5)", 128, 128, 128)] // 同轉移函數 → 灰幾乎不變(±1 捨入)
+    public void Parses_oklch_within_rounding(string css, int r, int g, int b)
+    {
+        Assert.True(Rgba.TryParseCss(css, out var c));
+        Assert.InRange(c.R, Math.Max(0, r - 2), Math.Min(255, r + 2));
+        Assert.InRange(c.G, Math.Max(0, g - 2), Math.Min(255, g + 2));
+        Assert.InRange(c.B, Math.Max(0, b - 2), Math.Min(255, b + 2));
+    }
+
+    [Fact]
+    public void Oklch_alpha_parses()
+    {
+        Assert.True(Rgba.TryParseCss("oklch(1 0 0 / 0.5)", out var c));
+        Assert.Equal(0.5, c.A, 3);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("transparent")]
     [InlineData("var(--color)")]
+    [InlineData("color(rec2020 1 0 0)")]
+    [InlineData("oklch(banana 0 0)")]
     public void Rejects_unparsable_colors(string? css)
         => Assert.False(Rgba.TryParseCss(css, out _));
 

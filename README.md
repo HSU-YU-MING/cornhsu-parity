@@ -18,6 +18,7 @@ parity init                # 產生 parity.config.json 範本
 parity install-browser     # 第一次:下載 Playwright Chromium
 export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
+parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
 ```
 
 在這個 repo 裡開發時:
@@ -83,7 +84,7 @@ electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
   - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
 - **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
 - **字體**:size / weight / line-height / letter-spacing 精確比;font-family 是**軟落差**(不擋 gate)
-- **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等
+- **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
 
 ## 配對策略(以設計端為錨)
