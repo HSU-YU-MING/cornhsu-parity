@@ -10,8 +10,8 @@
 ## 已知盲點 / 該補的
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
-- **Action 當消費者的流程沒實證**:PR 留言只驗過 YAML + 邏輯,沒被真實外部 repo 用 `@vX` 跑過真 PR。建議:開一個測試 repo 跑一次真 PR 驗證。
-- **CI 裡的 `--baseline` 沒實跑**:邏輯有測,但沒在真實 PR 流程走過(需 commit `parity.baseline.db`)。
+- ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。
+- **CI 裡的 `--baseline` 沒實跑**:邏輯有測,但沒在真實 PR 流程走過(需 commit `parity.baseline.db`)。可沿用 parity-action-test 驗。
 
 ## 檢視留下的整潔項(非 bug)
 
@@ -28,5 +28,5 @@
 ## 建議優先序
 
 1. ~~gate 盲點(0 配對 → PASS)~~ 已補。
-2. **實證 action 消費者流程**——補上最後一條沒實證的主打路徑。
-3. 之後才輪到整潔項、M5 下半 / M6。
+2. ~~實證 action 消費者流程~~ 已實證(真 PR:PASS / FAIL+留言 / 留言原地更新)。
+3. **CI 的 `--baseline` 實跑**(可沿用 parity-action-test),之後才輪到整潔項、M5 下半 / M6。
