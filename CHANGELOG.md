@@ -2,6 +2,13 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發布
+
+設計師的兩個方向(討論結論:同一顆引擎的薄外殼,不另開套件):
+
+- **`parity lint`(design lint)**:只看設計稿,驗值是否落在 design token 允許集合——顏色(ΔE 容差內命中即過)、fontSize / padding / itemSpacing / cornerRadius(等於任一尺寸 token 即過)。違規附「最近的 token」建議;有違規 exit 1 可進 CI;某維度沒定義 token 就不 lint 該維度(沒規範就不裝有規範)。不開瀏覽器、不需要實作端。
+- **`parity check --reverse`(反向檢視)**:設計師照現有頁面重畫/改版時,「期望」= 現況(實作)、「實際」= 設計稿——給設計師的 diff 清單,不做把關(exit 0)。console/report.json/Markdown 全部同向交換,與 `--baseline` 互斥。
+
 ## 0.8.0
 
 實作端覆蓋率的兩塊大拼圖:

@@ -20,6 +20,7 @@ try
         "check" => await CheckCommand.RunAsync(rest),
         "report" => ReportCommand.Run(rest),
         "snapshot" => await SnapshotCommand.RunAsync(rest),
+        "lint" => await LintCommand.RunAsync(rest),
         "serve" => await ServeCommand.RunAsync(rest),
         "map" => await ServeCommand.RunAsync(rest, mapMode: true),
         "baseline" => await BaselineCommand.RunAsync(rest),
@@ -62,23 +63,42 @@ internal static class CheckCommand
 
         Console.WriteLine($"\x1b[1mParity\x1b[0m — 數值級設計還原度檢查\n設定:{configPath}\n");
 
+        // --reverse:方向反過來——「現況(實作)是真相,設計稿是被檢視的草稿」。
+        // 場景:設計師照著現有頁面重畫/改版,想看自己的稿跟現況差在哪。
+        // 資料對稱,只需:交換期望/實際欄位(在所有輸出之前)、不做把關
+        // (設計師要的是 diff 清單,不是被打紅)。
+        var reverse = opts.ContainsKey("--reverse");
+        if (reverse && opts.ContainsKey("--baseline"))
+            throw new InvalidOperationException("--reverse 與 --baseline 不能同時使用(reverse 不做把關)。");
+
         var scans = await session.RunAsync(opts.GetValueOrDefault("--target"));
-        foreach (var scan in scans)
+        var reports = scans
+            .Select(s => reverse ? SwapExpectations(s.Result.Report) : s.Result.Report)
+            .ToList();
+
+        foreach (var (scan, report) in scans.Zip(reports))
         {
-            Console.WriteLine($"目標 \x1b[1m{scan.Target.Route}\x1b[0m → {scan.Result.Report.Url}");
-            PrintReport(scan.Result.Report);
+            Console.WriteLine($"目標 \x1b[1m{scan.Target.Route}\x1b[0m → {report.Url}" +
+                (reverse ? "\x1b[36m(reverse:期望 = 現況、實際 = 設計稿)\x1b[0m" : ""));
+            PrintReport(report);
         }
 
         // JSON 輸出:機器與人都要(規畫書 0.1 決策總表)
         var outPath = opts.GetValueOrDefault("--out")
             ?? Path.Combine(session.Config.BaseDirectory, ".parity", "report.json");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
-        await File.WriteAllTextAsync(outPath,
-            JsonSerializer.Serialize(scans.Select(s => s.Result.Report), ReportJson.Indented));
+        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(reports, ReportJson.Indented));
         Console.WriteLine($"報告已寫入:{outPath}");
 
-        var reports = scans.Select(s => s.Result.Report).ToList();
         Console.WriteLine($"還原度分數:\x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
+
+        if (reverse)
+        {
+            WriteMarkdown(opts, session.Config, reports, gateFail: false,
+                gateNotes: ["reverse 模式:「期望」= 現況(實作)、「實際」= 設計稿——差異是給設計師看的,不做把關"]);
+            Console.WriteLine("\n\x1b[36mreverse 模式\x1b[0m:不做把關,exit 0。");
+            return 0;
+        }
 
         // 配對可信度(0 配對 / 低於 minMatchRate):沒配到就沒落差可擋,不能沉默 PASS
         var integrity = session.MatchIntegrityFailures(scans);
@@ -179,6 +199,15 @@ internal static class CheckCommand
         return 0;
     }
 
+    /// <summary>reverse 模式:交換每條落差的期望/實際(現況變成「期望」)。分數/嚴重度不受影響。</summary>
+    private static FidelityReport SwapExpectations(FidelityReport r) => r with
+    {
+        Nodes = r.Nodes.Select(n => n with
+        {
+            Diffs = n.Diffs.Select(d => d with { Expected = d.Actual, Actual = d.Expected }).ToList(),
+        }).ToList(),
+    };
+
     private static void PrintReport(FidelityReport report)
     {
         var s = report.Summary;
@@ -249,6 +278,81 @@ internal static class ReportCommand
             Console.Write(md); // 沒給 --md 就印到 stdout,方便管線接走
         }
         return 0;
+    }
+}
+
+internal static class LintCommand
+{
+    /// <summary>
+    /// parity lint:design lint——只看設計稿,驗值是否落在 design token 允許集合
+    /// (顏色 / fontSize / padding / itemSpacing / cornerRadius)。
+    /// 場景:設計師畫新頁面要跟設計系統一致。不開瀏覽器、不比對實作。
+    /// </summary>
+    public static async Task<int> RunAsync(string[] args)
+    {
+        var opts = CliOptions.Parse(args);
+        var configPath = opts.GetValueOrDefault("--config")
+            ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
+            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+        var config = ParityConfig.Load(configPath);
+
+        var tokens = config.TokensFile is { } tf
+            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
+            : null;
+        if (tokens is null)
+            throw new InvalidOperationException(
+                "lint 需要 design token:請在設定檔設 tokensFile(平面 JSON:{\"token 名\":\"值\"})。");
+
+        var targets = opts.GetValueOrDefault("--target") is { } routeFilter
+            ? config.Targets.Where(t => t.Route == routeFilter).ToList()
+            : config.Targets;
+        if (targets.Count == 0)
+            throw new InvalidOperationException("設定檔裡沒有任何 target。");
+
+        Console.WriteLine($"\x1b[1mParity lint\x1b[0m — 設計稿 token 規範檢查(只看設計,不比實作)\n");
+
+        var source = ScanSession.CreateDesignSource(config, refresh: opts.ContainsKey("--refresh"));
+        try
+        {
+            var total = 0;
+            var allViolations = new List<(string Route, LintViolation V)>();
+            foreach (var t in targets)
+            {
+                var designRef = new DesignRef(
+                    Source: config.DesignFile is { } df
+                        ? Path.GetFullPath(Path.Combine(config.BaseDirectory, df))
+                        : config.FigmaFileKey ?? throw new InvalidOperationException(
+                            "設定檔需要 figmaFileKey 或 designFile 其中之一。"),
+                    NodeId: t.Frame);
+                var tree = await source.GetFrameAsync(designRef);
+                var nodes = tree.DescendantsAndSelf().Count();
+                total += nodes;
+                var violations = DesignLint.Run(tree, tokens, config.Tolerances.ColorDeltaE);
+                allViolations.AddRange(violations.Select(v => (t.Route, v)));
+                Console.WriteLine($"目標 \x1b[1m{t.Route}\x1b[0m:{nodes} 個節點,{violations.Count} 條違規");
+            }
+
+            foreach (var (route, v) in allViolations)
+            {
+                var near = v.NearestToken is null
+                    ? ""
+                    : $";最近:\x1b[36m{v.NearestToken}\x1b[0m = {v.NearestValue}" +
+                      (v.Prop == "color" ? $"(ΔE {v.Distance})" : $"(差 {v.Distance})");
+                Console.WriteLine($"  \x1b[33m✘ {v.Layer}\x1b[0m {v.Prop} = {v.Value} 不在 token 內{near}");
+            }
+
+            if (allViolations.Count > 0)
+            {
+                Console.WriteLine($"\n\x1b[31m✘ {allViolations.Count} 條違規\x1b[0m(共檢查 {total} 個節點)");
+                return 1;
+            }
+            Console.WriteLine($"\n\x1b[32m✔ 全部符合 token 規範\x1b[0m(共檢查 {total} 個節點)");
+            return 0;
+        }
+        finally
+        {
+            (source as IDisposable)?.Dispose();
+        }
     }
 }
 
@@ -387,11 +491,13 @@ internal static class HelpCommand
             Parity — 數值級設計還原度檢查工具
 
             用法:
-              parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline]
+              parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse]
                   抓設計端與實作端真實數值比對,輸出報告 + exit code
                   --refresh   忽略 Figma 本機快取重抓
                   --headed    顯示瀏覽器視窗(除錯用)
                   --baseline  回歸模式:只擋「相對基準新增/惡化」的落差(見 parity baseline)
+                  --reverse   反向檢視:「期望」= 現況(實作)、「實際」= 設計稿;不做把關
+                              (設計師照現有頁面重畫/改版時,看自己的稿跟現況差在哪)
                   --md <path> 另外輸出 Markdown 報告(含還原度分數 + 建議修法,可貼 PR 留言)
                   target 的 url 可以是:
                     http(s):// 或 file://   一般網頁 / 本機頁面
@@ -409,6 +515,9 @@ internal static class HelpCommand
                   --watch     設定/設計/頁面檔變更時自動重掃
               parity map [--config <path>] [--port <n>]
                   互動配對:點選未配對的設計節點 → 點頁面元素 → 寫入 parity.map.json
+              parity lint [--config <path>] [--target <route>] [--refresh]
+                  design lint:只看設計稿,驗值是否落在 design token 允許集合
+                  (顏色/字級/內距/間距/圓角;需 tokensFile)。設計師畫新頁面守設計系統用。
               parity baseline save|list
                   存/看落差基準快照(SQLite);搭配 check --baseline 做回歸把關
               parity init             產生 parity.config.json 範本

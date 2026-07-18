@@ -20,6 +20,8 @@ export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
 parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
 parity snapshot            # 把「現在跑著的畫面」凍結成設計基準——重構/改版守門,不需要 Figma
+parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
+parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
 ```
 
 在這個 repo 裡開發時:
@@ -106,6 +108,12 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 
 > 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
+
+## 給設計師的兩個方向
+
+**新頁面守設計系統:`parity lint`**——只看設計稿這一邊,驗每個節點的值是否落在 `tokensFile` 的允許集合:顏色(ΔE 容差內命中即過)、fontSize / padding / itemSpacing / cornerRadius(等於任一尺寸 token 即過;間距/字級/圓角共用同一份 scale)。違規附「最近的 token」——訊息是「改成這個」,不是只有「你錯了」。有違規 exit 1,可進 CI。沒定義某維度的 token 就不 lint 該維度。
+
+**照現況重畫/改版:`parity check --reverse`**——方向反過來:「期望」= 現況(實作)、「實際」= 你的設計稿。給設計師一張「我的稿跟現在線上差在哪」的清單;不做把關,永遠 exit 0。
 
 ## RWD 多斷點
 

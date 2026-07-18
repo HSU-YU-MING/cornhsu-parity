@@ -43,15 +43,31 @@ public sealed class DesignTokens
 {
     private readonly Dictionary<string, string> _colorByHex = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<double, string> _nameBySizePx = new();
+    private readonly List<(string Name, Rgba Color)> _colors = [];
+    private readonly List<(string Name, double Px)> _sizes = [];
 
     public DesignTokens(IReadOnlyDictionary<string, string> tokens)
     {
         foreach (var (name, value) in tokens)
         {
-            if (Rgba.TryParseCss(value, out var c)) _colorByHex.TryAdd(c.ToHex(), name);
-            else if (Comparison.Normalizer.ParseCssPx(value) is { } px) _nameBySizePx.TryAdd(px, name);
+            if (Rgba.TryParseCss(value, out var c))
+            {
+                _colorByHex.TryAdd(c.ToHex(), name);
+                _colors.Add((name, c));
+            }
+            else if (Comparison.Normalizer.ParseCssPx(value) is { } px)
+            {
+                _nameBySizePx.TryAdd(px, name);
+                _sizes.Add((name, px));
+            }
         }
     }
+
+    /// <summary>所有顏色 token(名稱 + 值)。design lint 的允許集合。</summary>
+    public IReadOnlyList<(string Name, Rgba Color)> Colors => _colors;
+
+    /// <summary>所有尺寸 token(名稱 + px)。design lint 的允許集合(間距/字級/圓角共用同一份 scale)。</summary>
+    public IReadOnlyList<(string Name, double Px)> Sizes => _sizes;
 
     // 真正以「px 尺寸」計的屬性。font-weight 是無單位數字,不能跟 px token 共用索引
     // (否則 700px 的 size token 會誤配到 font-weight 700)。

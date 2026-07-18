@@ -107,7 +107,7 @@ public sealed class ScanSession : IAsyncDisposable
         return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(MapFilePath));
     }
 
-    private static IDesignSource CreateDesignSource(ParityConfig config, bool refresh)
+    internal static IDesignSource CreateDesignSource(ParityConfig config, bool refresh)
     {
         if (config.DesignImage is { } img)
             return new Parity.Engine.DesignSources.Image.ImageDesignSource(
