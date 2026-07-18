@@ -19,6 +19,7 @@ parity install-browser     # 第一次:下載 Playwright Chromium
 export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
 parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
+parity snapshot            # 把「現在跑著的畫面」凍結成設計基準——重構/改版守門,不需要 Figma
 ```
 
 在這個 repo 裡開發時:
@@ -75,6 +76,22 @@ electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
 ```
 
 > 為什麼 Electron 幾乎免費:它的畫面就是一個 Chromium renderer,跟網頁同一套 DOM/CSS 量測。手機原生 / Flutter / 原生桌面不走 DOM,留待 v2.0。
+
+## 設計來源:Figma、快照、或一張圖
+
+| 設計來源 | config | 適合誰 |
+|---|---|---|
+| **Figma**(主力) | `figmaFileKey` + `FIGMA_TOKEN` | 有 Figma 檔的正規流程 |
+| **快照**(`parity snapshot`) | `designFile` 指向產出的快照 JSON | **重構/改版守門**:現在的畫面是對的,存成基準,之後 check 保證不跑版(visual regression 的數值版)。配對走 selector 身分,100% 確定性 |
+| **一張圖 + 標註** | `designImage`(PNG/JPG)+ `designFile`(標註) | 只有圖的場景:外包 PNG、老專案只剩截圖。**XD / Sketch / PS 等其他工具匯出圖片就能走這條**(萬用轉接頭)。標註 = DesignNode JSON,`fill` 可省略——顏色由引擎從圖片對應區域取樣(TEXT 字色刻意不取樣:反鋸齒混色取不準,可手填) |
+| 手寫 JSON | `designFile` | 離線示範/測試 |
+
+```sh
+# 重構守門三步:
+parity snapshot            # 1. 凍結現在的畫面(產出 parity.snapshot.json + 參考截圖)
+#    config 改 designFile 指向它、target.frame 填 route
+parity check               # 2. 大膽重構;3. check 保證與快照一致
+```
 
 ## 比什麼、不比什麼
 
@@ -190,7 +207,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 - [x] **M2** 比對引擎:配對 + 數值 diff + 容差 + 未配對清單 + gate exit code
 - [x] **M3** 本機報告 UI(`parity serve --watch`,Kestrel 綁 127.0.0.1)+ `parity map` 互動配對
 - [x] **M4** GitHub Action:可重用 composite action(`action.yml`)+ 本 repo CI(build / test / 離線示範自我把關)
-- [~] **M5** EF Core + SQLite baseline / 歷史(✓ 回歸把關 `baseline` + `check --baseline`);`ImageDesignSource` 驗證抽象層(待做)
+- [x] **M5** EF Core + SQLite baseline / 歷史(回歸把關 + 分數走勢)+ `ImageDesignSource`(圖片+標註+像素取樣)+ `parity snapshot`(凍結現況當基準)
 
 > 未完成、已知盲點與下一步優先序見 [ROADMAP.md](ROADMAP.md);版本變更見 [CHANGELOG.md](CHANGELOG.md)。
 - [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護

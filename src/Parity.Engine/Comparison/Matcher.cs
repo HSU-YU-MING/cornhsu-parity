@@ -39,6 +39,12 @@ public static class Matcher
             pairs.Add(new NodePair(d, r, by));
         }
 
+        // --- 第 0 關:selector 身分(snapshot 設計來源:設計節點 Id 就是擷取時的 CSS selector)---
+        // 100% 確定性——同一個 selector 就是同一個元素。Figma id("10:2")長得不像 selector,不會誤中。
+        var bySelector = new Dictionary<string, RenderedNode>();
+        foreach (var r in candidates)
+            bySelector.TryAdd(r.Selector, r);
+
         // --- 第 1 關:手動錨點(ExplicitMatch = data-parity 或 map 檔),對圖層名 ---
         var explicitByName = new Dictionary<string, RenderedNode>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in candidates.Where(r => !string.IsNullOrEmpty(r.ExplicitMatch)))
@@ -47,7 +53,9 @@ public static class Matcher
         var remaining = new List<DesignNode>();
         foreach (var d in designNodes)
         {
-            if (explicitByName.TryGetValue(d.Name, out var hit) && !taken.Contains(hit))
+            if (bySelector.TryGetValue(d.Id, out var same) && !taken.Contains(same))
+                Pair(d, same, "selector");
+            else if (explicitByName.TryGetValue(d.Name, out var hit) && !taken.Contains(hit))
                 Pair(d, hit, "explicit");
             else
                 remaining.Add(d);

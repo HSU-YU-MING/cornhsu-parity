@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Playwright" Version="1.61.0" />
+    <!-- ImageDesignSource 的圖片解碼/取樣。純 managed、跨平台;Six Labors Split License(開源專案免費) -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
 
   <ItemGroup>

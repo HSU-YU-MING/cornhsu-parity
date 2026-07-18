@@ -3,6 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Parity.Cli;
 using Parity.Engine;
+using Parity.Engine.DesignSources;
+using Parity.Engine.DesignSources.Snapshot;
+using Parity.Engine.ImplementationSources;
 using Parity.Storage;
 
 Console.OutputEncoding = Encoding.UTF8;
@@ -16,6 +19,7 @@ try
     {
         "check" => await CheckCommand.RunAsync(rest),
         "report" => ReportCommand.Run(rest),
+        "snapshot" => await SnapshotCommand.RunAsync(rest),
         "serve" => await ServeCommand.RunAsync(rest),
         "map" => await ServeCommand.RunAsync(rest, mapMode: true),
         "baseline" => await BaselineCommand.RunAsync(rest),
@@ -248,6 +252,84 @@ internal static class ReportCommand
     }
 }
 
+internal static class SnapshotCommand
+{
+    /// <summary>
+    /// parity snapshot:把「現在跑著的實作」凍結成設計基準(design JSON + 參考截圖)。
+    /// 用途:重構/改版守門——現在的畫面是對的,之後 check 保證不跑版(visual regression 的數值版)。
+    /// 不經 ScanSession(它會建設計來源;snapshot 只需要實作端,連 Figma 設定都不用)。
+    /// </summary>
+    public static async Task<int> RunAsync(string[] args)
+    {
+        var opts = CliOptions.Parse(args);
+        var configPath = opts.GetValueOrDefault("--config")
+            ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
+            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+        var config = ParityConfig.Load(configPath);
+        if (config.Targets.Count == 0)
+            throw new InvalidOperationException("設定檔裡沒有任何 target。");
+
+        var targets = opts.GetValueOrDefault("--target") is { } route
+            ? config.Targets.Where(t => t.Route == route).ToList()
+            : config.Targets;
+        if (targets.Count == 0)
+            throw new InvalidOperationException("找不到指定 route 的 target。");
+
+        // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
+        var width = int.TryParse(opts.GetValueOrDefault("--width"), out var w) ? w : 1280;
+        var height = int.TryParse(opts.GetValueOrDefault("--height"), out var h) ? h : 800;
+
+        Console.WriteLine($"\x1b[1mParity snapshot\x1b[0m — 把現在的畫面凍結成設計基準({width}×{height})\n");
+
+        await using var impl = new Parity.Engine.ImplementationSources.Web.WebImplementationSource(
+            new Parity.Engine.ImplementationSources.Web.WebCaptureOptions(
+                Headless: !opts.ContainsKey("--headed"), CaptureScreenshot: true));
+
+        var outPath = Path.GetFullPath(opts.GetValueOrDefault("--out")
+            ?? Path.Combine(config.BaseDirectory, "parity.snapshot.json"));
+        var frames = new List<DesignNode>();
+        var shotPaths = new List<string>();
+
+        foreach (var (t, i) in targets.Select((t, i) => (t, i)))
+        {
+            var url = ScanSession.ResolveUrl(t.Url, config.BaseDirectory);
+            var tree = await impl.CaptureAsync(new ImplRef(url, width, height)
+            {
+                IgnoreSelectors = config.Ignore,
+            });
+            frames.Add(SnapshotBuilder.ToFrame(tree, t.Route));
+
+            if (impl.Screenshots.TryGetValue(url, out var png))
+            {
+                var shot = targets.Count == 1
+                    ? Path.ChangeExtension(outPath, ".png")
+                    : Path.ChangeExtension(outPath, $".{i}.png");
+                await File.WriteAllBytesAsync(shot, png);
+                shotPaths.Add(shot);
+            }
+            Console.WriteLine($"  ✓ {t.Route} → {tree.DescendantsAndSelf().Count()} 個節點");
+        }
+
+        // 單 target:frame 直接當根;多 target:包一層,frame id = route(對 config 的 target.frame)
+        var root = frames.Count == 1
+            ? frames[0]
+            : new DesignNode("snapshot", "snapshot", DesignNodeType.Frame, default,
+                null, null, null, null, null, frames);
+        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(root, ReportJson.Indented));
+
+        Console.WriteLine($"\n已寫入:{outPath}");
+        foreach (var s in shotPaths) Console.WriteLine($"參考截圖:{s}");
+        Console.WriteLine($"""
+
+            下一步(把快照當設計基準,重構不跑版):
+              1. {Path.GetFileName(configPath)} 設 "designFile": "{Path.GetFileName(outPath)}"(figmaFileKey 可拿掉)
+              2. 每個 target 的 "frame" 填自己的 route(如 "/")
+              3. 之後 parity check = 檢查畫面是否仍與快照一致
+            """);
+        return 0;
+    }
+}
+
 internal static class InitCommand
 {
     public static int Run(string[] args)
@@ -319,6 +401,9 @@ internal static class HelpCommand
               parity report [--config <path>] [--in <report.json>] [--md <path>]
                   從既有 report.json 重生 Markdown 報告,免重掃(預設讀 .parity/report.json;
                   沒給 --md 就印到 stdout)
+              parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>]
+                  把「現在跑著的實作」凍結成設計基準(JSON + 參考截圖)——重構/改版守門:
+                  現在的畫面是對的,之後 check 保證不跑版。不需要 Figma。
               parity serve [--config <path>] [--port <n>] [--watch] [--open]
                   本機報告 UI(只綁 127.0.0.1):落差清單 + 截圖疊框視圖
                   --watch     設定/設計/頁面檔變更時自動重掃

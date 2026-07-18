@@ -8,6 +8,22 @@ namespace Parity.Tests;
 public class MatcherTests
 {
     [Fact]
+    public void Matches_by_selector_identity_first()
+    {
+        // snapshot 設計來源:設計節點 Id = 擷取時的 selector → 第 0 關直接配,不靠文字/名字
+        var design = Design("1", "frame",
+            children: Design("body > div:nth-of-type(1)", "div"));
+        var rendered = Rendered("body",
+            children: Rendered("body > div:nth-of-type(1)", "div"));
+
+        var result = Matcher.Match(design, rendered);
+
+        var pair = Assert.Single(result.Pairs);
+        Assert.Equal("selector", pair.MatchedBy);
+        Assert.Empty(result.Unmatched);
+    }
+
+    [Fact]
     public void Matches_text_nodes_by_content()
     {
         var design = Design("1", "frame",

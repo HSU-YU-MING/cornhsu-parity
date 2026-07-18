@@ -2,6 +2,14 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發布
+
+**M5 下半完工,M1–M5 全部收官**——兩種新設計來源:
+
+- **`parity snapshot`(重構守門)**:把「現在跑著的畫面」凍結成設計基準(JSON + 參考截圖),之後 `check` 保證不跑版——visual regression 的數值版。凍結節點的 Id = CSS selector,配對走新的「selector 身分」關(第 0 關),100% 確定性;不需要 Figma、不經設計來源就能拍。實測:快照 vs 同一頁 = 100/100;模擬重構改壞(色、gap)→ 精準抓到,連 gap 變大擠縮卡片寬度的連鎖後果都如實報出。
+- **`ImageDesignSource`(一張圖 + 標註)**:`designImage`(PNG/JPG)搭配標註檔(= DesignNode JSON,`fill` 可省略——顏色由引擎從圖片對應區域取樣;內縮避開反鋸齒、取樣格點眾數;TEXT 字色刻意不取樣,可手填)。這是 XD/Sketch/PS 等**其他設計工具的萬用轉接頭**:匯出圖片就能上車。新依賴 SixLabors.ImageSharp(純 managed)。
+- 設計工具支援的明文決定(見 ROADMAP):XD 不做(Adobe 已棄養)、Sketch 門留著等真需求、未來優先 Penpot。
+
 ## 0.6.0
 
 給「還沒被服務到的角色」的兩個功能(延續 0.2–0.5 的方向:每個角色從「知道有錯」到「知道下一步」):

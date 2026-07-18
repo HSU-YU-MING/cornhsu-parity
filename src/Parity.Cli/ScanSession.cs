@@ -108,6 +108,9 @@ public sealed class ScanSession : IAsyncDisposable
 
     private static IDesignSource CreateDesignSource(ParityConfig config, bool refresh)
     {
+        if (config.DesignImage is { } img)
+            return new Parity.Engine.DesignSources.Image.ImageDesignSource(
+                Path.GetFullPath(Path.Combine(config.BaseDirectory, img)));
         if (config.DesignFile is not null) return new JsonDesignSource();
 
         var token = config.ResolveToken()

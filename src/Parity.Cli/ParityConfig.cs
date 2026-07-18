@@ -10,8 +10,14 @@ public sealed class ParityConfig
     /// <summary>Figma 檔案 key。與 DesignFile 二擇一。</summary>
     public string? FigmaFileKey { get; set; }
 
-    /// <summary>本機設計 JSON 檔路徑(離線測試/示範用)。與 FigmaFileKey 二擇一。</summary>
+    /// <summary>本機設計 JSON 檔路徑(離線測試/示範/snapshot 基準用)。與 FigmaFileKey 二擇一。</summary>
     public string? DesignFile { get; set; }
+
+    /// <summary>
+    /// 設計圖(PNG/JPG)路徑——搭配 DesignFile(此時 DesignFile 是「標註檔」,同 DesignNode 格式,
+    /// fill 可省略,由圖片對應區域取樣補上)。XD/Sketch 等其他工具匯出圖片就能走這條。
+    /// </summary>
+    public string? DesignImage { get; set; }
 
     /// <summary>"env:FIGMA_TOKEN" 表示從環境變數讀;token 不落地、不進 log。</summary>
     public string? DesignToken { get; set; }
@@ -71,6 +77,9 @@ public sealed class ParityConfig
             !string.Equals(Compare.Position, "none", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"設定檔 {path}:compare.position 的「{Compare.Position}」無效(可用:relative、none)。");
+        if (DesignImage is not null && DesignFile is null)
+            throw new InvalidOperationException(
+                $"設定檔 {path}:designImage 需要搭配 designFile(標註檔:DesignNode 格式、fill 可省略由圖片取樣)。");
     }
 
     /// <summary>從 cwd 往上找 parity.config.json。</summary>
