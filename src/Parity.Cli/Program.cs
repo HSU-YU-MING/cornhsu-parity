@@ -401,7 +401,7 @@ internal static class SnapshotCommand
             {
                 IgnoreSelectors = config.Ignore,
             });
-            frames.Add(SnapshotBuilder.ToFrame(tree, t.Route));
+            frames.Add(SnapshotBuilder.ToFrame(tree, t.Route, t.Width ?? width, t.Height ?? height));
 
             if (impl.Screenshots.TryGetValue(url, out var png))
             {

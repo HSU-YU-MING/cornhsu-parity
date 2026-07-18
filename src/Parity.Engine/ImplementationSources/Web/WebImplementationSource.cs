@@ -104,23 +104,45 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
     /// <summary>共用的擷取:在給定頁面上跑擷取腳本 → RenderedNode(啟動導頁與 CDP attach 兩條路都用)。</summary>
     private async Task<RenderedNode> CaptureFromPageAsync(IPage page, ImplRef reference)
     {
-        var arg = new
+        // 量測前凍結動畫/轉場:進場 transition 與 infinite animation 會讓「同一頁的兩次擷取」
+        // 量到不同座標(flaky 誤報,dogfooding 實測抓到)。量的是設計意圖的版面,不是動畫中途格。
+        // 完成後移除——attach 模式面對的是使用者活著的 app,不能留下痕跡。
+        // 已知限制:注入的樣式不會穿進 shadow DOM(文件樣式不 cascade 進去)。
+        var freezeStyle = await page.EvaluateHandleAsync("""
+            () => {
+              const s = document.createElement('style');
+              s.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }';
+              document.head.appendChild(s);
+              return s;
+            }
+            """);
+        try
         {
-            mapSelectors = reference.MapSelectors ?? new Dictionary<string, string>(),
-            ignoreSelectors = reference.IgnoreSelectors ?? [],
-        };
-        // 擷取腳本回傳 JSON 字串(見 CaptureScript:避開 Playwright 值序列化的深度放大)。
-        // 用放寬的 MaxDepth 解析——真實網站 DOM 常有十幾層巢狀,預設 64 不夠。
-        var raw = await page.EvaluateAsync<string>(CaptureScript.Js, arg);
-        var json = JsonSerializer.Deserialize<JsonElement>(raw, CaptureParseOptions);
-        if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-            throw new InvalidOperationException($"頁面擷取失敗(body 不可見?):{reference.Url}");
+            await page.WaitForTimeoutAsync(100); // 讓凍結後的最終版面套用完
 
-        if (_options.CaptureScreenshot)
-            _screenshots[reference.Url] = await page.ScreenshotAsync(
-                new PageScreenshotOptions { FullPage = true });
+            var arg = new
+            {
+                mapSelectors = reference.MapSelectors ?? new Dictionary<string, string>(),
+                ignoreSelectors = reference.IgnoreSelectors ?? [],
+            };
+            // 擷取腳本回傳 JSON 字串(見 CaptureScript:避開 Playwright 值序列化的深度放大)。
+            // 用放寬的 MaxDepth 解析——真實網站 DOM 常有十幾層巢狀,預設 64 不夠。
+            var raw = await page.EvaluateAsync<string>(CaptureScript.Js, arg);
+            var json = JsonSerializer.Deserialize<JsonElement>(raw, CaptureParseOptions);
+            if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                throw new InvalidOperationException($"頁面擷取失敗(body 不可見?):{reference.Url}");
 
-        return ParseNode(json);
+            if (_options.CaptureScreenshot)
+                _screenshots[reference.Url] = await page.ScreenshotAsync(
+                    new PageScreenshotOptions { FullPage = true });
+
+            return ParseNode(json);
+        }
+        finally
+        {
+            await freezeStyle.EvaluateAsync("s => s.remove()");
+            await freezeStyle.DisposeAsync();
+        }
     }
 
     /// <summary>擷取腳本輸出 → RenderedNode。CSS 字串在這裡解析成數值(px、顏色)。</summary>

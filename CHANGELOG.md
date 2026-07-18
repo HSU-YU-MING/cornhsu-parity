@@ -2,6 +2,13 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發布
+
+Dogfooding 首日(cornhsu.com 作品集,16 頁、近 4,000 節點)逼出的兩個修正:
+
+- **量測時凍結動畫/轉場**:進場 `transition` 與 `infinite` 動畫會讓同一頁兩次擷取量到不同座標(flaky 誤報)。現在擷取前注入 `animation/transition: none`,量完移除(attach 模式不在使用者的活 app 留痕跡)。量的是設計意圖的版面,不是動畫中途格。已知限制:凍結樣式不 cascade 進 shadow DOM。
+- **snapshot 視窗自我參照修正**:快照 frame 原本記 body 尺寸,check 用它開視窗 → 捲軸再吃 16px、`100vh` 變成整頁高,必然落差。改記「拍照當時的視窗尺寸」,check 在完全相同的渲染條件下重現。實測:16 頁連續兩輪 check 全綠。
+
 ## 0.9.0
 
 設計師的兩個方向(討論結論:同一顆引擎的薄外殼,不另開套件):

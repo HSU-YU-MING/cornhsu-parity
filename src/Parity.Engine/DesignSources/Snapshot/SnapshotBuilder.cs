@@ -15,9 +15,19 @@ namespace Parity.Engine.DesignSources.Snapshot;
 /// </summary>
 public static class SnapshotBuilder
 {
-    /// <summary>把一個擷取樹包成可放進設計檔的 frame(id = route,配 config 的 target.frame)。</summary>
-    public static DesignNode ToFrame(RenderedNode body, string frameId)
-        => Convert(body) with { Id = frameId, Name = frameId, Type = DesignNodeType.Frame };
+    /// <summary>
+    /// 把一個擷取樹包成可放進設計檔的 frame(id = route,配 config 的 target.frame)。
+    /// frame 的 W/H 記「拍照當時的視窗尺寸」而不是 body 尺寸——check 用 frame 尺寸開視窗,
+    /// 記 body 尺寸會自我參照(視窗縮成 body 寬 → 捲軸又吃掉 16px、100vh 變成整頁高)導致必然落差。
+    /// </summary>
+    public static DesignNode ToFrame(RenderedNode body, string frameId, int? viewportW = null, int? viewportH = null)
+        => Convert(body) with
+        {
+            Id = frameId,
+            Name = frameId,
+            Type = DesignNodeType.Frame,
+            Box = new Box(body.Box.X, body.Box.Y, viewportW ?? body.Box.W, viewportH ?? body.Box.H),
+        };
 
     private static DesignNode Convert(RenderedNode r)
     {
