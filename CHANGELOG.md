@@ -2,6 +2,10 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 0.9.2
+
+- **修 NuGet 包只含 linux-x64 Playwright driver**:release 在 ubuntu runner 上 `dotnet pack`,Microsoft.Playwright 預設只複製「建置當下平台」的 driver,做出來的包缺 `win32_x64/node.exe` 與 darwin——Windows/macOS 使用者裝了任何指令都報 `Driver not found`,連 `install-browser` 都失敗。修法:Parity.Cli 設 `PlaywrightPlatform=all` 收齊五個平台的 node(工具是給各平台 CI 用的,不挑平台;包約 237MB,低於 nuget.org 250MB 上限)。已本機 pack 實測:`dotnet tool install` 後 `install-browser` 與指令皆正常。
+
 ## 0.9.1
 
 Dogfooding 首日(cornhsu.com 作品集,16 頁、近 4,000 節點)逼出的兩個修正:
