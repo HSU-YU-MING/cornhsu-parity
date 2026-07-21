@@ -5,7 +5,7 @@
 [![CI](https://github.com/HSU-YU-MING/cornhsu-parity/actions/workflows/ci.yml/badge.svg)](https://github.com/HSU-YU-MING/cornhsu-parity/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**[作品介紹與開發故事](https://cornhsu.com/parity.html) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · MIT**
+**[作品介紹與開發故事](https://cornhsu.com/parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · MIT**
 
 > 數值級設計還原度檢查工具——抓 **Figma 與實作端的真實數值**做程式比對,不是疊圖給人眼看。
 > 本機 / CI / 內網都能跑,在東西公開之前就把「顏色不對、字太大、間距跑掉」擋下來。
