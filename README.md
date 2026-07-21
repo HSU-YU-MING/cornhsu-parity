@@ -7,15 +7,26 @@
 
 **[作品介紹與開發故事](https://cornhsu.com/parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · MIT**
 
-> 數值級設計還原度檢查工具——抓 **Figma 與實作端的真實數值**做程式比對,不是疊圖給人眼看。
-> 本機 / CI / 內網都能跑,在東西公開之前就把「顏色不對、字太大、間距跑掉」擋下來。
+> **能進 CI 的設計還原度檢查(Property-Level Design QA)。**
+> 抓 Figma 設計稿與實際渲染畫面**兩邊的真實數值**做程式比對——「內距 8px,設計是 12px」,
+> 精確到數字,所以能當 gate:**PR 讓畫面偏離設計就打紅**,並自動把還原度報告貼成 PR 留言。
 
-|  | 疊圖工具(Pixelay 等) | Parity |
+**別人幫你「看見」設計落差,Parity 幫你「擋住」它。**
+
+同類工具(Uiprobe、Loupe、OverlayQA、Floto Design Diff、PixelProof…)現在大多都做數值比對了,
+真正的差別不在「數值 vs 疊圖」,而在**這件事能不能自動化**:
+
+|  | 手動抽查型<br>(Uiprobe / OverlayQA / Loupe …) | **Parity** |
 |---|---|---|
-| 做法 | 疊兩張圖給人眼看 | 抓兩邊真實數值做程式比對 |
-| 結果 | 「這裡怪怪的」 | 「paddingLeft 8px,設計 20px」 |
-| 跑在哪 | 瀏覽器外掛 / 雲端(碰不到 localhost) | **你的機器 / CI runner**,localhost 天生連得到 |
-| 進 CI | 大多不行 | PR 落差超門檻就擋 |
+| 誰來跑 | 人打開工具、點一點、看報告 | **CI 自動跑**,人不用在場 |
+| 發現落差之後 | 自己開 ticket、或把結果複製貼到 PR | **exit code 擋 PR** + 機器人自動留言(原地更新不洗版) |
+| 回歸把關 | 無 | **baseline 只擋「新增/惡化」**——有舊債的專案也能今天上車 |
+| 沒有 Figma 檔時 | 不能用 | **快照模式**:把現在的畫面凍結成基準,重構不跑版 |
+| 桌面 app | 不支援 | **Electron**(CDP attach 活視窗) |
+| 價格 | $39–249 / 月(Loupe 免費但為桌面 GUI,無法自動化) | **MIT 免費** |
+
+> 誠實說明:localhost 與登入後頁面**不再是差異點**——Uiprobe、OverlayQA 也支援。
+> 「免費開源」也不是獨有——Loupe 同為 MIT。**Parity 獨有的是「免費 × 可自動化」的交集。**
 
 ## 畫面
 
