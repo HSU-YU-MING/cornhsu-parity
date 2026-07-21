@@ -23,7 +23,8 @@ internal static class ServeCommand
 
     public static async Task<int> RunAsync(string[] args, bool mapMode = false)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args, "--config=", "--port=", "--watch", "--open");
+        if (opts.ContainsKey("--help")) return Usage.Print(mapMode ? Usage.Map : Usage.Serve);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
@@ -309,18 +310,46 @@ internal static class ServeCommand
     }
 }
 
-/// <summary>共用的 --flag 解析(check / serve / map)。</summary>
+/// <summary>
+/// 共用的 --flag 解析 + 驗證。spec 寫法:「--flag=」= 吃一個值、「--flag」= 布林。
+/// 未知旗標、多餘的位置參數、缺值 → 一律 CliUsageException(外層印錯誤、exit 2)。
+/// 為什麼嚴格:靜默忽略會讓「查詢」變事故——`snapshot --help` 曾直接覆寫基準、
+/// `--taget`(typo)曾讓「只拍一頁」變成全站重拍(dogfooding 實測回報)。
+/// -h / --help 每個子指令都認得,由各指令在解析後最先檢查。
+/// </summary>
 internal static class CliOptions
 {
-    public static Dictionary<string, string?> Parse(string[] args)
+    public static Dictionary<string, string?> Parse(string[] args, params string[] spec)
     {
         var result = new Dictionary<string, string?>();
         for (var i = 0; i < args.Length; i++)
         {
-            if (!args[i].StartsWith("--")) continue;
-            var hasValue = i + 1 < args.Length && !args[i + 1].StartsWith("--");
-            result[args[i]] = hasValue ? args[++i] : null;
+            var arg = args[i];
+            if (arg is "-h" or "--help")
+            {
+                result["--help"] = null;
+                continue;
+            }
+            if (!arg.StartsWith("--"))
+                throw new CliUsageException($"多餘的參數:「{arg}」(--help 看用法)");
+            if (spec.Contains(arg + "="))
+            {
+                if (i + 1 >= args.Length || args[i + 1].StartsWith("--"))
+                    throw new CliUsageException($"參數 {arg} 需要一個值(--help 看用法)");
+                result[arg] = args[++i];
+            }
+            else if (spec.Contains(arg))
+            {
+                result[arg] = null;
+            }
+            else
+            {
+                throw new CliUsageException($"未知參數:「{arg}」(--help 看用法)");
+            }
         }
         return result;
     }
 }
+
+/// <summary>使用者打錯指令列參數(非程式錯誤)——訊息給人看,exit 2。</summary>
+internal sealed class CliUsageException(string message) : Exception(message);

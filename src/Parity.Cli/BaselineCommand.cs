@@ -15,14 +15,16 @@ internal static class BaselineCommand
         {
             "save" => await SaveAsync(rest),
             "list" => await ListAsync(rest),
-            _ => Help(),
+            "help" or "--help" or "-h" => Help(),
+            _ => UnknownSub(sub),
         };
     }
 
     /// <summary>跑一次掃描,把當前落差存成新的 baseline 快照。</summary>
     private static async Task<int> SaveAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args, "--config=", "--target=", "--headed");
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Baseline);
         var configPath = ResolveConfig(opts);
 
         await using var session = new ScanSession(configPath, headless: !opts.ContainsKey("--headed"));
@@ -56,7 +58,8 @@ internal static class BaselineCommand
     /// <summary>列出歷史 baseline 快照(新到舊)。</summary>
     private static async Task<int> ListAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args, "--config=");
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Baseline);
         var configPath = ResolveConfig(opts);
         var config = ParityConfig.Load(configPath);
 
@@ -72,6 +75,13 @@ internal static class BaselineCommand
             Console.WriteLine($"  #{id,-4} {createdAt:yyyy-MM-dd HH:mm}  {diffCount,3} 條落差  {(score is { } s ? $"{s,3}/100" : "  —  ")}" +
                 (commit is null ? "" : $"  @ {Short(commit)}"));
         return 0;
+    }
+
+    private static int UnknownSub(string sub)
+    {
+        Console.Error.WriteLine($"未知的 baseline 子指令:「{sub}」\n");
+        Help();
+        return 2;
     }
 
     private static int Help()

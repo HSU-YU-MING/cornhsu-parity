@@ -51,7 +51,9 @@ internal static class CheckCommand
     /// <summary>parity check:讀 parity.config.json → 跑引擎 → 人看的摘要 + report.json + exit code。</summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args,
+            "--config=", "--target=", "--out=", "--md=", "--refresh", "--headed", "--baseline", "--reverse");
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Check);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
@@ -243,7 +245,8 @@ internal static class ReportCommand
     /// </summary>
     public static int Run(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args, "--config=", "--in=", "--md=");
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Report);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
@@ -290,7 +293,8 @@ internal static class LintCommand
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args, "--config=", "--target=", "--refresh");
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Lint);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
@@ -365,7 +369,9 @@ internal static class SnapshotCommand
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args,
+            "--config=", "--target=", "--out=", "--width=", "--height=", "--headed");
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Snapshot);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
@@ -419,6 +425,17 @@ internal static class SnapshotCommand
             ? frames[0]
             : new DesignNode("snapshot", "snapshot", DesignNodeType.Frame, default,
                 null, null, null, null, null, frames);
+
+        // 基準是「對的樣子」的唯一紀錄——覆寫前先備份到 .parity/(慣例上不進版控),
+        // 在站台壞掉時誤拍也有無摩擦的後悔藥(不用 --force 是刻意的:重拍本來就是日常動作)。
+        if (File.Exists(outPath))
+        {
+            var bakDir = Path.Combine(config.BaseDirectory, ".parity");
+            Directory.CreateDirectory(bakDir);
+            var bak = Path.Combine(bakDir, "snapshot.bak.json");
+            File.Copy(outPath, bak, overwrite: true);
+            Console.WriteLine($"既有基準已備份:{bak}(誤拍可用它救回)");
+        }
         await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(root, ReportJson.Indented));
 
         Console.WriteLine($"\n已寫入:{outPath}");
@@ -438,6 +455,8 @@ internal static class InitCommand
 {
     public static int Run(string[] args)
     {
+        var opts = CliOptions.Parse(args);
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Init);
         const string path = "parity.config.json";
         if (File.Exists(path))
         {
@@ -471,8 +490,10 @@ internal static class InstallBrowserCommand
 {
     public static int Run(string[] args)
     {
+        var opts = CliOptions.Parse(args, "--with-deps");
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.InstallBrowser);
         // --with-deps:連同系統相依一起裝(CI 的 Linux runner 需要,否則 Chromium 起不來)
-        var withDeps = args.Contains("--with-deps");
+        var withDeps = opts.ContainsKey("--with-deps");
         string[] pwArgs = withDeps ? ["install", "--with-deps", "chromium"] : ["install", "chromium"];
         Console.WriteLine(withDeps
             ? "下載 Chromium 並安裝系統相依(CI 用,第一次需要幾分鐘)…"
@@ -483,49 +504,95 @@ internal static class InstallBrowserCommand
     }
 }
 
+/// <summary>
+/// 各指令的用法文字——單一來源:主 help 由這些段落組成,各子指令的 --help 也印同一段,
+/// 兩邊不會漂移。
+/// </summary>
+internal static class Usage
+{
+    public const string Check = """
+          parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse] [--md <path>]
+              抓設計端與實作端真實數值比對,輸出報告 + exit code
+              --refresh   忽略 Figma 本機快取重抓
+              --headed    顯示瀏覽器視窗(除錯用)
+              --baseline  回歸模式:只擋「相對基準新增/惡化」的落差(見 parity baseline)
+              --reverse   反向檢視:「期望」= 現況(實作)、「實際」= 設計稿;不做把關
+                          (設計師照現有頁面重畫/改版時,看自己的稿跟現況差在哪)
+              --md <path> 另外輸出 Markdown 報告(含還原度分數 + 建議修法,可貼 PR 留言)
+              target 的 url 可以是:
+                http(s):// 或 file://   一般網頁 / 本機頁面
+                cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
+                cdp:http://host:port#url片段  多視窗時指定 URL 含該片段的視窗
+                (Electron 端啟動時加 --remote-debugging-port=<port>)
+        """;
+
+    public const string Report = """
+          parity report [--config <path>] [--in <report.json>] [--md <path>]
+              從既有 report.json 重生 Markdown 報告,免重掃(預設讀 .parity/report.json;
+              沒給 --md 就印到 stdout)
+        """;
+
+    public const string Snapshot = """
+          parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>] [--headed]
+              把「現在跑著的實作」凍結成設計基準(JSON + 參考截圖)——重構/改版守門:
+              現在的畫面是對的,之後 check 保證不跑版。不需要 Figma。
+              會覆寫既有基準(覆寫前自動備份到 .parity/snapshot.bak.json)
+        """;
+
+    public const string Serve = """
+          parity serve [--config <path>] [--port <n>] [--watch] [--open]
+              本機報告 UI(只綁 127.0.0.1):落差清單 + 截圖疊框視圖
+              --watch     設定/設計/頁面檔變更時自動重掃
+        """;
+
+    public const string Map = """
+          parity map [--config <path>] [--port <n>]
+              互動配對:點選未配對的設計節點 → 點頁面元素 → 寫入 parity.map.json
+        """;
+
+    public const string Lint = """
+          parity lint [--config <path>] [--target <route>] [--refresh]
+              design lint:只看設計稿,驗值是否落在 design token 允許集合
+              (顏色/字級/內距/間距/圓角;需 tokensFile)。設計師畫新頁面守設計系統用。
+        """;
+
+    public const string Baseline = """
+          parity baseline save|list [--config <path>]
+              存/看落差基準快照(SQLite);搭配 check --baseline 做回歸把關
+        """;
+
+    public const string Init = """
+          parity init             產生 parity.config.json 範本
+        """;
+
+    public const string InstallBrowser = """
+          parity install-browser [--with-deps]
+              下載 Playwright Chromium(第一次必要);--with-deps 連系統相依一起裝(CI 用)
+        """;
+
+    /// <summary>子指令 --help:印該指令的用法,exit 0。</summary>
+    public static int Print(string usage)
+    {
+        Console.WriteLine("用法:");
+        Console.WriteLine(usage);
+        return 0;
+    }
+}
+
 internal static class HelpCommand
 {
     public static int Run()
     {
-        Console.WriteLine("""
-            Parity — 數值級設計還原度檢查工具
-
-            用法:
-              parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse]
-                  抓設計端與實作端真實數值比對,輸出報告 + exit code
-                  --refresh   忽略 Figma 本機快取重抓
-                  --headed    顯示瀏覽器視窗(除錯用)
-                  --baseline  回歸模式:只擋「相對基準新增/惡化」的落差(見 parity baseline)
-                  --reverse   反向檢視:「期望」= 現況(實作)、「實際」= 設計稿;不做把關
-                              (設計師照現有頁面重畫/改版時,看自己的稿跟現況差在哪)
-                  --md <path> 另外輸出 Markdown 報告(含還原度分數 + 建議修法,可貼 PR 留言)
-                  target 的 url 可以是:
-                    http(s):// 或 file://   一般網頁 / 本機頁面
-                    cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
-                    cdp:http://host:port#url片段  多視窗時指定 URL 含該片段的視窗
-                    (Electron 端啟動時加 --remote-debugging-port=<port>)
-              parity report [--config <path>] [--in <report.json>] [--md <path>]
-                  從既有 report.json 重生 Markdown 報告,免重掃(預設讀 .parity/report.json;
-                  沒給 --md 就印到 stdout)
-              parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>]
-                  把「現在跑著的實作」凍結成設計基準(JSON + 參考截圖)——重構/改版守門:
-                  現在的畫面是對的,之後 check 保證不跑版。不需要 Figma。
-              parity serve [--config <path>] [--port <n>] [--watch] [--open]
-                  本機報告 UI(只綁 127.0.0.1):落差清單 + 截圖疊框視圖
-                  --watch     設定/設計/頁面檔變更時自動重掃
-              parity map [--config <path>] [--port <n>]
-                  互動配對:點選未配對的設計節點 → 點頁面元素 → 寫入 parity.map.json
-              parity lint [--config <path>] [--target <route>] [--refresh]
-                  design lint:只看設計稿,驗值是否落在 design token 允許集合
-                  (顏色/字級/內距/間距/圓角;需 tokensFile)。設計師畫新頁面守設計系統用。
-              parity baseline save|list
-                  存/看落差基準快照(SQLite);搭配 check --baseline 做回歸把關
-              parity init             產生 parity.config.json 範本
-              parity install-browser [--with-deps]
-                  下載 Playwright Chromium(第一次必要);--with-deps 連系統相依一起裝(CI 用)
-
-            exit code:0 = 通過;1 = 落差超過 gate 門檻;2 = 執行錯誤
-            """);
+        Console.WriteLine("Parity — 數值級設計還原度檢查工具\n");
+        Console.WriteLine("用法:");
+        foreach (var usage in new[]
+        {
+            Usage.Check, Usage.Report, Usage.Snapshot, Usage.Serve, Usage.Map,
+            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser,
+        })
+            Console.WriteLine(usage);
+        Console.WriteLine("\nexit code:0 = 通過;1 = 落差超過 gate 門檻;2 = 執行錯誤");
+        Console.WriteLine("每個子指令都可加 --help 看自己的用法。");
         return 0;
     }
 }

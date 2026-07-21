@@ -2,6 +2,15 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發布
+
+Dogfooding 回報的 CLI 安全性修正——「查詢動作」絕不能變成「破壞性寫入」:
+
+- **子指令不再靜默忽略未知參數**:未知旗標、多餘的位置參數、缺值,一律報錯 exit 2。之前 `--taget`(typo)會被吞掉,「只重拍一頁」靜默變成「全站重拍」;現在 typo 直接被擋下。
+- **每個子指令都認得 `--help` / `-h`**:印該指令用法後 exit 0。之前 `parity snapshot --help` 會**直接執行 snapshot 把基準無聲覆寫**——查詢變破壞性寫入,最要命的一類事故;現在查詢就只是查詢。用法文字重構為單一來源(主 help 與子指令 --help 共用,不漂移)。
+- **snapshot 覆寫前自動備份**到 `.parity/snapshot.bak.json`——站台壞掉時誤拍基準可救回。刻意不用 `--force`:重拍基準是日常動作,摩擦要加在事故上,不是加在正當流程上。
+- `parity baseline` 未知子指令改為報錯 exit 2(原本印說明卻回 0)。
+
 ## 0.9.2
 
 - **修 NuGet 包只含 linux-x64 Playwright driver**:release 在 ubuntu runner 上 `dotnet pack`,Microsoft.Playwright 預設只複製「建置當下平台」的 driver,做出來的包缺 `win32_x64/node.exe` 與 darwin——Windows/macOS 使用者裝了任何指令都報 `Driver not found`,連 `install-browser` 都失敗。修法:Parity.Cli 設 `PlaywrightPlatform=all` 收齊五個平台的 node(工具是給各平台 CI 用的,不挑平台;包約 237MB,低於 nuget.org 250MB 上限)。已本機 pack 實測:`dotnet tool install` 後 `install-browser` 與指令皆正常。
