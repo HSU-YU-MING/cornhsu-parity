@@ -17,6 +17,28 @@
 | 跑在哪 | 瀏覽器外掛 / 雲端(碰不到 localhost) | **你的機器 / CI runner**,localhost 天生連得到 |
 | 進 CI | 大多不行 | PR 落差超門檻就擋 |
 
+## 畫面
+
+**報告 UI(`parity serve --watch`)**——左欄逐項列出落差與一致的節點,右側把設計框與實作框直接疊在真實畫面上;點任一項即定位,存檔後自動重掃。
+
+![Parity 報告 UI:左欄落差清單,右側設計框與實作框疊在畫面上](https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-parity/master/docs/serve-ui.png)
+
+**還原度報告**——每一列是「期望 → 實際」的具體數值、嚴重度與建議修法(含對應的 design token)。GitHub Action 以此原文自動貼成 PR 留言,同一則原地更新、不洗版。
+
+![Parity 還原度報告:每列為期望→實際的數值落差與建議修法](https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-parity/master/docs/report.png)
+
+## 成果一覽
+
+| | |
+|---|---|
+| 發佈 | NuGet 共 13 版(v0.1.0 → v0.9.3),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
+| 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
+| 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
+| 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
+| 測試 | 涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣 |
+| CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
+| 真實驗證 | **cornhsu.com 全站 20 頁由 Parity 自己守門**——首日 dogfooding 即揪出並修掉兩個 flaky 根因 |
+
 ## 快速開始
 
 ```sh
