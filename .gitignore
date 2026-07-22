@@ -19,3 +19,7 @@ dist/
 # 環境變數 / secrets
 .env
 *.local.json
+npm/dist/
+
+# npm 主套件的啟動腳本是原始碼,不是建置產物 —— 別被上面的 bin/ 規則吃掉
+!npm/cornhsu-parity/bin/

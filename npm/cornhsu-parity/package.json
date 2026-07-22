@@ -1,0 +1,42 @@
+{
+  "name": "cornhsu-parity",
+  "version": "0.0.0-placeholder",
+  "description": "Property-Level Design QA that can gate your CI. Compares real numeric values from your Figma file against the rendered UI and fails the PR when the implementation drifts from the design.",
+  "keywords": [
+    "figma",
+    "design-qa",
+    "property-level-design-qa",
+    "css-inspector",
+    "visual-regression",
+    "design-tokens",
+    "ui-testing",
+    "playwright",
+    "ci",
+    "pixel-perfect"
+  ],
+  "homepage": "https://cornhsu.com/parity",
+  "bugs": "https://github.com/HSU-YU-MING/cornhsu-parity/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HSU-YU-MING/cornhsu-parity.git"
+  },
+  "license": "MIT",
+  "author": "許彧銘 Hsu Yu-Ming (https://cornhsu.com/)",
+  "type": "commonjs",
+  "bin": {
+    "parity": "bin/parity.js"
+  },
+  "files": [
+    "bin/parity.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@cornhsu/parity-win32-x64": "0.0.0-placeholder",
+    "@cornhsu/parity-linux-x64": "0.0.0-placeholder",
+    "@cornhsu/parity-darwin-x64": "0.0.0-placeholder",
+    "@cornhsu/parity-darwin-arm64": "0.0.0-placeholder"
+  }
+}
