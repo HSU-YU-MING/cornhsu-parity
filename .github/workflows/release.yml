@@ -121,10 +121,22 @@ jobs:
       - name: Publish to npm (OIDC trusted publishing)
         run: |
           set -euo pipefail
-          # 平台包要先上架,主套件的 optionalDependencies 才解析得到
-          for dir in npm/dist/parity-*; do
-            echo "::group::publish $dir"
+          # 冪等發布:已存在的版本跳過而不是報錯。
+          # 某一包失敗時(例如它的 trusted publisher 還沒設好),重跑不會被
+          # 「前面已經發成功的那幾包」擋住 —— 這是 v0.9.6 實際踩到的狀況:
+          # 四個平台包發成功、主套件因未設定而 ENEEDAUTH,當時無法直接重跑。
+          publish() {
+            local dir="$1" name version
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "↷ $name@$version 已存在,跳過"
+              return 0
+            fi
+            echo "::group::publish $name@$version"
             npm publish "$dir" --access public
             echo "::endgroup::"
-          done
-          npm publish npm/dist/cornhsu-parity --access public
+          }
+          # 平台包要先上架,主套件的 optionalDependencies 才解析得到
+          for dir in npm/dist/parity-*; do publish "$dir"; done
+          publish npm/dist/cornhsu-parity
