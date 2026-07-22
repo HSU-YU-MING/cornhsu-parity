@@ -1,11 +1,23 @@
 # Parity
 
 [![NuGet](https://img.shields.io/nuget/v/Cornhsu.Parity.svg?label=Cornhsu.Parity)](https://www.nuget.org/packages/Cornhsu.Parity)
-[![Downloads](https://img.shields.io/nuget/dt/Cornhsu.Parity.svg)](https://www.nuget.org/packages/Cornhsu.Parity)
+[![npm](https://img.shields.io/npm/v/cornhsu-parity.svg?label=cornhsu-parity)](https://www.npmjs.com/package/cornhsu-parity)
+[![Marketplace](https://img.shields.io/badge/GitHub_Marketplace-Action-2ea44f?logo=github)](https://github.com/marketplace/actions/parity-design-fidelity-check)
 [![CI](https://github.com/HSU-YU-MING/cornhsu-parity/actions/workflows/ci.yml/badge.svg)](https://github.com/HSU-YU-MING/cornhsu-parity/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**[作品介紹與開發故事](https://cornhsu.com/parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · MIT**
+**[作品介紹與開發故事](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · MIT**
+
+## GitHub Action
+
+```yaml
+- uses: HSU-YU-MING/cornhsu-parity@v0.9.7
+  with:
+    config: parity.config.json      # 選填,預設 parity.config.json
+    target: /pricing                # 選填,只檢查這個 route(省略 = 全部)
+```
+
+落差超過 gate 門檻就讓 CI 失敗,並把還原度報告貼成 PR 留言(原地更新不洗版)。
 
 > **能進 CI 的設計還原度檢查(Property-Level Design QA)。**
 > 抓 Figma 設計稿與實際渲染畫面**兩邊的真實數值**做程式比對——「內距 8px,設計是 12px」,
