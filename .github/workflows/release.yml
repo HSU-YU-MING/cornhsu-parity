@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write   # npm --provenance 需要 OIDC token(來源證明,與 NuGet 的信任發布同精神)
+      id-token: write   # npm 信任發布:GitHub 簽發 OIDC token,npm 換短效金鑰並自動簽 provenance
     steps:
       - uses: actions/checkout@v7
 
