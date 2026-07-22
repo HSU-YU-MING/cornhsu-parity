@@ -42,3 +42,76 @@ jobs:
           -k ${{ steps.login.outputs.NUGET_API_KEY }}
           -s https://api.nuget.org/v3/index.json
           --skip-duplicate
+
+  # ── npm 通路 ──
+  # 目標使用者(前端 / 設計 QA)電腦裡有 Node、不一定有 .NET,
+  # `dotnet tool install` 是真實的採用門檻。這個 job 讓他們可以 `npx cornhsu-parity`。
+  #
+  # 刻意與上面的 release job 完全獨立:npm 是新通路,NuGet 是現行主力,
+  # npm 這邊出問題不該連帶讓 NuGet 發布失敗(needs 只等它成功,不共用 step)。
+  npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # npm --provenance 需要 OIDC token(來源證明,與 NuGet 的信任發布同精神)
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # 四個平台各自 self-contained 發佈。
+      # PlaywrightPlatform 指定單一平台:預設的 'all' 會把五個平台的 driver 全帶上,
+      # 但每個 npm 平台包只服務一個平台,帶其他平台的純屬浪費。
+      - name: Publish binaries (4 RIDs)
+        run: |
+          set -euo pipefail
+          for rid in win-x64 linux-x64 osx-x64 osx-arm64; do
+            echo "::group::publish $rid"
+            dotnet publish src/Parity.Cli/Parity.Cli.csproj \
+              -c Release -r "$rid" --self-contained true \
+              -p:Version=${{ steps.ver.outputs.version }} \
+              -p:PlaywrightPlatform="$rid" \
+              -o "artifacts/publish/$rid"
+            echo "::endgroup::"
+          done
+
+      # 組裝 npm 套件:刪掉 Playwright 自帶的 Node(win-x64 單檔 88 MB,
+      # 而 npm 使用者本來就有 Node —— 啟動腳本會把 PLAYWRIGHT_NODEJS_PATH
+      # 指向 process.execPath)。實測可讓平台包從 218 MB 降到 129 MB。
+      - name: Assemble npm packages
+        run: node npm/prepare.mjs "${{ steps.ver.outputs.version }}" artifacts/publish
+
+      # 煙霧測試:只有 linux-x64 能在此 runner 上直接執行。
+      # 至少確保「拿掉自帶 Node 之後執行檔仍可啟動」這件事在 CI 有守到。
+      - name: Smoke test (linux-x64)
+        run: |
+          set -euo pipefail
+          BIN=npm/dist/parity-linux-x64/bin/parity
+          chmod +x "$BIN"
+          PLAYWRIGHT_NODEJS_PATH="$(command -v node)" "$BIN" --help > /dev/null
+          echo "✔ linux-x64 執行檔可啟動"
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 平台包要先上架,主套件的 optionalDependencies 才解析得到
+          for dir in npm/dist/parity-*; do
+            echo "::group::publish $dir"
+            npm publish "$dir" --access public --provenance
+            echo "::endgroup::"
+          done
+          npm publish npm/dist/cornhsu-parity --access public --provenance

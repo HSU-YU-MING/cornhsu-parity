@@ -19,3 +19,4 @@ dist/
 # 環境變數 / secrets
 .env
 *.local.json
+npm/dist/

@@ -50,10 +50,26 @@
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 20 頁由 Parity 自己守門**——首日 dogfooding 即揪出並修掉兩個 flaky 根因 |
 
+## 安裝
+
+兩條通路,選你手邊有的執行環境即可 —— **功能完全相同**。
+
+```sh
+# 有 Node(前端專案常見):不需要安裝 .NET
+npx cornhsu-parity check
+
+# 有 .NET
+dotnet tool install -g Cornhsu.Parity
+```
+
+> npm 版是同一份自帶執行環境的原生執行檔,只下載你這個平台的那一份
+> (win32-x64 / linux-x64 / darwin-x64 / darwin-arm64)。
+> Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
+> 每個平台包因此省下約 88 MB。
+
 ## 快速開始
 
 ```sh
-dotnet tool install -g Cornhsu.Parity   # (發佈後)
 parity init                # 產生 parity.config.json 範本
 parity install-browser     # 第一次:下載 Playwright Chromium
 export FIGMA_TOKEN=...     # scope 只需 file_content:read
