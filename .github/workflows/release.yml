@@ -62,10 +62,19 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # 刻意不設 registry-url:它會在 .npmrc 寫一行
+      # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`,而 OIDC 情境下
+      # 該變數不存在 → npm 會拿「空 token」去驗證而不改走 OIDC,直接發布失敗
+      # (actions/setup-node#1551)。預設 registry 本來就是 npmjs.org,不需要設。
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
+
+      # 信任發布需要 npm CLI >= 11.5.1;Node 22 內建的是 10.x
+      - name: Upgrade npm (trusted publishing 需要 >= 11.5.1)
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - name: Derive version from tag
         id: ver
@@ -103,15 +112,19 @@ jobs:
           PLAYWRIGHT_NODEJS_PATH="$(command -v node)" "$BIN" --help > /dev/null
           echo "✔ linux-x64 執行檔可啟動"
 
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # 信任發布(OIDC):不帶任何 token。
+      # 上方的 id-token: write 讓 GitHub 簽發 OIDC token,npm CLI 自動拿它換一把
+      # 短效發布金鑰 —— 與 NuGet 那條線同精神,repo 內零長效金鑰。
+      # 注意:NODE_AUTH_TOKEN 連「設成空字串」都不行,npm 會拿空 token 去驗證
+      # 而不改走 OIDC,所以這裡完全不設 env。
+      # provenance 也不必再加旗標,信任發布會自動產生與簽署。
+      - name: Publish to npm (OIDC trusted publishing)
         run: |
           set -euo pipefail
           # 平台包要先上架,主套件的 optionalDependencies 才解析得到
           for dir in npm/dist/parity-*; do
             echo "::group::publish $dir"
-            npm publish "$dir" --access public --provenance
+            npm publish "$dir" --access public
             echo "::endgroup::"
           done
-          npm publish npm/dist/cornhsu-parity --access public --provenance
+          npm publish npm/dist/cornhsu-parity --access public
