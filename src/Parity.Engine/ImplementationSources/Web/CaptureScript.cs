@@ -62,12 +62,15 @@ internal static class CaptureScript
           };
 
           // 從 computed transform 取縮放係數(matrix / matrix3d);純 translate、rotate → [1,1]。
+          // clean:純旋轉的 hypot 可能因浮點算出 0.9999999 而非 1,會對子樹引入無謂次像素
+          // 位移、破壞「無縮放零回歸」——貼近 1 就吸附成 1;NaN/0/負/Infinity 一律夾到 1。
+          const clean = (v) => (Number.isFinite(v) && v > 0 ? (Math.abs(v - 1) < 1e-9 ? 1 : v) : 1);
           const scaleOf = (t) => {
             if (!t || t === 'none') return [1, 1];
             let m = t.match(/^matrix\(([^)]+)\)/);
-            if (m) { const p = m[1].split(',').map(Number); return [Math.hypot(p[0], p[1]) || 1, Math.hypot(p[2], p[3]) || 1]; }
+            if (m) { const p = m[1].split(',').map(Number); return [clean(Math.hypot(p[0], p[1])), clean(Math.hypot(p[2], p[3]))]; }
             m = t.match(/^matrix3d\(([^)]+)\)/);
-            if (m) { const p = m[1].split(',').map(Number); return [Math.hypot(p[0], p[1], p[2]) || 1, Math.hypot(p[4], p[5], p[6]) || 1]; }
+            if (m) { const p = m[1].split(',').map(Number); return [clean(Math.hypot(p[0], p[1], p[2])), clean(Math.hypot(p[4], p[5], p[6]))]; }
             return [1, 1];
           };
 
