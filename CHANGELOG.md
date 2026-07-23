@@ -2,6 +2,23 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 0.9.7
+
+- **npm 發布步驟改為冪等**:同一版號若已在 npm 上就跳過,不再讓「重跑或補跑 workflow」因為 `npm publish` 對已存在版本報錯而整條紅掉。發布是可安全重試的動作。
+
+## 0.9.6
+
+- **npm 改用 OIDC 信任發布,移除長效 token**:發布憑證改由 GitHub Actions 的 OIDC 當場換取,不再於 Secrets 存放長期有效的 npm token——少一顆會外洩、要輪替的長效金鑰。
+
+## 0.9.5
+
+- **新增 npm 發布通路,支援 `npx cornhsu-parity`**:除了 `dotnet tool install`,沒有 .NET SDK 的使用者(前端/CI 常見)現在也能直接 `npx` 跑。主套件是啟動腳本,實際執行檔拆成 `parity-<platform>-<arch>` 平台子套件,靠 optionalDependencies 只裝當前平台那顆(自帶 .NET 執行環境,使用者機器免裝 SDK)。組裝邏輯抽到 [npm/prepare.mjs](npm/prepare.mjs) 而非塞進 workflow YAML:版號要同步五個 `package.json`、還要刪掉 Playwright 自帶的 node,寫成腳本才讀得懂、也能本機驗。
+- **文件:定位主軸改以「能否自動化」為主**,比較對象換成真實同類工具;成果一覽測試條數更新 147 → 154。
+
+## 0.9.4
+
+- **文件:README 補上 NuGet / CI 徽章與作品集回連**,作品集連結改用無副檔名網址。純文件版,引擎與 CLI 行為不變。
+
 ## 0.9.3
 
 Dogfooding 回報的 CLI 安全性修正——「查詢動作」絕不能變成「破壞性寫入」:
