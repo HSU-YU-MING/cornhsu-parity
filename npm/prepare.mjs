@@ -23,7 +23,9 @@ if (!version || !publishRoot) {
 // RID → npm 平台套件的 os/cpu 與執行檔名
 const TARGETS = [
   { rid: "win-x64", pkg: "parity-win32-x64", os: "win32", cpu: "x64", bin: "parity.exe" },
+  { rid: "win-arm64", pkg: "parity-win32-arm64", os: "win32", cpu: "arm64", bin: "parity.exe" },
   { rid: "linux-x64", pkg: "parity-linux-x64", os: "linux", cpu: "x64", bin: "parity" },
+  { rid: "linux-arm64", pkg: "parity-linux-arm64", os: "linux", cpu: "arm64", bin: "parity" },
   { rid: "osx-x64", pkg: "parity-darwin-x64", os: "darwin", cpu: "x64", bin: "parity" },
   { rid: "osx-arm64", pkg: "parity-darwin-arm64", os: "darwin", cpu: "arm64", bin: "parity" },
 ];

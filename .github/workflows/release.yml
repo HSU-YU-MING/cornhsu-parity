@@ -83,10 +83,14 @@ jobs:
       # 四個平台各自 self-contained 發佈。
       # PlaywrightPlatform 指定單一平台:預設的 'all' 會把五個平台的 driver 全帶上,
       # 但每個 npm 平台包只服務一個平台,帶其他平台的純屬浪費。
-      - name: Publish binaries (4 RIDs)
+      # 註:win-arm64 在 Playwright 1.61 沒有對應的 driver node,PlaywrightPlatform 會落回 'all'
+      # (帶全部平台的 node)。無妨——prepare.mjs 一律刪掉 .playwright/node、改用使用者現成的 Node,
+      # 所以最終 npm 包不受影響,只是這步多下載了隨即被刪的檔案。已本機 build-check:
+      # win-arm64 / linux-arm64 皆 publish 成功、產出對應 RID 的執行檔(arm64 實機執行留待有機器時驗)。
+      - name: Publish binaries (6 RIDs)
         run: |
           set -euo pipefail
-          for rid in win-x64 linux-x64 osx-x64 osx-arm64; do
+          for rid in win-x64 win-arm64 linux-x64 linux-arm64 osx-x64 osx-arm64; do
             echo "::group::publish $rid"
             dotnet publish src/Parity.Cli/Parity.Cli.csproj \
               -c Release -r "$rid" --self-contained true \
