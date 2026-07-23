@@ -11,7 +11,7 @@
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v0.9.7
+- uses: HSU-YU-MING/cornhsu-parity@v0.9.7   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
   with:
     config: parity.config.json      # 選填,預設 parity.config.json
     target: /pricing                # 選填,只檢查這個 route(省略 = 全部)
@@ -263,7 +263,7 @@ jobs:
       - run: |
           npm ci && npm run build
           npm run preview &   # 例:serve 在 localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v1
+      - uses: HSU-YU-MING/cornhsu-parity@v0.9.7   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # 設計來源用本機 JSON 時可省略
@@ -276,7 +276,7 @@ jobs:
 
 action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
 
-> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝,需先把套件發佈到 nuget.org(發佈是 release 步驟,尚未做)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
+> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 
 ## 回歸把關:baseline(M5)
 
