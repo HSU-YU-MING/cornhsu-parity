@@ -2,14 +2,14 @@
   "id": "1:1",
   "name": "home",
   "type": "Frame",
-  "box": { "x": 0, "y": 0, "w": 800, "h": 600 },
+  "box": { "x": 0, "y": 0, "width": 800, "height": 600 },
   "fill": { "r": 255, "g": 255, "b": 255, "a": 1 },
   "children": [
     {
       "id": "1:2",
       "name": "page-title",
       "type": "Text",
-      "box": { "x": 40, "y": 40, "w": 300, "h": 40 },
+      "box": { "x": 40, "y": 40, "width": 300, "height": 40 },
       "fill": { "r": 17, "g": 24, "b": 39, "a": 1 },
       "text": {
         "fontFamily": "Arial",
@@ -23,7 +23,7 @@
       "id": "1:3",
       "name": "subtitle",
       "type": "Text",
-      "box": { "x": 40, "y": 96, "w": 400, "h": 24 },
+      "box": { "x": 40, "y": 96, "width": 400, "height": 24 },
       "fill": { "r": 107, "g": 114, "b": 128, "a": 1 },
       "text": {
         "fontFamily": "Arial",
@@ -37,7 +37,7 @@
       "id": "1:4",
       "name": "cta-button",
       "type": "Frame",
-      "box": { "x": 40, "y": 152, "w": 160, "h": 48 },
+      "box": { "x": 40, "y": 152, "width": 160, "height": 48 },
       "fill": { "r": 37, "g": 99, "b": 235, "a": 1 },
       "padding": { "top": 12, "right": 20, "bottom": 12, "left": 20 },
       "cornerRadius": 8,
@@ -46,7 +46,7 @@
           "id": "1:5",
           "name": "cta-label",
           "type": "Text",
-          "box": { "x": 60, "y": 164, "w": 120, "h": 24 },
+          "box": { "x": 60, "y": 164, "width": 120, "height": 24 },
           "fill": { "r": 255, "g": 255, "b": 255, "a": 1 },
           "text": {
             "fontFamily": "Arial",
@@ -62,7 +62,7 @@
       "id": "1:6",
       "name": "feature-list",
       "type": "Frame",
-      "box": { "x": 40, "y": 240, "w": 720, "h": 120 },
+      "box": { "x": 40, "y": 240, "width": 720, "height": 120 },
       "itemSpacing": 24,
       "layoutMode": "HORIZONTAL",
       "children": [
@@ -70,7 +70,7 @@
           "id": "1:7",
           "name": "feature-card-1",
           "type": "Frame",
-          "box": { "x": 40, "y": 240, "w": 224, "h": 120 },
+          "box": { "x": 40, "y": 240, "width": 224, "height": 120 },
           "fill": { "r": 243, "g": 244, "b": 246, "a": 1 },
           "cornerRadius": 12,
           "children": [
@@ -78,7 +78,7 @@
               "id": "1:8",
               "name": "feature-title-1",
               "type": "Text",
-              "box": { "x": 56, "y": 256, "w": 192, "h": 22 },
+              "box": { "x": 56, "y": 256, "width": 192, "height": 22 },
               "fill": { "r": 17, "g": 24, "b": 39, "a": 1 },
               "text": { "fontFamily": "Arial", "fontSize": 18, "fontWeight": 600 },
               "characters": "數值級比對",
@@ -90,7 +90,7 @@
           "id": "1:9",
           "name": "feature-card-2",
           "type": "Frame",
-          "box": { "x": 288, "y": 240, "w": 224, "h": 120 },
+          "box": { "x": 288, "y": 240, "width": 224, "height": 120 },
           "fill": { "r": 243, "g": 244, "b": 246, "a": 1 },
           "cornerRadius": 12,
           "children": [
@@ -98,7 +98,7 @@
               "id": "1:10",
               "name": "feature-title-2",
               "type": "Text",
-              "box": { "x": 304, "y": 256, "w": 192, "h": 22 },
+              "box": { "x": 304, "y": 256, "width": 192, "height": 22 },
               "fill": { "r": 17, "g": 24, "b": 39, "a": 1 },
               "text": { "fontFamily": "Arial", "fontSize": 18, "fontWeight": 600 },
               "characters": "本機優先",
@@ -110,7 +110,7 @@
           "id": "1:11",
           "name": "feature-card-3",
           "type": "Frame",
-          "box": { "x": 536, "y": 240, "w": 224, "h": 120 },
+          "box": { "x": 536, "y": 240, "width": 224, "height": 120 },
           "fill": { "r": 243, "g": 244, "b": 246, "a": 1 },
           "cornerRadius": 12,
           "children": [
@@ -118,7 +118,7 @@
               "id": "1:12",
               "name": "feature-title-3",
               "type": "Text",
-              "box": { "x": 552, "y": 256, "w": 192, "h": 22 },
+              "box": { "x": 552, "y": 256, "width": 192, "height": 22 },
               "fill": { "r": 17, "g": 24, "b": 39, "a": 1 },
               "text": { "fontFamily": "Arial", "fontSize": 18, "fontWeight": 600 },
               "characters": "進 CI 把關",
@@ -132,7 +132,7 @@
       "id": "1:13",
       "name": "hero-badge",
       "type": "Frame",
-      "box": { "x": 640, "y": 40, "w": 120, "h": 32 },
+      "box": { "x": 640, "y": 40, "width": 120, "height": 32 },
       "fill": { "r": 220, "g": 252, "b": 231, "a": 1 },
       "children": []
     }

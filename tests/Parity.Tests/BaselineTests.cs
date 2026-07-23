@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Parity.Engine;
 using Parity.Storage;
 
@@ -155,6 +156,31 @@ public class BaselineStoreTests
         {
             await using var store = new BaselineStore(path);
             Assert.Null(await store.GetLatestAsync());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task Adopts_legacy_ensurecreated_db_without_migration_history()
+    {
+        var path = TempDb();
+        try
+        {
+            // 模擬 0.9.x 之前:EnsureCreated 建的 db——有資料表,沒有 __EFMigrationsHistory
+            var options = new DbContextOptionsBuilder<BaselineDbContext>()
+                .UseSqlite($"Data Source={path};Pooling=False").Options;
+            await using (var legacy = new BaselineDbContext(options))
+                legacy.Database.EnsureCreated();
+
+            // 用 BaselineStore 開它:應無痛接管(不因 InitialCreate 撞既存表而爆),照常讀寫
+            await using (var store = new BaselineStore(path))
+            {
+                await store.SaveAsync(
+                    [new DiffRecord("/", "btn", "sel", "color", Severity.Serious, "e", "a")],
+                    new DateTime(2026, 7, 22), score: 90);
+                var latest = await store.GetLatestAsync();
+                Assert.Equal(90, latest!.Score);
+            }
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }

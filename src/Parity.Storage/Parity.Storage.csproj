@@ -13,6 +13,11 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <!-- 蓋掉 EF Sqlite 傳遞進來的 2.1.11(NU1903 高風險弱點),pin 到修補過的原生 SQLite -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <!-- 註:schema 演進走 EF migrations(Migrations/ 底下)。執行期的 Database.Migrate() 只需
+         EF Core Relational(已隨 Sqlite 套件帶入),不需要 Design。要「產生新的 migration」時才
+         暫時加回:dotnet add src/Parity.Storage package Microsoft.EntityFrameworkCore.Design
+         → dotnet ef migrations add <Name> → 再移除。刻意不常駐:Design 會傳遞帶入
+         System.Security.Cryptography.Xml(NU1903 高風險),雖 PrivateAssets 不入 tool,仍污染審計。 -->
   </ItemGroup>
 
   <ItemGroup>

@@ -20,11 +20,12 @@ public class ReportRoundTripTests
             [node], [new UnmatchedNode("badge", "1:13", "no-anchor")],
             new ReportSummary(2, 1, 1, 1, 0, 1, 0, 0, Severity.Serious));
 
-        var json = JsonSerializer.Serialize(new List<FidelityReport> { report }, ReportJson.Indented);
-        var back = JsonSerializer.Deserialize<List<FidelityReport>>(json, ReportJson.Indented);
+        var json = JsonSerializer.Serialize(ReportDocument.Of([report]), ReportJson.Indented);
+        var back = JsonSerializer.Deserialize<ReportDocument>(json, ReportJson.Indented);
 
         Assert.NotNull(back);
-        var r = Assert.Single(back);
+        Assert.Equal(ReportDocument.CurrentSchemaVersion, back.SchemaVersion);
+        var r = Assert.Single(back.Reports);
         var n = Assert.Single(r.Nodes);
         var d = Assert.Single(n.Diffs);
         Assert.Equal(Severity.Serious, d.Severity);

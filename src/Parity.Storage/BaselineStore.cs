@@ -22,12 +22,49 @@ public sealed class BaselineStore : IAsyncDisposable
             .UseSqlite($"Data Source={dbPath};Pooling=False")
             .Options;
         _db = new BaselineDbContext(options);
-        _db.Database.EnsureCreated();
+        AdoptLegacyThenMigrate(_db);
+    }
 
-        // 第一次 schema 演進(0.6.0 加 Score)。EnsureCreated 不會更新既有 db 的結構,
-        // 用「加欄位、已存在就略過」的最小遷移——比為單一欄位引入完整 migration 划算。
-        try { _db.Database.ExecuteSqlRaw("ALTER TABLE Snapshots ADD COLUMN Score INTEGER"); }
-        catch (Microsoft.Data.Sqlite.SqliteException) { /* 欄位已存在(新建或已升級的 db)*/ }
+    /// <summary>
+    /// schema 演進走 EF migrations。但 0.9.x 之前的 db 是 EnsureCreated 建的:有資料表、
+    /// 卻沒有 __EFMigrationsHistory。這種 db 直接 Migrate 會因 InitialCreate 要 CREATE TABLE
+    /// 撞上既存表而爆。對策:先把現有 migration 標記為「已套用」(schema 老早就在了),
+    /// 再 Migrate——新 db 照常建、舊 db(含已 commit 進使用者 repo 的)無痛接管。
+    /// </summary>
+    private static void AdoptLegacyThenMigrate(BaselineDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        conn.Open();
+        try
+        {
+            bool TableExists(string name)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=$n";
+                var p = cmd.CreateParameter();
+                p.ParameterName = "$n";
+                p.Value = name;
+                cmd.Parameters.Add(p);
+                using var reader = cmd.ExecuteReader();
+                return reader.Read();
+            }
+
+            if (TableExists("Snapshots") && !TableExists("__EFMigrationsHistory"))
+            {
+                db.Database.ExecuteSqlRaw(
+                    """CREATE TABLE "__EFMigrationsHistory" ("MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY, "ProductVersion" TEXT NOT NULL);""");
+                foreach (var id in db.Database.GetMigrations())
+                    db.Database.ExecuteSqlRaw(
+                        """INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ({0}, {1});""",
+                        id, "10.0.0");
+            }
+        }
+        finally
+        {
+            conn.Close();
+        }
+
+        db.Database.Migrate();
     }
 
     /// <summary>把當前落差存成一個新的 baseline 快照,回傳快照 Id。</summary>

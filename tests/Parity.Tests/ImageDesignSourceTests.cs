@@ -51,15 +51,15 @@ public class ImageDesignSourceTests
             await File.WriteAllTextAsync(annPath, """
                 {
                   "id": "1:1", "name": "frame", "type": "Frame",
-                  "box": { "x": 0, "y": 0, "w": 100, "h": 100 },
+                  "box": { "x": 0, "y": 0, "width": 100, "height": 100 },
                   "children": [
                     { "id": "1:2", "name": "red-box", "type": "Shape",
-                      "box": { "x": 10, "y": 10, "w": 30, "h": 30 } },
+                      "box": { "x": 10, "y": 10, "width": 30, "height": 30 } },
                     { "id": "1:3", "name": "explicit", "type": "Shape",
-                      "box": { "x": 10, "y": 10, "w": 30, "h": 30 },
+                      "box": { "x": 10, "y": 10, "width": 30, "height": 30 },
                       "fill": { "r": 0, "g": 0, "b": 255, "a": 1 } },
                     { "id": "1:4", "name": "label", "type": "Text",
-                      "box": { "x": 50, "y": 50, "w": 40, "h": 20 }, "characters": "hi" }
+                      "box": { "x": 50, "y": 50, "width": 40, "height": 20 }, "characters": "hi" }
                   ]
                 }
                 """);

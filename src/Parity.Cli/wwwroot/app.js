@@ -224,8 +224,8 @@ function drawRects() {
   const place = (el, box, extra = { x: 0, y: 0 }) => {
     el.style.left = ((extra.x + box.x) / NW * 100) + '%';
     el.style.top = ((extra.y + box.y) / NH * 100) + '%';
-    el.style.width = (box.w / NW * 100) + '%';
-    el.style.height = (box.h / NH * 100) + '%';
+    el.style.width = (box.width / NW * 100) + '%';
+    el.style.height = (box.height / NH * 100) + '%';
   };
 
   // 配對模式下,已配對的框不攔截點擊——點擊要穿透到截圖做 hit-test
@@ -365,8 +365,8 @@ function hitTest(node, x, y) {
   let best = null;
   const visit = (n) => {
     const b = n.box;
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h && b.w > 0 && b.h > 0) {
-      if (!best || b.w * b.h <= best.box.w * best.box.h) best = n;
+    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height && b.width > 0 && b.height > 0) {
+      if (!best || b.width * b.height <= best.box.width * best.box.height) best = n;
     }
     for (const c of n.children ?? []) visit(c);
   };

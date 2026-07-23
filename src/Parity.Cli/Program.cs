@@ -89,7 +89,7 @@ internal static class CheckCommand
         var outPath = opts.GetValueOrDefault("--out")
             ?? Path.Combine(session.Config.BaseDirectory, ".parity", "report.json");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
-        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(reports, ReportJson.Indented));
+        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(ReportDocument.Of(reports), ReportJson.Indented));
         Console.WriteLine($"報告已寫入:{outPath}");
 
         Console.WriteLine($"還原度分數:\x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
@@ -109,9 +109,20 @@ internal static class CheckCommand
         if (opts.ContainsKey("--baseline"))
             return await GateAgainstBaselineAsync(session, scans, opts, integrity);
 
+        // 配對可信度不足 ≠ 落差超門檻:前者是「結果不可信」(通常 url/frame 設定錯),
+        // 後者是「東西真的做歪了」。給不同 exit code(3 vs 1),CI 才分得清該重設定還是修實作。
+        if (integrity.Count > 0)
+        {
+            WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: integrity);
+            Console.WriteLine("\n\x1b[31m✘ 配對可信度不足\x1b[0m(結果不可信,未做把關判定)");
+            foreach (var r in integrity)
+                Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
+            return 3;
+        }
+
         var gateReasons = session.GateFailReasons(scans);
         var gateFail = gateReasons.Count > 0;
-        WriteMarkdown(opts, session.Config, reports, gateFail, gateNotes: integrity);
+        WriteMarkdown(opts, session.Config, reports, gateFail);
         if (gateFail)
         {
             Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
@@ -152,10 +163,10 @@ internal static class CheckCommand
         if (integrity.Count > 0)
         {
             WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: integrity);
-            Console.WriteLine("\n\x1b[31m✘ GATE FAIL\x1b[0m(配對可信度不足,不做 baseline 比對)");
+            Console.WriteLine("\n\x1b[31m✘ 配對可信度不足\x1b[0m(不做 baseline 比對)");
             foreach (var r in integrity)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
-            return 1;
+            return 3;
         }
 
         var current = DiffRecord.FromReports(reports);
@@ -257,8 +268,18 @@ internal static class ReportCommand
         if (!File.Exists(inPath))
             throw new FileNotFoundException($"找不到報告:{inPath}(先跑 `parity check`,或用 --in 指定路徑)", inPath);
 
-        var reports = JsonSerializer.Deserialize<List<FidelityReport>>(File.ReadAllText(inPath), ReportJson.Indented)
-            ?? throw new InvalidOperationException($"報告解析失敗:{inPath}");
+        ReportDocument doc;
+        try
+        {
+            doc = JsonSerializer.Deserialize<ReportDocument>(File.ReadAllText(inPath), ReportJson.Indented)
+                ?? throw new InvalidOperationException($"報告解析失敗:{inPath}");
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException(
+                $"報告格式無法辨識:{inPath}(可能是舊版格式;重跑 `parity check` 產生新報告)");
+        }
+        var reports = doc.Reports;
 
         var tokens = config.TokensFile is { } tf
             ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
@@ -591,7 +612,7 @@ internal static class HelpCommand
             Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser,
         })
             Console.WriteLine(usage);
-        Console.WriteLine("\nexit code:0 = 通過;1 = 落差超過 gate 門檻;2 = 執行錯誤");
+        Console.WriteLine("\nexit code:0 = 通過;1 = 落差超過 gate 門檻;2 = 執行錯誤;3 = 配對可信度不足(結果不可信)");
         Console.WriteLine("每個子指令都可加 --help 看自己的用法。");
         return 0;
     }
