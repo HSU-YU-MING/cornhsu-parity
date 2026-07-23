@@ -279,7 +279,8 @@ internal static class ReportCommand
             throw new InvalidOperationException(
                 $"報告格式無法辨識:{inPath}(可能是舊版格式;重跑 `parity check` 產生新報告)");
         }
-        var reports = doc.Reports;
+        var reports = doc.Reports
+            ?? throw new InvalidOperationException($"報告缺少 reports 欄位:{inPath}(重跑 `parity check`)");
 
         var tokens = config.TokensFile is { } tf
             ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))

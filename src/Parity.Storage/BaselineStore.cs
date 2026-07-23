@@ -53,10 +53,14 @@ public sealed class BaselineStore : IAsyncDisposable
             {
                 db.Database.ExecuteSqlRaw(
                     """CREATE TABLE "__EFMigrationsHistory" ("MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY, "ProductVersion" TEXT NOT NULL);""");
-                foreach (var id in db.Database.GetMigrations())
+                // 只標記「基準」migration(InitialCreate)——legacy db 的 schema 恰好等於它。
+                // **不能標記全部**:未來新增第 2 個 migration 時,legacy db 並沒有它的 schema 變更,
+                // 若把它也標成已套用,Migrate 會跳過 → 欄位沒建 → 壞。標基準、其餘交給下面 Migrate() 補。
+                var baseline = db.Database.GetMigrations().FirstOrDefault();
+                if (baseline is not null)
                     db.Database.ExecuteSqlRaw(
                         """INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ({0}, {1});""",
-                        id, "10.0.0");
+                        baseline, "10.0.0");
             }
         }
         finally
