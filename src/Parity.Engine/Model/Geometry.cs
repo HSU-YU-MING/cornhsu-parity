@@ -32,15 +32,24 @@ internal sealed class BoxJsonConverter : JsonConverter<Box>
             reader.Read();
             switch (name?.ToLowerInvariant())
             {
-                case "x": x = reader.GetDouble(); break;
-                case "y": y = reader.GetDouble(); break;
-                case "width" or "w": w = reader.GetDouble(); break;
-                case "height" or "h": h = reader.GetDouble(); break;
+                case "x": x = AsDouble(ref reader); break;
+                case "y": y = AsDouble(ref reader); break;
+                case "width" or "w": w = AsDouble(ref reader); break;
+                case "height" or "h": h = AsDouble(ref reader); break;
                 default: reader.Skip(); break;
             }
         }
         throw new JsonException("Box 物件未正常結束。");
     }
+
+    // 數字取值;null 當 0(與「缺 key 預設 0」一致);其餘型別給明確 JsonException,
+    // 不讓 reader.GetDouble() 對 null 丟出難懂的 InvalidOperationException。
+    private static double AsDouble(ref Utf8JsonReader reader) => reader.TokenType switch
+    {
+        JsonTokenType.Number => reader.GetDouble(),
+        JsonTokenType.Null => 0,
+        _ => throw new JsonException($"Box 欄位應為數字,實際為 {reader.TokenType}。"),
+    };
 
     public override void Write(Utf8JsonWriter writer, Box value, JsonSerializerOptions options)
     {

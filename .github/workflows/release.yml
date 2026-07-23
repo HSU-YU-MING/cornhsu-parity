@@ -85,8 +85,9 @@ jobs:
       # 但每個 npm 平台包只服務一個平台,帶其他平台的純屬浪費。
       # 註:win-arm64 在 Playwright 1.61 沒有對應的 driver node,PlaywrightPlatform 會落回 'all'
       # (帶全部平台的 node)。無妨——prepare.mjs 一律刪掉 .playwright/node、改用使用者現成的 Node,
-      # 所以最終 npm 包不受影響,只是這步多下載了隨即被刪的檔案。已本機 build-check:
-      # win-arm64 / linux-arm64 皆 publish 成功、產出對應 RID 的執行檔(arm64 實機執行留待有機器時驗)。
+      # 所以最終 npm 包不受影響,只是這步多下載了隨即被刪的檔案。
+      # linux-arm64 的**實機執行**由下方 smoke-arm64 job 在真 arm64 runner 上驗(win-arm64 無 GitHub
+      # 代管 runner,仍只 build-check)。
       - name: Publish binaries (6 RIDs)
         run: |
           set -euo pipefail
@@ -144,3 +145,26 @@ jobs:
           # 平台包要先上架,主套件的 optionalDependencies 才解析得到
           for dir in npm/dist/parity-*; do publish "$dir"; done
           publish npm/dist/cornhsu-parity
+
+  # ── arm64 實機煙霧測試 ──
+  # release/npm 的 arm64 執行檔是在 x64 runner 上交叉建置的:建得出來 ≠ 跑得動。
+  # 這個 job 在**真的 arm64 runner**(GitHub 代管的 ubuntu-24.04-arm)上原生建 linux-arm64
+  # 並跑 `parity --help`,證明它真的能執行。刻意獨立、不 gate 發布(arm64 是次要平台,且
+  # npm 冪等發布可事後補救);紅了就知道 arm64 壞了要查。--help 不開瀏覽器,不需要 node。
+  smoke-arm64:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish & run linux-arm64 (--help)
+        run: |
+          set -euo pipefail
+          dotnet publish src/Parity.Cli/Parity.Cli.csproj \
+            -c Release -r linux-arm64 --self-contained true \
+            -o artifacts/arm64-smoke
+          artifacts/arm64-smoke/parity --help > /dev/null
+          echo "✔ linux-arm64 執行檔在真 arm64 上可執行"

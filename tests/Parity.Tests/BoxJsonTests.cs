@@ -38,4 +38,13 @@ public class BoxJsonTests
 
         Assert.Equal(box, back);
     }
+
+    [Fact]
+    public void Tolerates_null_dimension_as_zero()
+    {
+        // 壞資料裡的 null 尺寸不該讓 GetDouble 丟 InvalidOperationException;當 0 處理(同缺 key)
+        var box = JsonSerializer.Deserialize<Box>("""{"x":0,"y":0,"width":null,"height":40}""");
+
+        Assert.Equal(new Box(0, 0, 0, 40), box);
+    }
 }
