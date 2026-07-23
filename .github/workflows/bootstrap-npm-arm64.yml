@@ -1,0 +1,71 @@
+name: bootstrap-npm-arm64
+
+# 一次性:用 NPM_TOKEN 首發兩個「全新」平台包(linux-arm64 / win32-arm64)。
+# 背景:npm 的 OIDC 信任發布**只能更新已存在的套件、無法建立新套件**(官方文件確認),
+# 而這兩包是 0.10.0 才新增的 → OIDC 發不動(ENEEDAUTH)。故用 token 把它們「生出來」一次;
+# 之後在它們的 npmjs.org settings 設好信任發布者,release.yml 的 OIDC 就能正常接手。
+#
+# 用完即可刪:此 workflow 與 NPM_TOKEN secret 都是暫時的(回到零長效金鑰)。
+# token 全程只以 ${{ secrets.NPM_TOKEN }} 引用,不出現在 log。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要首發的版本(對齊已推的 tag,例:0.10.0)'
+        required: true
+        default: '0.10.0'
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      # token 發布要設 registry-url:它會把 //registry.npmjs.org/:_authToken 寫進 .npmrc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # 只建這兩個新 RID(其餘平台包已存在,不必動)
+      - name: Publish arm64 self-contained binaries
+        run: |
+          set -euo pipefail
+          for rid in linux-arm64 win-arm64; do
+            echo "::group::publish $rid"
+            dotnet publish src/Parity.Cli/Parity.Cli.csproj \
+              -c Release -r "$rid" --self-contained true \
+              -p:Version=${{ inputs.version }} \
+              -p:PlaywrightPlatform="$rid" \
+              -o "artifacts/publish/$rid"
+            echo "::endgroup::"
+          done
+
+      # prepare.mjs 找不到的 RID 會自動跳過,所以這裡只會組出這兩個平台包
+      - name: Assemble npm packages
+        run: node npm/prepare.mjs "${{ inputs.version }}" artifacts/publish
+
+      - name: Publish new arm64 packages (token, idempotent)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          publish() {
+            local dir="$1" name version
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "↷ $name@$version 已存在,跳過"
+              return 0
+            fi
+            echo "::group::publish $name@$version"
+            npm publish "$dir" --access public
+            echo "::endgroup::"
+          }
+          publish npm/dist/parity-linux-arm64
+          publish npm/dist/parity-win32-arm64
