@@ -10,6 +10,7 @@
 - **報告裡的框改用 `width`/`height`(原 `w`/`h`)**:報告是跨工具契約,自我解釋的欄位名勝過縮寫(C# 內部維持 `.W`/`.H`,只改 wire format)。**讀時向後相容**:`BoxJsonConverter` 寫出 `width`/`height`,但讀時 `w`/`h` 舊檔照吃——升級後新工具讀得動 0.9.x 產的舊快照 / 報告,**不必重拍**(反向:0.9.7 讀不了新檔,無解,那支已發佈)。
 - **null 欄位改顯式輸出**:`unit` / `delta` 等為 null 時原本整個 key 消失,消費端得判斷 key 存不存在。改為一律輸出 `null`,契約少一個「有時消失的 key」的坑。
 - **exit code 拆分 gate / 可信度**:配對可信度不足(結果不可信,通常是 url/frame 設定錯)從 gate fail 分出來,回獨立的 `3`(落差超門檻仍是 `1`、執行錯誤仍是 `2`)。CI 分得清該修設定還是修實作。
+- **量測還原頁面 `transform: scale`**(規畫書 4.6 的已知盲點):祖先的 `scale()` 會讓 `getBoundingClientRect` 量到縮放後的幾何,與設計對不上。擷取時累積祖先縮放係數、把 box 除回版面座標系(padding 等 computed style 不受 transform 影響,不動)。無 transform 時輸出逐位元不變(零回歸);實測 scale(0.5) 頁對未縮放基準 100/100 PASS。
 - **baseline schema 演進改走 EF migrations**:原本靠 `EnsureCreated` + 土砲 `ALTER`,對已 commit 進 repo 的舊 db 無法演進。改為正式 migration;**既有(EnsureCreated 建、無遷移史)的 db 首次開啟時自動接管**(先標記 InitialCreate 為已套用再 Migrate),不因「表已存在」而爆。`Microsoft.EntityFrameworkCore.Design` 只在產新 migration 時暫時加回(常駐會帶入 NU1903 高風險的 `System.Security.Cryptography.Xml`),流程見 `Parity.Storage.csproj` 註解。
 
 ## 0.9.7

@@ -61,6 +61,16 @@ internal static class CaptureScript
             return null;
           };
 
+          // 從 computed transform 取縮放係數(matrix / matrix3d);純 translate、rotate → [1,1]。
+          const scaleOf = (t) => {
+            if (!t || t === 'none') return [1, 1];
+            let m = t.match(/^matrix\(([^)]+)\)/);
+            if (m) { const p = m[1].split(',').map(Number); return [Math.hypot(p[0], p[1]) || 1, Math.hypot(p[2], p[3]) || 1]; }
+            m = t.match(/^matrix3d\(([^)]+)\)/);
+            if (m) { const p = m[1].split(',').map(Number); return [Math.hypot(p[0], p[1], p[2]) || 1, Math.hypot(p[4], p[5], p[6]) || 1]; }
+            return [1, 1];
+          };
+
           const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'META', 'LINK']);
 
           // ctx = { ox, oy(座標平移), stop(路徑的 root), prefix, rootLabel }
@@ -72,19 +82,27 @@ internal static class CaptureScript
             const r = el.getBoundingClientRect();
             const selfPath = pathIn(el, ctx.stop, ctx.prefix, ctx.rootLabel);
 
+            // 祖先累積的 transform 縮放:getBoundingClientRect 會被祖先 scale() 污染,除回去
+            // 讓幾何回到版面座標系(padding 等 computed style 本就不受 transform 影響,不必動)。
+            // Parity 比相對位置+尺寸,絕對位置差一個常數不影響;無 transform 時 csx=csy=1,
+            // 輸出與未修改前逐位元相同(零回歸)。esx/esy = el 自身的縮放,往下傳給子節點累積。
+            const csx = ctx.csx || 1, csy = ctx.csy || 1;
+            const [esx, esy] = scaleOf(s.transform);
+
             // 組合樹的子節點(kidCtx 必須是區域變數:遞迴共用會互相污染脈絡)
             let kids, ctxForKids;
             if (el.shadowRoot) {
               // host → 走 shadowRoot(slot 會把 light 子節點帶回來,不會重複)
               kids = [...el.shadowRoot.children];
-              ctxForKids = { ...ctx, stop: el.shadowRoot, prefix: selfPath + ' >>> ', rootLabel: '' };
+              ctxForKids = { ...ctx, stop: el.shadowRoot, prefix: selfPath + ' >>> ', rootLabel: '', csx: csx * esx, csy: csy * esy };
             } else if (el.tagName === 'SLOT') {
               const assigned = el.assignedElements();
               kids = assigned.length ? assigned : [...el.children];
               ctxForKids = ctx; // 塞進來的是外層 light DOM 的元素,脈絡沿用
             } else {
               kids = [...el.children];
-              ctxForKids = ctx;
+              // 自身有縮放才開新脈絡累積,否則沿用(避免每層都複製物件)
+              ctxForKids = (esx === 1 && esy === 1) ? ctx : { ...ctx, csx: csx * esx, csy: csy * esy };
             }
 
             const children = [];
@@ -117,7 +135,7 @@ internal static class CaptureScript
               domId: el.id || null,
               classes: (typeof el.className === 'string' && el.className) ? el.className : null,
               ariaLabel: el.getAttribute('aria-label') || el.getAttribute('data-testid') || null,
-              box: { x: r.x + ctx.ox, y: r.y + ctx.oy, w: r.width, h: r.height },
+              box: { x: r.x / csx + ctx.ox, y: r.y / csy + ctx.oy, w: r.width / (csx * esx), h: r.height / (csy * esy) },
               color: s.color,
               background: s.backgroundColor,
               effectiveBackground: effectiveBg(el),
@@ -135,7 +153,7 @@ internal static class CaptureScript
           // 數層協定 JSON,~16 層以上的真實 DOM 就會超過 System.Text.Json 預設 MaxDepth(64)而 crash。
           // 字串在協定裡只有一層,C# 端再自行用放寬的 MaxDepth 解析。
           return JSON.stringify(walk(document.body,
-            { ox: scrollX, oy: scrollY, stop: document.body, prefix: '', rootLabel: 'body' }));
+            { ox: scrollX, oy: scrollY, stop: document.body, prefix: '', rootLabel: 'body', csx: 1, csy: 1 }));
         }
         """;
 }
