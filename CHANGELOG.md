@@ -7,7 +7,7 @@
 1.0 介面凍結前的清理——這些是**破壞性變更**,刻意趁 0.x(改介面免費)一次做掉;1.0 後同樣的改動要升 major。動機:報告與 baseline 資料庫即將被「另一個獨立升版的讀者」(規畫中的網頁儀表板)與別人的 CI 依賴,單一使用者 / 單一版本時看不出的接縫,現在先補平。
 
 - **`report.json` 加頂層 `schemaVersion`**:原本是裸陣列,無從辨識格式版本。改為 `{ "schemaVersion": 1, "reports": [...] }`,未來格式演進時消費端(`parity report` / 未來的 `parity push` 伺服器)有據可判、能相容處理。讀到無法辨識的舊格式給明確訊息,不靜默失敗。
-- **報告裡的框改用 `width`/`height`(原 `w`/`h`)**:報告是跨工具契約,自我解釋的欄位名勝過縮寫(C# 內部維持 `.W`/`.H`,只改 wire format)。**破壞性**:設計 / 快照 JSON 同格式,**既有 `parity.snapshot.json` 需重拍一次**(`parity snapshot`);好在 0×0 框有守門會報錯,忘了重拍不會靜默跑出爛結果。
+- **報告裡的框改用 `width`/`height`(原 `w`/`h`)**:報告是跨工具契約,自我解釋的欄位名勝過縮寫(C# 內部維持 `.W`/`.H`,只改 wire format)。**讀時向後相容**:`BoxJsonConverter` 寫出 `width`/`height`,但讀時 `w`/`h` 舊檔照吃——升級後新工具讀得動 0.9.x 產的舊快照 / 報告,**不必重拍**(反向:0.9.7 讀不了新檔,無解,那支已發佈)。
 - **null 欄位改顯式輸出**:`unit` / `delta` 等為 null 時原本整個 key 消失,消費端得判斷 key 存不存在。改為一律輸出 `null`,契約少一個「有時消失的 key」的坑。
 - **exit code 拆分 gate / 可信度**:配對可信度不足(結果不可信,通常是 url/frame 設定錯)從 gate fail 分出來,回獨立的 `3`(落差超門檻仍是 `1`、執行錯誤仍是 `2`)。CI 分得清該修設定還是修實作。
 - **baseline schema 演進改走 EF migrations**:原本靠 `EnsureCreated` + 土砲 `ALTER`,對已 commit 進 repo 的舊 db 無法演進。改為正式 migration;**既有(EnsureCreated 建、無遷移史)的 db 首次開啟時自動接管**(先標記 InitialCreate 為已套用再 Migrate),不因「表已存在」而爆。`Microsoft.EntityFrameworkCore.Design` 只在產新 migration 時暫時加回(常駐會帶入 NU1903 高風險的 `System.Security.Cryptography.Xml`),流程見 `Parity.Storage.csproj` 註解。
