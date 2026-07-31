@@ -253,6 +253,25 @@ var rendered = await page.EvaluateAsync<RenderedNode[]>(@"
 - **壞消息**:UI Automation **不會**乾脆給你精確的顏色與字級。最乾淨的解法是——**因為 app 是你自己寫的,`WpfImplementationSource` 直接掛進你的 WPF 行程、走 visual tree 讀真正的 `FontSize`、筆刷顏色、`Margin`**。拿到的數字 100% 精確,代價是它得跑在你的 app 裡(比對網址侵入性高一點)。
 - **白老鼠**:QuillNest 設計稿畫在 Figma、程式是你的 WPF,正好完整驗一次「桌面版還原度」——這是別人難做、你因為同時握有設計稿與原始碼而做得動的角度。
 
+**2026-07-31 補記:這扇門的地基已被姊妹專案蓋掉一半 ——
+[XamlContrast](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast)。**
+
+它從另一個角度(WCAG 對比稽核而非還原度)先進了同一片 WPF 市場,走**靜態**路線:
+不跑 App、直接解析 XAML 原始碼,磨出十二條「XAML 裡實際生效的顏色是什麼」的
+解析規則(色盤自動偵測、Style/BasedOn 鏈揉平、觸發態合併、模板根背景……),
+四個真實專案雙實作互證(白老鼠與本專案同一批,含 QuillNest)。
+
+對本節的意義:上面「壞消息」說 UI Automation 不給精確顏色——XamlContrast 的
+靜態解析正是那個缺口的**預期值產生器**。將來 `WpfImplementationSource` 開門時:
+
+- XamlContrast 靜態算「**應該**生效的顏色」,本專案執行期讀「**實際**生效的顏色」,
+  兩相對照即為完整的桌面設計品質守門
+- 它的已知盲區(sibling 背景、TargetName 換底、Binding 色)恰好全是
+  「只有執行期看得到」的——正是這扇門的執行期讀值能補的;反向亦然,
+  執行期讀值可驗證其靜態解析
+
+交會點細節見該 repo 的 ROADMAP「與 Parity 的交會點」。
+
 ### 4.6 座標/單位正規化(容易錯,先講清楚)
 
 - Figma `absoluteBoundingBox` 是檔案絕對座標 → 減掉 frame 原點,變「相對 frame 左上」。

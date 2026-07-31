@@ -312,6 +312,14 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 - Figma token 走環境變數(`env:FIGMA_TOKEN`),不進 log、不進 URL(用 `X-Figma-Token` header)
 - 抓過的 frame 存 `.parity/cache`(已 gitignore),重跑不再打 Figma、可離線比對
 
+## 另見
+
+[**XamlContrast**](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast) —— 同作者的姊妹專案,
+同一套哲學(數值檢查、CI 把關)。Parity 回答「**實作跟設計稿一不一樣**」(還原度);
+XamlContrast 回答「**做出來的東西看不看得見**」(WCAG 對比,靜態掃 XAML 原始碼)。
+一個守還原度、一個守可讀性;它的靜態顏色解析也是本專案未來
+`WpfImplementationSource`(桌面 adapter)的預期值地基——見規畫書 4.5 節補記。
+
 ## License
 
 MIT
