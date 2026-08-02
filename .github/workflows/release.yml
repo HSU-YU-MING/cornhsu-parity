@@ -66,7 +66,7 @@ jobs:
       # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`,而 OIDC 情境下
       # 該變數不存在 → npm 會拿「空 token」去驗證而不改走 OIDC,直接發布失敗
       # (actions/setup-node#1551)。預設 registry 本來就是 npmjs.org,不需要設。
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
