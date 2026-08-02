@@ -63,6 +63,8 @@ internal static class SettleScript
             frames++;
           }
 
+          // 回傳供除錯:實測 21 頁的真實網站,scrollSteps 2–16、settleFrames 2–7,
+          // 兩個上限都離很遠——若哪天看到貼著上限,才是這裡要調的訊號。
           return { scrollSteps: steps, settleFrames: frames, settled: stable >= 2 };
         }
         """;

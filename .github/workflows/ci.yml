@@ -20,12 +20,14 @@ jobs:
       - name: Build
         run: dotnet build Parity.slnx -c Release
 
-      - name: Unit tests
-        run: dotnet test Parity.slnx -c Release --no-build
-
-      # 用剛建好的工具本身裝瀏覽器(順便 dogfood --with-deps)
+      # 用剛建好的工具本身裝瀏覽器(順便 dogfood --with-deps)。
+      # 刻意排在單元測試**之前**:SettleCaptureTests 需要真實瀏覽器,沒裝會自己略過——
+      # 那條測的是量測正確性,靜靜略過等於沒驗。
       - name: Install Chromium (with system deps)
         run: dotnet run --project src/Parity.Cli -c Release --no-build -- install-browser --with-deps
+
+      - name: Unit tests
+        run: dotnet test Parity.slnx -c Release --no-build
 
       # 離線示範刻意做壞 → 預期 GATE FAIL(exit 1)。這正是 CI 把關該有的行為,
       # 所以「跑出 exit 1」= 成功;跑出別的才是回歸。

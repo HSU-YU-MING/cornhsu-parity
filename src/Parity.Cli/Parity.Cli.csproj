@@ -11,7 +11,7 @@
     <ToolCommandName>parity</ToolCommandName>
     <PackageId>Cornhsu.Parity</PackageId>
     <!-- 只是本機建置的預設值:release 一律以 tag 版號 -p:Version= 覆蓋(見 .github/workflows/release.yml)-->
-    <Version>0.10.1</Version>
+    <Version>0.11.0</Version>
     <!-- 授權 / 作者 / README / icon / SourceLink 等共用中繼資料在根目錄 Directory.Build.props -->
     <Description>Parity — 數值級設計還原度檢查工具。抓 Figma 與實作端的真實數值做程式比對,本機 / CI / 內網都能跑。</Description>
     <!-- NU5111:Playwright 套件內含的 .ps1(非 install 腳本),打包時的無害提醒 -->

@@ -11,7 +11,7 @@
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v0.10.1   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
+- uses: HSU-YU-MING/cornhsu-parity@v0.11.0   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
   with:
     config: parity.config.json      # 選填,預設 parity.config.json
     target: /pricing                # 選填,只檢查這個 route(省略 = 全部)
@@ -54,13 +54,13 @@
 
 | | |
 |---|---|
-| 發佈 | NuGet 共 19 版(v0.1.0 → v0.10.1),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
+| 發佈 | NuGet 共 20 版(v0.1.0 → v0.11.0),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **159 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣 |
+| 測試 | **160 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
-| 真實驗證 | **cornhsu.com 全站 20 頁由 Parity 自己守門**——首日 dogfooding 即揪出並修掉兩個 flaky 根因 |
+| 真實驗證 | **cornhsu.com 全站 21 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.0) |
 
 ## 安裝
 
@@ -263,7 +263,7 @@ jobs:
       - run: |
           npm ci && npm run build
           npm run preview &   # 例:serve 在 localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v0.10.1   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
+      - uses: HSU-YU-MING/cornhsu-parity@v0.11.0   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # 設計來源用本機 JSON 時可省略
