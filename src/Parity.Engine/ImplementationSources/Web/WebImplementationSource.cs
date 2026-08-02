@@ -120,6 +120,12 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
         {
             await page.WaitForTimeoutAsync(100); // 讓凍結後的最終版面套用完
 
+            // 凍結之後還要讓版面「定案」:凍結 transition 只保證元素不再動,不保證它停在最終狀態。
+            // 捲動觸發的進場效果(IntersectionObserver 加 class)其初始狀態本身就是位移的,
+            // 不叫醒它就會量到動畫第 0 格——首屏邊緣的元素因此 flaky、首屏以下的一直量錯。
+            // 見 SettleScript 的說明。腳本自身有步數與幀數上限,不會把擷取拖住。
+            await page.EvaluateAsync(SettleScript.Js);
+
             var arg = new
             {
                 mapSelectors = reference.MapSelectors ?? new Dictionary<string, string>(),
