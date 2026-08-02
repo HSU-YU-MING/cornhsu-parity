@@ -4,11 +4,11 @@
 //   version     發布版號(取自 git tag,例:0.9.5)
 //   publishRoot 內含各 RID 子目錄的資料夾,例:artifacts/publish/win-x64/…
 //
-// 產出:npm/dist/ 底下五個可直接 `npm publish` 的資料夾
+// 產出:npm/dist/ 底下七個可直接 `npm publish` 的資料夾
 //   cornhsu-parity/              主套件(啟動腳本)
-//   parity-win32-x64/ 等         平台套件(自帶執行環境的 .NET 產物)
+//   parity-win32-x64/ 等         平台套件(自帶執行環境的 .NET 產物,六個 RID)
 //
-// 為什麼用腳本而不是全寫在 workflow YAML:版號要同步改五個 package.json、
+// 為什麼用腳本而不是全寫在 workflow YAML:版號要同步改七個 package.json、
 // 還要刪掉 Playwright 自帶的 node —— 這些邏輯寫在 YAML 裡難讀也難在本機驗證。
 
 import { cp, mkdir, readFile, rm, writeFile, access } from "node:fs/promises";
