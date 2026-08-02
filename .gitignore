@@ -21,5 +21,9 @@ dist/
 *.local.json
 npm/dist/
 
+# 本機規畫筆記:含個人職涯脈絡的自我提醒,刻意不公開
+# (對照:Parity專案規畫書.md / ROADMAP.md / Parity 1.0 介面凍結審查.md 是對外文件,有進版控)
+Parity網頁外殼規畫書.md
+
 # npm 主套件的啟動腳本是原始碼,不是建置產物 —— 別被上面的 bin/ 規則吃掉
 !npm/cornhsu-parity/bin/
