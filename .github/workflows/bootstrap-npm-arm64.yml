@@ -27,7 +27,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       # token 發布要設 registry-url:它會把 //registry.npmjs.org/:_authToken 寫進 .npmrc
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
