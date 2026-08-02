@@ -34,7 +34,7 @@ git push origin v0.1.0
 
 1.0 不只是升版,是**對外承諾介面凍結**（破壞這些介面之後要升 major）。發之前:
 
-- [ ] dogfooding 真專案連用滿 **2–4 週**,期間沒有再想改五個契約面（config / CLI / action inputs / `report.json` / baseline schema——見 `Parity 1.0 介面凍結審查.md`）
+- [ ] dogfooding 真專案連用滿 **2–4 週**,期間沒有再想改五個契約面（config / CLI / action inputs / `report.json` / baseline schema——見 [Parity 1.0 介面凍結審查.md](<Parity 1.0 介面凍結審查.md>)）
 - [ ] CHANGELOG 的 1.0.0 條目**明列「以下介面自此凍結」**（不是列功能）
 - [ ] `npx cornhsu-parity` 端到端裝過一次（安裝路徑穩 = 承諾的一部分）
 
