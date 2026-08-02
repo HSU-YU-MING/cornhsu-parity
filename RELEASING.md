@@ -20,12 +20,12 @@
 ## 每次發布
 
 ```sh
-# 版號由 tag 推導(release.yml 用 -p:Version 覆蓋 csproj 的預設 0.1.0)
+# 版號由 tag 推導(release.yml 用 -p:Version 覆蓋 csproj 裡的本機預設值)
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-`release.yml` 會自動發**兩個通路**（版號都從 tag 推導,`-p:Version` 覆蓋 csproj 佔位的 0.9.3）:
+`release.yml` 會自動發**兩個通路**（版號都從 tag 推導,`-p:Version` 覆蓋 csproj 裡的本機預設值）:
 
 - **NuGet**（`Cornhsu.Parity`,dotnet tool）:build → test → pack → OIDC → `dotnet nuget push`;含 snupkg + SourceLink,可 step-in 除錯。
 - **npm**（`cornhsu-parity` + 6 個 `@cornhsu/parity-<platform>` 平台子套件,支援 `npx`）:各 RID `dotnet publish --self-contained` → `prepare.mjs` 組裝 → OIDC 信任發布（已存在的版號跳過,可安全重跑）。
