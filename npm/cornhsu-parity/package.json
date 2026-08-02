@@ -35,7 +35,9 @@
   },
   "optionalDependencies": {
     "@cornhsu/parity-win32-x64": "0.0.0-placeholder",
+    "@cornhsu/parity-win32-arm64": "0.0.0-placeholder",
     "@cornhsu/parity-linux-x64": "0.0.0-placeholder",
+    "@cornhsu/parity-linux-arm64": "0.0.0-placeholder",
     "@cornhsu/parity-darwin-x64": "0.0.0-placeholder",
     "@cornhsu/parity-darwin-arm64": "0.0.0-placeholder"
   }
