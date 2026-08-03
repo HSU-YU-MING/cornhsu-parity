@@ -120,11 +120,9 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
         {
             await page.WaitForTimeoutAsync(100); // 讓凍結後的最終版面套用完
 
-            // 凍結之後還要讓版面「定案」:凍結 transition 只保證元素不再動,不保證它停在最終狀態。
-            // 捲動觸發的進場效果(IntersectionObserver 加 class)其初始狀態本身就是位移的,
-            // 不叫醒它就會量到動畫第 0 格——首屏邊緣的元素因此 flaky、首屏以下的一直量錯。
-            // 見 SettleScript 的說明。腳本自身有步數與幀數上限,不會把擷取拖住。
-            await page.EvaluateAsync(SettleScript.Js);
+            // 凍結之後還要讓版面「定案」——凍結 transition 只保證不再動,不保證停在最終狀態。
+            // 見 SettleScript 的說明(含走過的兩條彎路)。
+            await SettleLayoutAsync(page, reference);
 
             var arg = new
             {
@@ -149,6 +147,36 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             await freezeStyle.EvaluateAsync("s => s.remove()");
             await freezeStyle.DisposeAsync();
         }
+    }
+
+    /// 撐高視窗時的上限。真實網站整頁高多在數千 px;設上限是防呆(無限捲動、異常長頁),
+    /// 免得為了觸發進場效果去配置一張過大的 layout viewport。
+    private const int MaxSettleViewportHeight = 20_000;
+
+    /// <summary>
+    /// 讓版面定案:暫時把視窗撐到整頁高 → 所有元素同時落在畫面內 → IntersectionObserver
+    /// **必然**觸發(不靠捲動、不賭 callback 送達時機) → 還原視窗高 → 最後定案。
+    /// class 一旦加上就不會被移除,所以還原後元素仍在展開後的位置。
+    ///
+    /// attach 模式(使用者活著的 Electron app)刻意跳過:改視窗大小會被使用者看見,
+    /// 違反「不留痕跡」。那個情境的頁面通常也不是捲動觸發的行銷頁。
+    /// </summary>
+    private async Task SettleLayoutAsync(IPage page, ImplRef reference)
+    {
+        var restoreHeight = IsAttachUrl(reference.Url) ? null : page.ViewportSize;
+        if (restoreHeight is not null)
+        {
+            var docHeight = await page.EvaluateAsync<int>(SettleScript.DocumentHeight);
+            var tall = Math.Min(Math.Max(docHeight, restoreHeight.Height), MaxSettleViewportHeight);
+            if (tall > restoreHeight.Height)
+            {
+                await page.SetViewportSizeAsync(restoreHeight.Width, tall);
+                await page.EvaluateAsync(SettleScript.Trigger);
+                await page.SetViewportSizeAsync(restoreHeight.Width, restoreHeight.Height);
+            }
+        }
+
+        await page.EvaluateAsync(SettleScript.Settle);
     }
 
     /// <summary>擷取腳本輸出 → RenderedNode。CSS 字串在這裡解析成數值(px、顏色)。</summary>
