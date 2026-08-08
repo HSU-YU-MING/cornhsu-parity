@@ -1,19 +1,20 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Parity Demo — 刻意做壞的實作</title>
+<title>Parity Demo — an implementation broken on purpose</title>
 <style>
-  /* 這頁刻意跟 design.json 有落差,用來驗證 Parity 抓得出精確數值:
-     - h1 字級 30(設計 32)、字型不是 Arial(軟落差)
-     - cta-button 背景 #3B82F6(設計 #2563EB)、左右內距 8(設計 20)
-     - feature-list gap 16(設計 24)
-     - 設計裡的 hero-badge 這頁沒做 → 未配對 */
+  /* This page deliberately disagrees with design.json, so the demo proves Parity
+     reports exact numbers:
+     - h1 font-size 30 (design 32); font-family is not Arial (a soft diff)
+     - cta-button background #3B82F6 (design #2563EB); left/right padding 8 (design 20)
+     - feature-list gap 16 (design 24)
+     - the design has a hero-badge this page never implemented -> unmatched */
   * { box-sizing: border-box; margin: 0; }
   body { width: 800px; padding: 40px; font-family: Arial, sans-serif; background: #FFFFFF; }
   h1.page-title {
-    font-family: "Segoe UI", sans-serif;   /* 設計是 Arial → 軟落差 */
-    font-size: 30px;                        /* 設計 32 → 落差 */
+    font-family: "Segoe UI", sans-serif;   /* design says Arial -> soft diff */
+    font-size: 30px;                        /* design 32 -> diff */
     font-weight: 700;
     color: #111827;
     margin-bottom: 16px;
@@ -22,8 +23,8 @@
   button.cta {
     display: block;
     width: 160px; height: 48px;
-    padding: 12px 8px;                      /* 設計 12px 20px → 左右內距落差 */
-    background: #3B82F6;                    /* 設計 #2563EB → 色差 */
+    padding: 12px 8px;                      /* design 12px 20px -> horizontal padding diff */
+    background: #3B82F6;                    /* design #2563EB -> color diff */
     color: #FFFFFF;
     border: none; border-radius: 8px;
     font-size: 16px; font-weight: 600; font-family: Arial, sans-serif;
@@ -31,7 +32,7 @@
   }
   section.feature-list {
     display: flex;
-    gap: 16px;                              /* 設計 itemSpacing 24 → 落差 */
+    gap: 16px;                              /* design itemSpacing 24 -> diff */
     width: 720px;
   }
   .feature-card {
@@ -41,8 +42,9 @@
     border-radius: 12px;
   }
   .feature-card h3 { font-size: 18px; font-weight: 600; color: #111827; }
-  /* 設計稿的 hero-badge 有做,但 class 名對不上、也沒有文字錨點
-     → 自動配對配不到,示範用 parity map 手動點選配對 */
+  /* The design's hero-badge IS implemented here, but the class name does not line up
+     and there is no text to anchor on -> automatic matching cannot find it.
+     This is what `parity map` is for: click the layer, click the element. */
   .pill {
     position: absolute; top: 40px; left: 640px;
     width: 120px; height: 32px;
@@ -52,14 +54,15 @@
 </head>
 <body>
   <h1 class="page-title">Parity Demo</h1>
-  <p class="subtitle">數值級設計還原度檢查</p>
+  <p class="subtitle">Property-level design fidelity checking</p>
   <button class="cta" data-parity="cta-button"><span>Get Started</span></button>
   <section class="feature-list">
-    <div class="feature-card" id="feature-card-1"><h3>數值級比對</h3></div>
-    <div class="feature-card" id="feature-card-2"><h3>本機優先</h3></div>
-    <div class="feature-card" id="feature-card-3"><h3>進 CI 把關</h3></div>
+    <div class="feature-card" id="feature-card-1"><h3>Numeric comparison</h3></div>
+    <div class="feature-card" id="feature-card-2"><h3>Local first</h3></div>
+    <div class="feature-card" id="feature-card-3"><h3>Gates your CI</h3></div>
   </section>
-  <!-- hero-badge 的實作:名字對不上 → 未配對,用 parity map 手動配 -->
+  <!-- The hero-badge implementation: the name does not match -> unmatched,
+       resolved by hand with `parity map`. -->
   <div class="pill"></div>
 </body>
 </html>

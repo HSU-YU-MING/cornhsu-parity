@@ -30,7 +30,7 @@
         "fontSize": 16,
         "fontWeight": 400
       },
-      "characters": "數值級設計還原度檢查",
+      "characters": "Property-level design fidelity checking",
       "children": []
     },
     {
@@ -81,7 +81,7 @@
               "box": { "x": 56, "y": 256, "width": 192, "height": 22 },
               "fill": { "r": 17, "g": 24, "b": 39, "a": 1 },
               "text": { "fontFamily": "Arial", "fontSize": 18, "fontWeight": 600 },
-              "characters": "數值級比對",
+              "characters": "Numeric comparison",
               "children": []
             }
           ]
@@ -101,7 +101,7 @@
               "box": { "x": 304, "y": 256, "width": 192, "height": 22 },
               "fill": { "r": 17, "g": 24, "b": 39, "a": 1 },
               "text": { "fontFamily": "Arial", "fontSize": 18, "fontWeight": 600 },
-              "characters": "本機優先",
+              "characters": "Local first",
               "children": []
             }
           ]
@@ -121,7 +121,7 @@
               "box": { "x": 552, "y": 256, "width": 192, "height": 22 },
               "fill": { "r": 17, "g": 24, "b": 39, "a": 1 },
               "text": { "fontFamily": "Arial", "fontSize": 18, "fontWeight": 600 },
-              "characters": "進 CI 把關",
+              "characters": "Gates your CI",
               "children": []
             }
           ]
