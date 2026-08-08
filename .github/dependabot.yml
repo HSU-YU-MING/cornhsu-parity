@@ -15,6 +15,14 @@ updates:
       microsoft:
         patterns: ["Microsoft.*", "System.*"]
 
+    ignore:
+      # ImageSharp 4.0 把授權變成建置期強制:沒有 sixlabors.lic / SixLaborsLicenseKey
+      # 就直接 error,CI 全紅(實測於 #19)。3.1.x 仍是 Split License,開源專案免費。
+      # 只有 ImageDesignSource.cs 用到它,而且只用 Image.LoadAsync 與 Rgba32 兩個 API,
+      # 真要換掉成本很低 —— 但那是主動決定,不是自動升級。
+      - dependency-name: "SixLabors.ImageSharp"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
