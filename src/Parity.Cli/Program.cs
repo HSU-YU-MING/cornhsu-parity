@@ -125,12 +125,12 @@ internal static class CheckCommand
         WriteMarkdown(opts, session.Config, reports, gateFail);
         if (gateFail)
         {
-            Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
+            Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m (fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
             foreach (var r in gateReasons)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
             return 1;
         }
-        Console.WriteLine($"\n\x1b[32m✔ PASS\x1b[0m(fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
+        Console.WriteLine($"\n\x1b[32m✔ PASS\x1b[0m (fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
         return 0;
     }
 
