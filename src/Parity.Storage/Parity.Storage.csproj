@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Parity.Engine\Parity.Engine.csproj" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
     <!-- 蓋掉 EF Sqlite 傳遞進來的 2.1.11(NU1903 高風險弱點),pin 到修補過的原生 SQLite -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
     <!-- 註:schema 演進走 EF migrations(Migrations/ 底下)。執行期的 Database.Migrate() 只需
