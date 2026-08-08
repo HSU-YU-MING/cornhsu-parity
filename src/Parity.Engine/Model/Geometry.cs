@@ -19,7 +19,7 @@ internal sealed class BoxJsonConverter : JsonConverter<Box>
     public override Box Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
-            throw new JsonException("Box 應為 JSON 物件。");
+            throw new JsonException("Box must be a JSON object.");
 
         double x = 0, y = 0, w = 0, h = 0;
         while (reader.Read())
@@ -39,7 +39,7 @@ internal sealed class BoxJsonConverter : JsonConverter<Box>
                 default: reader.Skip(); break;
             }
         }
-        throw new JsonException("Box 物件未正常結束。");
+        throw new JsonException("Box object was not terminated.");
     }
 
     // 數字取值;null 當 0(與「缺 key 預設 0」一致);其餘型別給明確 JsonException,
@@ -48,7 +48,7 @@ internal sealed class BoxJsonConverter : JsonConverter<Box>
     {
         JsonTokenType.Number => reader.GetDouble(),
         JsonTokenType.Null => 0,
-        _ => throw new JsonException($"Box 欄位應為數字,實際為 {reader.TokenType}。"),
+        _ => throw new JsonException($"Box fields must be numbers; got {reader.TokenType}."),
     };
 
     public override void Write(Utf8JsonWriter writer, Box value, JsonSerializerOptions options)

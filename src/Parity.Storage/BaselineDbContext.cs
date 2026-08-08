@@ -32,8 +32,13 @@ public sealed class StoredDiff
 
     public static StoredDiff From(DiffRecord d) => new()
     {
-        Route = d.Route, DesignLayer = d.DesignLayer, Selector = d.Selector,
-        Prop = d.Prop, Severity = d.Severity, Expected = d.Expected, Actual = d.Actual,
+        Route = d.Route,
+        DesignLayer = d.DesignLayer,
+        Selector = d.Selector,
+        Prop = d.Prop,
+        Severity = d.Severity,
+        Expected = d.Expected,
+        Actual = d.Actual,
     };
 }
 

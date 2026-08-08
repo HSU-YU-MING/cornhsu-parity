@@ -35,7 +35,7 @@ internal static class BaselineCommand
         var integrity = session.MatchIntegrityFailures(scans);
         if (integrity.Count > 0)
         {
-            Console.Error.WriteLine("\x1b[31m✘ 不存 baseline:配對可信度不足(基準會是殘缺的)\x1b[0m");
+            Console.Error.WriteLine("\x1b[31m✘ refusing to save baseline: match integrity too low (the baseline would be incomplete)\x1b[0m");
             foreach (var r in integrity)
                 Console.Error.WriteLine($"  \x1b[31m·\x1b[0m {r}");
             return 2;
@@ -50,8 +50,8 @@ internal static class BaselineCommand
         var id = await store.SaveAsync(diffs, DateTime.UtcNow, commit, branch, score);
 
         var at = commit is null ? "" : $" @ {Short(commit)}{(branch is null ? "" : $" ({branch})")}";
-        Console.WriteLine($"\x1b[32m✔\x1b[0m 已存 baseline #{id}:{diffs.Count} 條落差 · 還原度 {score}/100{at}");
-        Console.WriteLine("之後用 `parity check --baseline` 只擋「相對此基準新增/惡化」的落差。");
+        Console.WriteLine($"\x1b[32m✔\x1b[0m saved baseline #{id}: {diffs.Count} diff(s) · fidelity {score}/100{at}");
+        Console.WriteLine("From now on `parity check --baseline` only gates on diffs that are new or worse than this baseline.");
         return 0;
     }
 
@@ -67,19 +67,19 @@ internal static class BaselineCommand
         var history = await store.HistoryAsync();
         if (history.Count == 0)
         {
-            Console.WriteLine("尚無 baseline。先跑 `parity baseline save`。");
+            Console.WriteLine("No baseline yet. Run `parity baseline save` first.");
             return 0;
         }
-        Console.WriteLine("\x1b[1mbaseline 歷史\x1b[0m(新→舊,分數欄 = 還原度走勢):");
+        Console.WriteLine("\x1b[1mbaseline history\x1b[0m (newest first; the score column is the fidelity trend):");
         foreach (var (id, createdAt, commit, diffCount, score) in history)
-            Console.WriteLine($"  #{id,-4} {createdAt:yyyy-MM-dd HH:mm}  {diffCount,3} 條落差  {(score is { } s ? $"{s,3}/100" : "  —  ")}" +
+            Console.WriteLine($"  #{id,-4} {createdAt:yyyy-MM-dd HH:mm}  {diffCount,3} diffs  {(score is { } s ? $"{s,3}/100" : "  —  ")}" +
                 (commit is null ? "" : $"  @ {Short(commit)}"));
         return 0;
     }
 
     private static int UnknownSub(string sub)
     {
-        Console.Error.WriteLine($"未知的 baseline 子指令:「{sub}」\n");
+        Console.Error.WriteLine($"unknown `baseline` subcommand: \"{sub}\"\n");
         Help();
         return 2;
     }
@@ -87,16 +87,17 @@ internal static class BaselineCommand
     private static int Help()
     {
         Console.WriteLine("""
-            parity baseline — 落差基準 / 歷史(規畫書 M5)
+            parity baseline — diff baselines and their history
 
-            用法:
+            Usage:
               parity baseline save [--config <path>] [--target <route>]
-                  跑一次掃描,把當前落差存成新的基準快照
+                  Run one scan and store the current diffs as a new baseline snapshot
               parity baseline list [--config <path>]
-                  列出歷史基準快照
+                  List the stored baseline snapshots
 
-            搭配:parity check --baseline
-                  比對現況與最新基準,只在「新增或惡化」時才 GATE FAIL(適合已有一堆落差的專案漸進導入)
+            Pairs with: parity check --baseline
+                  Compares the current state against the newest baseline and only GATE FAILs on diffs that are
+                  new or worse — which is what lets a project with existing debt adopt Parity today.
             """);
         return 0;
     }
@@ -107,7 +108,7 @@ internal static class BaselineCommand
     private static string ResolveConfig(Dictionary<string, string?> opts)
         => opts.GetValueOrDefault("--config")
            ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
-           ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+           ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
 
     private static string Short(string commit) => commit.Length > 7 ? commit[..7] : commit;
 }

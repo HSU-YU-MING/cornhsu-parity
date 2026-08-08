@@ -90,13 +90,13 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
 
         var pages = cdpBrowser.Contexts.SelectMany(c => c.Pages).ToList();
         if (pages.Count == 0)
-            throw new InvalidOperationException($"CDP 端點沒有開啟中的頁面(app 視窗還沒載入?):{endpoint}");
+            throw new InvalidOperationException($"the CDP endpoint has no open page (has the app window finished loading?): {endpoint}");
 
         var page = pageMatch is null
             ? pages[0]
             : pages.FirstOrDefault(p => p.Url.Contains(pageMatch, StringComparison.OrdinalIgnoreCase))
               ?? throw new InvalidOperationException(
-                  $"CDP 端點找不到 URL 含「{pageMatch}」的頁面;現有:{string.Join(" 、 ", pages.Select(p => p.Url))}");
+                  $"no page at the CDP endpoint has a URL containing \"{pageMatch}\"; available: {string.Join(", ", pages.Select(p => p.Url))}");
 
         return await CaptureFromPageAsync(page, reference);
     }
@@ -134,7 +134,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             var raw = await page.EvaluateAsync<string>(CaptureScript.Js, arg);
             var json = JsonSerializer.Deserialize<JsonElement>(raw, CaptureParseOptions);
             if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-                throw new InvalidOperationException($"頁面擷取失敗(body 不可見?):{reference.Url}");
+                throw new InvalidOperationException($"page capture failed (is <body> invisible?): {reference.Url}");
 
             if (_options.CaptureScreenshot)
                 _screenshots[reference.Url] = await page.ScreenshotAsync(
@@ -241,7 +241,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
         catch (PlaywrightException ex) when (ex.Message.Contains("Executable doesn't exist"))
         {
             throw new InvalidOperationException(
-                "Chromium 尚未安裝。請先執行:parity install-browser", ex);
+                "Chromium is not installed yet. Run `parity install-browser` first.", ex);
         }
         return _browser;
     }

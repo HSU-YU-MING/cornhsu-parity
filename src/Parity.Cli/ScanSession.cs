@@ -29,7 +29,7 @@ public sealed class ScanSession : IAsyncDisposable
         ConfigPath = configPath;
         Config = ParityConfig.Load(configPath);
         if (Config.Targets.Count == 0)
-            throw new InvalidOperationException("設定檔裡沒有任何 target。");
+            throw new InvalidOperationException("the config file declares no targets.");
 
         _designSource = CreateDesignSource(Config, refreshCache);
         _implSource = new WebImplementationSource(
@@ -48,7 +48,7 @@ public sealed class ScanSession : IAsyncDisposable
             ? Config.Targets
             : Config.Targets.Where(t => t.Route == routeFilter).ToList();
         if (targets.Count == 0)
-            throw new InvalidOperationException($"找不到 route 為 {routeFilter} 的 target。");
+            throw new InvalidOperationException($"no target with route {routeFilter}.");
 
         var mapSelectors = LoadMapFile();
         var scans = new List<TargetScan>();
@@ -59,7 +59,7 @@ public sealed class ScanSession : IAsyncDisposable
                 Source: Config.DesignFile is { } df
                     ? Path.GetFullPath(Path.Combine(Config.BaseDirectory, df))
                     : Config.FigmaFileKey ?? throw new InvalidOperationException(
-                        "設定檔需要 figmaFileKey 或 designFile 其中之一。"),
+                        "the config needs either figmaFileKey or designFile."),
                 NodeId: target.Frame);
 
             var url = ResolveUrl(target.Url, Config.BaseDirectory);
@@ -116,7 +116,7 @@ public sealed class ScanSession : IAsyncDisposable
 
         var token = config.ResolveToken()
             ?? throw new InvalidOperationException(
-                "缺 Figma token:請設定環境變數 FIGMA_TOKEN(scope 只需 file_content:read)。");
+                "missing Figma token: set the FIGMA_TOKEN environment variable (only the file_content:read scope is needed).");
         return new FigmaDesignSource(new FigmaOptions(
             Token: token,
             CacheDirectory: Path.Combine(config.BaseDirectory, ".parity", "cache"),

@@ -25,7 +25,7 @@ public sealed class ImageDesignSource(string imagePath) : IDesignSource
     public async Task<DesignNode> GetFrameAsync(DesignRef reference, CancellationToken ct = default)
     {
         if (!File.Exists(imagePath))
-            throw new FileNotFoundException($"找不到設計圖:{imagePath}", imagePath);
+            throw new FileNotFoundException($"design image not found: {imagePath}", imagePath);
 
         var root = await _annotations.GetFrameAsync(reference, ct);
 

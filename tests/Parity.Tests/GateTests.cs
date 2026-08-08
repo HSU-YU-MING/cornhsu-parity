@@ -42,7 +42,7 @@ public class GateTests
         var report = Report(designNodes: 0, matched: 0);
 
         Assert.True(config.ShouldFail(report));
-        Assert.Contains("設計端 0 個節點", config.GateFailReason(report));
+        Assert.Contains("0 design nodes", config.GateFailReason(report));
     }
 
     // ---------- minMatchRate ----------
@@ -72,7 +72,7 @@ public class GateTests
         var failing = Report(designNodes: 2, matched: 2, Node("a", Diff(Severity.Serious)), Node("b"));
         var passing = Report(designNodes: 2, matched: 2, Node("a", Diff(Severity.Minor)), Node("b"));
 
-        Assert.Contains("等級落差", config.GateFailReason(failing));
+        Assert.Contains("severity diffs", config.GateFailReason(failing));
         Assert.Null(config.GateFailReason(passing));
     }
 
@@ -96,7 +96,7 @@ public class GateTests
     {
         var report = Report(designNodes: 3, matched: 0);
         var md = MarkdownReport.Render([report], gateFail: true,
-            gateNotes: ["/:0/3 個設計節點配對成功——沒有東西可比"]);
+            gateNotes: ["/: 0/3 design nodes matched — there is nothing to compare"]);
 
         Assert.Contains("⚠️", md);
         Assert.Contains("0/3", md);

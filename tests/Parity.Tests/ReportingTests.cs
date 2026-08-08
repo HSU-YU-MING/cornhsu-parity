@@ -118,8 +118,8 @@ public class ReportingTests
         var softOnly = Node("softOnly", Diff("fontFamily", "Arial", "Helvetica", Severity.Minor, soft: true));
         var md = MarkdownReport.Render([Report(2, [softOnly, Node("clean")])], gateFail: false);
 
-        Assert.Contains("還原度 100/100", md);
-        Assert.Contains("2/2 個設計節點忠實實作", md);
+        Assert.Contains("Fidelity 100/100", md);
+        Assert.Contains("2/2 design nodes implemented faithfully", md);
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public class ReportingTests
         var report = Report(2, [Node("cta", Diff("paddingLeft", "20", "8")), Node("ok")]);
         var md = MarkdownReport.Render([report], gateFail: true);
 
-        Assert.Contains("還原度 50/100", md);
+        Assert.Contains("Fidelity 50/100", md);
         Assert.Contains("GATE FAIL", md);
         Assert.Contains("`cta`", md);
         Assert.Contains("padding-left: 20px", md); // 建議修法
@@ -144,8 +144,8 @@ public class ReportingTests
 
         var md = MarkdownReport.Render([report], gateFail: true, baseline: cmp);
 
-        Assert.Contains("相對基準", md);
-        Assert.Contains("新增 **1**", md);
+        Assert.Contains("vs baseline", md);
+        Assert.Contains("new **1**", md);
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public class ReportingTests
         // 2 個節點 1 個乾淨 → 50 分;基準 75 → 顯示走勢往下
         var report = Report(2, [Node("bad", Diff("fontSize", "32", "30")), Node("ok")]);
         var md = MarkdownReport.Render([report], gateFail: true, baselineScore: 75);
-        Assert.Contains("**還原度 50/100**(基準 75 ↓ -25)", md);
+        Assert.Contains("**Fidelity 50/100** (baseline 75 ↓ -25)", md);
     }
 
     [Fact]

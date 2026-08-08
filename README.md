@@ -6,249 +6,302 @@
 [![CI](https://github.com/HSU-YU-MING/cornhsu-parity/actions/workflows/ci.yml/badge.svg)](https://github.com/HSU-YU-MING/cornhsu-parity/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**[作品介紹與開發故事](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · MIT**
+**[Project write-up](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · [繁體中文](README.zh-Hant.md) · MIT**
 
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v0.11.1   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
+- uses: HSU-YU-MING/cornhsu-parity@v0.12.0   # pin exact versions while 0.x; a floating @v1 arrives with 1.0
   with:
-    config: parity.config.json      # 選填,預設 parity.config.json
-    target: /pricing                # 選填,只檢查這個 route(省略 = 全部)
+    config: parity.config.json      # optional, defaults to parity.config.json
+    target: /pricing                # optional, check only this route (omit for all)
 ```
 
-落差超過 gate 門檻就讓 CI 失敗,並把還原度報告貼成 PR 留言(原地更新不洗版)。
+Fails CI when the gap exceeds the gate threshold, and posts the fidelity report as a PR
+comment that updates in place instead of piling up.
 
-> **能進 CI 的設計還原度檢查(Property-Level Design QA)。**
-> 抓 Figma 設計稿與實際渲染畫面**兩邊的真實數值**做程式比對——「內距 8px,設計是 12px」,
-> 精確到數字,所以能當 gate:**PR 讓畫面偏離設計就打紅**,並自動把還原度報告貼成 PR 留言。
+> **Design fidelity checking that can actually gate your CI (property-level design QA).**
+> It compares the **real numeric values on both sides** — your Figma file and the actually
+> rendered page — programmatically: "padding is 8px, the design says 12px." Because the
+> output is numbers rather than an impression, it can be a gate: **a PR that drifts from the
+> design turns red**, with the fidelity report posted straight onto the PR.
 
-**別人幫你「看見」設計落差,Parity 幫你「擋住」它。**
+**Other tools help you *see* design drift. Parity *blocks* it.**
 
-同類工具(Uiprobe、Loupe、OverlayQA、Floto Design Diff、PixelProof…)現在大多都做數值比對了,
-真正的差別不在「數值 vs 疊圖」,而在**這件事能不能自動化**:
+Most comparable tools (Uiprobe, Loupe, OverlayQA, Floto Design Diff, PixelProof…) do numeric
+comparison these days. The real difference is not "numbers vs. overlays" — it is **whether the
+whole thing can be automated**:
 
-|  | 手動抽查型<br>(Uiprobe / OverlayQA / Loupe …) | **Parity** |
+|  | Manual spot-check tools<br>(Uiprobe / OverlayQA / Loupe …) | **Parity** |
 |---|---|---|
-| 誰來跑 | 人打開工具、點一點、看報告 | **CI 自動跑**,人不用在場 |
-| 發現落差之後 | 自己開 ticket、或把結果複製貼到 PR | **exit code 擋 PR** + 機器人自動留言(原地更新不洗版) |
-| 回歸把關 | 無 | **baseline 只擋「新增/惡化」**——有舊債的專案也能今天上車 |
-| 沒有 Figma 檔時 | 不能用 | **快照模式**:把現在的畫面凍結成基準,重構不跑版 |
-| 桌面 app | 不支援 | **Electron**(CDP attach 活視窗) |
-| 價格 | $39–249 / 月(Loupe 免費但為桌面 GUI,無法自動化) | **MIT 免費** |
+| Who runs it | A person opens the tool, clicks around, reads a report | **CI runs it**, nobody has to be present |
+| After a gap is found | File a ticket yourself, or paste the result into the PR | **Exit code blocks the PR** + a bot comment that updates in place |
+| Regression gating | None | **A baseline gates only new/worsened gaps** — projects with existing debt can adopt it today |
+| When there is no Figma file | Unusable | **Snapshot mode**: freeze today's rendering as the baseline so refactors cannot drift |
+| Desktop apps | Not supported | **Electron** (attaches to the live window over CDP) |
+| Price | $39–249 / month (Loupe is free but is a desktop GUI — not automatable) | **Free, MIT** |
 
-> 誠實說明:localhost 與登入後頁面**不再是差異點**——Uiprobe、OverlayQA 也支援。
-> 「免費開源」也不是獨有——Loupe 同為 MIT。**Parity 獨有的是「免費 × 可自動化」的交集。**
+> Being honest about the boundaries: localhost and authenticated pages are **no longer a
+> differentiator** — Uiprobe and OverlayQA support them too. Neither is "free and open source" —
+> Loupe is also MIT. **What is unique to Parity is the intersection: free × automatable.**
 
-## 畫面
+## Screenshots
 
-**報告 UI(`parity serve --watch`)**——左欄逐項列出落差與一致的節點,右側把設計框與實作框直接疊在真實畫面上;點任一項即定位,存檔後自動重掃。
+**Report UI (`parity serve --watch`)** — the left column lists every node, matching or not;
+the right side overlays the design boxes and the implementation boxes directly on the real
+screenshot. Click any row to locate it; saving a file triggers a re-scan.
 
-![Parity 報告 UI:左欄落差清單,右側設計框與實作框疊在畫面上](https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-parity/master/docs/serve-ui.png)
+![Parity report UI: diff list on the left, design and implementation boxes overlaid on the page](https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-parity/master/docs/serve-ui.png)
 
-**還原度報告**——每一列是「期望 → 實際」的具體數值、嚴重度與建議修法(含對應的 design token)。GitHub Action 以此原文自動貼成 PR 留言,同一則原地更新、不洗版。
+**Fidelity report** — each row is a concrete "expected → actual" pair with its severity and a
+suggested fix (including the matching design token). The GitHub Action posts this verbatim as a
+PR comment, updating the same comment rather than adding new ones.
 
-![Parity 還原度報告:每列為期望→實際的數值落差與建議修法](https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-parity/master/docs/report.png)
+![Parity fidelity report: each row an expected→actual numeric gap with a suggested fix](https://raw.githubusercontent.com/HSU-YU-MING/cornhsu-parity/master/docs/report.png)
 
-## 成果一覽
+## At a glance
 
 | | |
 |---|---|
-| 發佈 | NuGet 共 21 版(v0.1.0 → v0.11.1),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
-| 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
-| 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
-| 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **160 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣 |
-| CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
-| 真實驗證 | **cornhsu.com 全站 21 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
+| Releases | 22 on NuGet (v0.1.0 → v0.12.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
+| Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
+| Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
+| Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
+| Tests | **160**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, and image sampling |
+| Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
+| Proven in production | **All 21 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
-## 安裝
+## Install
 
-兩條通路,選你手邊有的執行環境即可 —— **功能完全相同**。
+Two channels — pick whichever runtime you already have. **They are functionally identical.**
 
 ```sh
-# 有 Node(前端專案常見):不需要安裝 .NET
+# If you have Node (common in front-end projects): no .NET install needed
 npx cornhsu-parity check
 
-# 有 .NET
+# If you have .NET
 dotnet tool install -g Cornhsu.Parity
 ```
 
-> npm 版是同一份自帶執行環境的原生執行檔,只下載你這個平台的那一份
-> (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64)。
-> Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
-> 每個平台包因此省下約 88 MB。
+> The npm build is the same self-contained native executable; you only download the one for
+> your platform (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64).
+> Playwright normally bundles its own copy of Node; the npm build strips that out and uses the
+> Node you already have, which saves about 88 MB per platform package.
 
-## 快速開始
+## Quick start
 
 ```sh
-parity init                # 產生 parity.config.json 範本
-parity install-browser     # 第一次:下載 Playwright Chromium
-export FIGMA_TOKEN=...     # scope 只需 file_content:read
-parity check               # 比對,輸出報告 + exit code
-parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
-parity snapshot            # 把「現在跑著的畫面」凍結成設計基準——重構/改版守門,不需要 Figma
-parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
-parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
+parity init                # Generate a parity.config.json template
+parity install-browser     # First run only: download Playwright Chromium
+export FIGMA_TOKEN=...     # Only the file_content:read scope is needed
+parity check               # Compare; writes a report and sets the exit code
+parity report              # Re-render the Markdown report from an existing report.json
+                           #   (no re-scan; --md writes a file, otherwise it prints to stdout)
+parity snapshot            # Freeze the currently rendered UI as the design baseline —
+                           #   a refactor/redesign guard that needs no Figma at all
+parity lint                # Design lint: are the design file's values inside the allowed
+                           #   design-token set? (design only, no implementation)
+parity check --reverse     # Reverse view, for a designer redrawing an existing page:
+                           #   how does my draft differ from what ships? (never gates)
 ```
 
-在這個 repo 裡開發時:
+When working inside this repo:
 
 ```sh
 dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config.json
 ```
 
-`samples/demo` 是一組**離線示範**(設計來源用本機 JSON,不需要 Figma token):
-`index.html` 刻意做壞了幾個地方,`parity check` 會精確報出每一條落差與未配對清單,
-並因 serious 級落差回傳 exit code 1(GATE FAIL)——這正是 CI 把關的行為。
+`samples/demo` is a fully **offline demo** (the design source is a local JSON file, so no Figma
+token is needed): `index.html` is deliberately broken in a few places, `parity check` reports
+each gap and the unmatched list precisely, and returns exit code 1 (GATE FAIL) because of the
+serious-severity gaps — which is exactly the behaviour you want from a CI gate.
 
-## 設定:`parity.config.json`
+## Configuration: `parity.config.json`
 
 ```jsonc
 {
   "figmaFileKey": "abcd1234",
   "designToken": "env:FIGMA_TOKEN",
-  "mapFile": "parity.map.json",              // 手動補漏的對應檔(圖層名 → selector)
-  "tokensFile": "tokens.json",               // 選配:design token(名→值);建議修法會提示對應 token
+  "mapFile": "parity.map.json",              // manual fallback mapping (layer name → selector)
+  "tokensFile": "tokens.json",               // optional: design tokens (name → value);
+                                             //   suggested fixes will name the matching token
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
-  "compare": { "position": "relative" },     // relative = 比相對位置(預設);none = 不比位置
+  "compare": { "position": "relative" },     // relative = compare relative position (default); none = skip position
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],
-    "minMatchRate": 0                        // 選配:配對率低於此值(0–1)直接 FAIL;0 = 不設門檻
+    "minMatchRate": 0                        // optional: FAIL outright below this match rate (0–1); 0 = no threshold
   }
 }
 ```
 
-> gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律 GATE FAIL——
-> 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。`--baseline` 模式也不豁免。
+> Besides gaps, the gate also validates **match integrity**: zero matches (or zero design nodes)
+> is always a GATE FAIL — with nothing matched there are no gaps to catch, so a silent PASS
+> would be a false pass, usually caused by a wrong url or frame. `--baseline` mode is not exempt.
 
-## 目標:網頁或 Electron 桌面 app
+## Targets: a web page or an Electron desktop app
 
-`target.url` 決定實作端是什麼,指令與報告完全一樣:
+`target.url` decides what the implementation side is; the commands and the report are identical:
 
-| url 形式 | 對應 |
+| url form | What it means |
 |---|---|
-| `http(s)://…` | 一般網頁 / 內網 staging |
-| `file://…`(或相對路徑) | 本機 HTML 檔 |
-| `cdp:http://host:port` | **已在跑的 Electron 桌面 app**(抓活視窗的 DOM) |
+| `http(s)://…` | A normal web page, or internal staging |
+| `file://…` (or a relative path) | A local HTML file |
+| `cdp:http://host:port` | **An already-running Electron desktop app** (reads the DOM of the live window) |
 
-Electron:啟動時加遠端偵錯埠,再把 `url` 指過去即可——Parity 會 attach 進去讀當下畫面,不導頁、不干擾 app:
+For Electron, start the app with a remote debugging port and point `url` at it. Parity attaches
+and reads the current screen — it does not navigate, and does not disturb the app:
 
 ```sh
-electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
+electron . --remote-debugging-port=9222      # your app, with this one extra flag
 ```
 ```jsonc
 { "route": "/", "frame": "20:5", "url": "cdp:http://localhost:9222" }
 ```
 
-> 為什麼 Electron 幾乎免費:它的畫面就是一個 Chromium renderer,跟網頁同一套 DOM/CSS 量測。手機原生 / Flutter / 原生桌面不走 DOM,留待 v2.0。
+> Why Electron is nearly free: its UI *is* a Chromium renderer, so it uses the same DOM/CSS
+> measurement path as the web. Mobile native, Flutter and native desktop do not go through a
+> DOM, so they are left for v2.0.
 
-## 設計來源:Figma、快照、或一張圖
+## Design sources: Figma, a snapshot, or just an image
 
-| 設計來源 | config | 適合誰 |
+| Design source | config | Who it is for |
 |---|---|---|
-| **Figma**(主力) | `figmaFileKey` + `FIGMA_TOKEN` | 有 Figma 檔的正規流程 |
-| **快照**(`parity snapshot`) | `designFile` 指向產出的快照 JSON | **重構/改版守門**:現在的畫面是對的,存成基準,之後 check 保證不跑版(visual regression 的數值版)。配對走 selector 身分,100% 確定性 |
-| **一張圖 + 標註** | `designImage`(PNG/JPG)+ `designFile`(標註) | 只有圖的場景:外包 PNG、老專案只剩截圖。**XD / Sketch / PS 等其他工具匯出圖片就能走這條**(萬用轉接頭)。標註 = DesignNode JSON,`fill` 可省略——顏色由引擎從圖片對應區域取樣(TEXT 字色刻意不取樣:反鋸齒混色取不準,可手填) |
-| 手寫 JSON | `designFile` | 離線示範/測試 |
+| **Figma** (primary) | `figmaFileKey` + `FIGMA_TOKEN` | The normal workflow, when you have a Figma file |
+| **Snapshot** (`parity snapshot`) | `designFile` pointing at the generated snapshot JSON | **Refactor/redesign guard**: today's rendering is correct, so freeze it as the baseline and later checks prove nothing drifted (the numeric version of visual regression). Matching goes through selector identity, so it is 100% deterministic |
+| **An image + annotations** | `designImage` (PNG/JPG) + `designFile` (annotations) | When all you have is a picture: an outsourced PNG, or a legacy project down to screenshots. **This is also the path for XD / Sketch / Photoshop and anything else that can export an image** — a universal adapter. The annotations are DesignNode JSON, and `fill` may be omitted: the engine samples the color from the corresponding region of the image. (Text color is deliberately not sampled — anti-aliasing blends it and the reading is unreliable — but you can fill it in by hand.) |
+| Hand-written JSON | `designFile` | Offline demos and tests |
 
 ```sh
-# 重構守門三步:
-parity snapshot            # 1. 凍結現在的畫面(產出 parity.snapshot.json + 參考截圖)
-#    config 改 designFile 指向它、target.frame 填 route
-parity check               # 2. 大膽重構;3. check 保證與快照一致
+# The three-step refactor guard:
+parity snapshot            # 1. Freeze the current rendering (writes parity.snapshot.json + a reference screenshot)
+#    Point designFile at it in the config, and set each target.frame to its route
+parity check               # 2. Refactor fearlessly; 3. check proves it still matches the snapshot
 ```
 
-## 比什麼、不比什麼
+## What gets compared, and what does not
 
-只比「不管版面怎麼流動都該一樣」的東西:
+Only the things that should hold no matter how the layout flows:
 
-- **自身尺寸**(寬高;TEXT 節點例外——文字框量測天生不同,比了狂誤報)
-  - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
-- **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
-- **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
-- **字體**:size / weight / line-height / letter-spacing 精確比;font-family 是**軟落差**(不擋 gate)
-- **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
+- **Intrinsic size** (width/height — except on TEXT nodes, where text-box measurement is
+  inherently different between Figma and a browser and comparing it produces a flood of noise)
+  - The auto-layout **HUG (fit content) / FILL (fill parent)** axis is skipped too: Figma's
+    measured width necessarily differs from the browser's rendered width there. Only **FIXED**
+    axes are compared.
+- **Padding / spacing**: all four padding edges, and auto-layout `itemSpacing` against the real
+  gap between child elements.
+- **Relative position** (`offsetX`/`offsetY`): for children of freely positioned (non-auto-layout)
+  containers, the offset relative to the nearest reliable sibling or parent edge — which is what
+  catches "size and color are perfect, but it is in the wrong place." Only reliable edges are used
+  as references (TEXT/HUG boxes are never references, TEXT is never a target, and Y is honestly
+  skipped when everything above is text), so line-height drift in a flowing layout does not
+  produce false positives. Turn it off with `compare.position: "none"`.
+- **Typography**: size, weight, line-height and letter-spacing are compared exactly;
+  font-family is a **soft gap** and never gates.
+- **Color**: thresholded on CIEDE2000 (ΔE), not hex equality. Parsing covers modern syntax
+  (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `color(display-p3 …)`).
+- **Absolute x/y is deliberately never compared**: it legitimately differs in a flexible layout,
+  so comparing it means false positives, which means losing trust.
 
-> 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
-- **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
+> When the design source is Figma, layer names in the report (both the Markdown and the local UI)
+> **link back to that node in Figma** — a designer clicks once and lands on the layer.
 
-## 給設計師的兩個方向
+## Two workflows for designers
 
-**新頁面守設計系統:`parity lint`**——只看設計稿這一邊,驗每個節點的值是否落在 `tokensFile` 的允許集合:顏色(ΔE 容差內命中即過)、fontSize / padding / itemSpacing / cornerRadius(等於任一尺寸 token 即過;間距/字級/圓角共用同一份 scale)。違規附「最近的 token」——訊息是「改成這個」,不是只有「你錯了」。有違規 exit 1,可進 CI。沒定義某維度的 token 就不 lint 該維度。
+**Keeping a new page inside the design system: `parity lint`.** It looks only at the design side
+and checks whether each node's values are in the allowed set from `tokensFile`: color (a hit
+within the ΔE tolerance passes), and fontSize / padding / itemSpacing / cornerRadius (equal to
+any size token passes — spacing, font sizes and corner radii share one scale). Every violation
+carries "the nearest token", so the message is "change it to this", not merely "you are wrong".
+Violations exit 1, so it can run in CI. Dimensions you have not defined tokens for are not linted.
 
-**照現況重畫/改版:`parity check --reverse`**——方向反過來:「期望」= 現況(實作)、「實際」= 你的設計稿。給設計師一張「我的稿跟現在線上差在哪」的清單;不做把關,永遠 exit 0。
+**Redrawing against what ships: `parity check --reverse`.** The direction flips: "expected"
+becomes the current implementation and "actual" becomes your draft. That gives a designer a list
+of "how my draft differs from what is live today". It never gates, and always exits 0.
 
-## RWD 多斷點
+## Responsive breakpoints
 
-同一個 URL、不同斷點,各對一個 Figma frame 即可——**渲染視窗 = frame 尺寸**,手機 frame 畫 375 寬,media query 自然生效:
+One URL, several breakpoints, each mapped to its own Figma frame — **the render viewport is the
+frame's size**, so a 375-wide phone frame makes your media queries fire naturally:
 
 ```jsonc
 "targets": [
   { "route": "/desktop", "frame": "10:2",  "url": "http://localhost:8080/" },
-  { "route": "/mobile",  "frame": "10:99", "url": "http://localhost:8080/" }   // frame 是 375 寬的手機版
+  { "route": "/mobile",  "frame": "10:99", "url": "http://localhost:8080/" }   // a 375-wide phone frame
 ]
 ```
 
-route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測的視窗寬時,才需要在 target 加 `width` / `height` 覆蓋。
+`route` is only a label in the report, so pick something recognizable. You only need `width` /
+`height` on a target when the frame's width is not the viewport width you want to test.
 
-## Shadow DOM / iframe
+## Shadow DOM / iframes
 
-擷取走**組合樹**:open shadow root、`<slot>` 塞進來的內容、同源 iframe(含 `srcdoc`)都看得到、都會比——web components 網站不再整塊隱形。shadow / iframe 內的元素 selector 以 `host >>> 內部路徑` 表示。
+Capture walks the **composed tree**: open shadow roots, content slotted through `<slot>`, and
+same-origin iframes (including `srcdoc`) are all visible and all compared — web-component sites
+are no longer wholly invisible. Selectors for elements inside a shadow root or iframe are written
+as `host >>> inner path`.
 
-限制(誠實列):closed shadow root 與跨域 iframe 拿不到,跳過;map 檔的 selector 搆不到 shadow 內(`data-parity` 屬性不受限,照常可用)。
+Limitations, stated honestly: closed shadow roots and cross-origin iframes are unreachable and
+are skipped; map-file selectors cannot reach inside a shadow root (the `data-parity` attribute is
+unaffected and works as usual).
 
-## 配對策略(以設計端為錨)
+## Matching strategy (anchored on the design side)
 
-1. **自動文字錨定**:設計 TEXT 文字 ↔ 頁面文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)
-2. **圖層名 ↔ id / class / aria-label**:`CTA Button` 自動對上 `class="cta-button"`
-3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)
-4. **手動補漏**:HTML 加 `data-parity="圖層名"`,或 `parity.map.json` 寫 `{ "圖層名": "CSS selector" }`
-5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)
+1. **Automatic text anchoring**: design TEXT content ↔ page text (matched only when unique;
+   when several elements share the text, the layer name disambiguates — and it still refuses to force a match)
+2. **Layer name ↔ id / class / aria-label**: `CTA Button` matches `class="cta-button"` automatically
+3. **Container inference**: an unmatched container is inferred from the lowest common ancestor of
+   its already-matched descendants (pure structure — no guessing)
+4. **Manual fallback**: add `data-parity="Layer Name"` in your HTML, or write
+   `{ "Layer Name": "CSS selector" }` in `parity.map.json`
+5. Still no match → **honestly listed as unmatched**, so you only fill in what genuinely needs a human
 
-## 架構
+## Architecture
 
-一顆引擎(`Parity.Engine`,純函式庫)+ 多個外殼。引擎只比對「兩棵正規化的樹」:
+One engine (`Parity.Engine`, a pure library) plus several shells. The engine only ever compares
+two normalized trees:
 
 ```
-IDesignSource ──→ DesignNode 樹 ──┐
-  (Figma / JSON / 未來 XD、Sketch)  ├─→ Normalizer → Matcher → DiffEngine → FidelityReport
+IDesignSource ──→ DesignNode tree ─┐
+  (Figma / JSON / later XD, Sketch) ├─→ Normalizer → Matcher → DiffEngine → FidelityReport
 IImplementationSource → RenderedNode ┘
-  (Playwright / 未來 WPF、桌面)
+  (Playwright / later WPF, desktop)
 ```
 
 ```
-src/Parity.Engine/        引擎:唯一進入點 FidelityEngine
-  DesignSources/          IDesignSource + Figma(REST + 本機快取)/ Json
-  ImplementationSources/  IImplementationSource + Web(Playwright)
-  Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta(CIEDE2000)
-src/Parity.Cli/           dotnet tool 外殼:parity check / init / install-browser
-tests/Parity.Tests/       單元測試(含 CIEDE2000 標準測資)
-samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
+src/Parity.Engine/        The engine; FidelityEngine is the only entry point
+  DesignSources/          IDesignSource + Figma (REST + local cache) / Json
+  ImplementationSources/  IImplementationSource + Web (Playwright)
+  Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta (CIEDE2000)
+src/Parity.Cli/           The dotnet tool shell: parity check / init / install-browser
+tests/Parity.Tests/       Unit tests (including the CIEDE2000 reference data)
+samples/demo/             Offline demo: a deliberately broken page + a design JSON
 ```
 
-## 本機報告 UI(M3)
+## Local report UI (M3)
 
 ```sh
-parity serve --watch    # http://127.0.0.1:4321,檔案變更自動重掃(SSE 即時更新)
-parity map              # 互動配對模式:點未配對圖層 → 點截圖上的元素 → 寫入 parity.map.json
+parity serve --watch    # http://127.0.0.1:4321, re-scans on file changes (live updates over SSE)
+parity map              # Interactive matching: click an unmatched layer → click the element on the
+                        #   screenshot → writes parity.map.json
 ```
 
-- 落差清單(依嚴重度排序,精確數值 + 色票 + ΔE)
-- 截圖疊框視圖:實線 = 實作框(顏色 = 嚴重度)、藍虛線 = 設計框、紅虛線 = 未配對
-- **只綁 127.0.0.1**:報告含站點結構,不讓區網掃到
-- UI 是零建置的靜態 SPA,dotnet tool 不需要 node 工具鏈
+- A gap list sorted by severity, with exact numbers, color swatches and ΔE
+- A screenshot overlay: solid = implementation box (colored by severity), blue dashed = design
+  box, red dashed = unmatched
+- **Binds 127.0.0.1 only**: the report contains your site's structure, so it must not be
+  reachable from the local network
+- The UI is a zero-build static SPA, so the dotnet tool needs no Node toolchain
 
-## 進 CI(M4)
+## In CI (M4)
 
-Parity 的差異化就在「進 CI 把關」。這個 repo 本身就是一個 composite action:
+Gating CI is the whole differentiator, and this repo is itself a composite action:
 
 ```yaml
-# .github/workflows/design-check.yml(你的專案)
+# .github/workflows/design-check.yml (in your project)
 name: Design fidelity
 on: [pull_request]
 jobs:
@@ -256,69 +309,88 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write   # 讓 action 把還原度報告貼成 PR 留言
+      pull-requests: write   # lets the action post the fidelity report as a PR comment
     steps:
       - uses: actions/checkout@v4
-      # 起你的站(或改成部署到 preview URL,讓 config 的 url 指過去)
+      # Start your site (or deploy to a preview URL and point the config's url at it)
       - run: |
           npm ci && npm run build
-          npm run preview &   # 例:serve 在 localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v0.11.1   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
+          npm run preview &   # e.g. serving on localhost:8080
+      - uses: HSU-YU-MING/cornhsu-parity@v0.12.0   # pin exact versions while 0.x
         with:
           config: parity.config.json
-          figma-token: ${{ secrets.FIGMA_TOKEN }}   # 設計來源用本機 JSON 時可省略
+          figma-token: ${{ secrets.FIGMA_TOKEN }}   # omit when the design source is a local JSON file
 ```
 
-行為:
-- **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
-- **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
-- **artifact**:`report.json` + Markdown 報告上傳供下載。
+Behaviour:
 
-action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
+- **PR comment**: posts a fidelity report (score + gap table + **suggested fixes**) and keeps
+  updating that same comment instead of adding new ones — so PMs and reviewers see it without
+  ever touching the tool.
+- **Blocks the PR**: gaps beyond `gate.failOn` → exit 1 → red PR. (**The comment is posted
+  first, then the gate is enforced.**)
+- **Artifacts**: `report.json` plus the Markdown report are uploaded for download.
 
-> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
+Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
+`baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report`.
 
-## 回歸把關:baseline(M5)
+> The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
+> nuget.org). This repo's own `.github/workflows/ci.yml` instead **builds from source** and runs
+> the offline demo as a self-check, so it does not depend on a published release.
 
-已經有一堆落差的專案,不可能一開就「零落差才給過」。baseline 讓你**只擋新增/惡化**:
+## Regression gating: baselines (M5)
+
+A project that already has a pile of gaps cannot start at "zero gaps or no merge". A baseline
+lets you **gate only new and worsened gaps**:
 
 ```sh
-parity baseline save     # 把當前落差 + 還原度分數存成基準快照(SQLite,存 parity.baseline.db,自動標 git commit)
-parity check --baseline  # 比對現況 vs 最新基準:只有「新增或惡化」才 GATE FAIL;並顯示分數走勢(基準 75 → 現在 83 ↑)
-parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM 看方向)
+parity baseline save     # Store the current gaps + fidelity score as a baseline snapshot
+                         #   (SQLite, in parity.baseline.db, tagged with the git commit)
+parity check --baseline  # Compare against the newest baseline: only new or worsened gaps GATE FAIL,
+                         #   and the score trend is shown (baseline 75 → now 83 ↑)
+parity baseline list     # Browse snapshot history (the score column is the fidelity trend, for PMs)
 ```
 
-> **CI 要用 `--baseline`,記得 `git add parity.baseline.db` 一起 commit**——它刻意放 repo 根(不放 `.parity/`,那裡通常被 gitignore),否則 CI 找不到基準會靜默退回一般 gate。路徑可用 config `baselineFile` 改。
+> **To use `--baseline` in CI, remember to `git add parity.baseline.db`.** It deliberately lives
+> at the repo root rather than in `.parity/`, which is usually gitignored — otherwise CI cannot
+> find the baseline and silently falls back to the normal gate. The path is configurable via
+> `baselineFile`.
 
-- **新增**(基準沒有、現在有)或**惡化**(嚴重度變高)→ exit 1 擋 PR
-- **修好**(基準有、現在沒了)會列出來鼓勵;**不變**的既有落差不擋
-- 適合漸進導入:先 `baseline save` 記錄現況,之後 CI 用 `check --baseline`,團隊只需「不要讓還原度更差」
+- **New** (absent from the baseline, present now) or **worsened** (higher severity) → exit 1, PR blocked
+- **Fixed** (in the baseline, gone now) is listed as encouragement; **unchanged** existing gaps do not gate
+- Ideal for gradual adoption: record reality with `baseline save`, then run `check --baseline` in
+  CI, and all the team has to commit to is "do not make fidelity worse"
 
-儲存層是獨立的 `Parity.Storage`(EF Core + SQLite,`Pooling=False` 即時釋放檔案),引擎裡的 `BaselineComparer` 是純函式、可單元測試。
+The storage layer is a separate `Parity.Storage` (EF Core + SQLite, with `Pooling=False` so the
+file is released immediately), and the engine's `BaselineComparer` is a pure, unit-testable function.
 
-## 里程碑
+## Milestones
 
-- [x] **M1** 引擎 + CLI 雛形:設計端與實作端兩棵數值樹
-- [x] **M2** 比對引擎:配對 + 數值 diff + 容差 + 未配對清單 + gate exit code
-- [x] **M3** 本機報告 UI(`parity serve --watch`,Kestrel 綁 127.0.0.1)+ `parity map` 互動配對
-- [x] **M4** GitHub Action:可重用 composite action(`action.yml`)+ 本 repo CI(build / test / 離線示範自我把關)
-- [x] **M5** EF Core + SQLite baseline / 歷史(回歸把關 + 分數走勢)+ `ImageDesignSource`(圖片+標註+像素取樣)+ `parity snapshot`(凍結現況當基準)
+- [x] **M1** Engine + CLI prototype: two numeric trees, design side and implementation side
+- [x] **M2** Comparison engine: matching + numeric diffing + tolerances + unmatched list + gate exit codes
+- [x] **M3** Local report UI (`parity serve --watch`, Kestrel bound to 127.0.0.1) + `parity map` interactive matching
+- [x] **M4** GitHub Action: a reusable composite action (`action.yml`) + this repo's own CI (build / test / offline-demo self-check)
+- [x] **M5** EF Core + SQLite baselines and history (regression gating + score trend) + `ImageDesignSource` (image + annotations + pixel sampling) + `parity snapshot` (freeze the current state as the baseline)
+- [ ] **M6** (optional) Cloud shell: public-URL scanning + SSRF protection
 
-> 未完成、已知盲點與下一步優先序見 [ROADMAP.md](ROADMAP.md);版本變更見 [CHANGELOG.md](CHANGELOG.md)。
-- [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護
+> Open work, known blind spots and the next priorities are in [ROADMAP.md](ROADMAP.md);
+> version history is in [CHANGELOG.md](CHANGELOG.md).
 
-## 安全
+## Security
 
-- Figma token 走環境變數(`env:FIGMA_TOKEN`),不進 log、不進 URL(用 `X-Figma-Token` header)
-- 抓過的 frame 存 `.parity/cache`(已 gitignore),重跑不再打 Figma、可離線比對
+- The Figma token comes from an environment variable (`env:FIGMA_TOKEN`); it never reaches a log
+  and never goes in a URL (it is sent as the `X-Figma-Token` header).
+- Fetched frames are cached in `.parity/cache` (gitignored), so re-runs do not hit Figma and can
+  compare offline.
 
-## 另見
+## See also
 
-[**XamlContrast**](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast) —— 同作者的姊妹專案,
-同一套哲學(數值檢查、CI 把關)。Parity 回答「**實作跟設計稿一不一樣**」(還原度);
-XamlContrast 回答「**做出來的東西看不看得見**」(WCAG 對比,靜態掃 XAML 原始碼)。
-一個守還原度、一個守可讀性;它的靜態顏色解析也是本專案未來
-`WpfImplementationSource`(桌面 adapter)的預期值地基——見規畫書 4.5 節補記。
+[**XamlContrast**](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast) — a sibling project by the
+same author, built on the same philosophy: numeric checks that gate CI. Parity answers "**does the
+implementation match the design?**" (fidelity); XamlContrast answers "**can anyone actually see
+what we built?**" (WCAG contrast, scanned statically from XAML source). One guards fidelity, the
+other readability — and its static color resolution is also the groundwork for the expected values
+of this project's future `WpfImplementationSource` desktop adapter.
 
 ## License
 
