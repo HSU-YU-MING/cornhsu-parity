@@ -2,6 +2,45 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 0.12.0
+
+**對外語言統一為英文。** 引擎行為、報告 schema、exit code、CLI 介面(指令與旗標名稱)全部不變 ——
+這一版只換「使用者讀到的字」。之所以升 minor 而非 patch:輸出文字是有人在 grep 的東西
+(CI log 判斷、PR 留言樣板),換語言對他們是破壞性的。
+
+- **CLI 全面英文化**:`--help`、所有子指令用法、錯誤與例外訊息、`check` / `lint` / `snapshot` /
+  `baseline` / `serve` 的執行輸出。動機:本套件掛在 GitHub Marketplace、npm 與 NuGet 上,
+  介紹文字與關鍵字都是英文,但裝起來之後 CI log 與錯誤訊息全是中文 —— 非中文使用者
+  裝得起來卻讀不懂。
+- **貼上 PR 的 Markdown 報告英文化**:標題、還原度摘要行、落差表欄位(Element / Property /
+  Expected → Actual / Severity / Suggested fix)、相對基準的變化清單、未配對區塊。
+- **`parity serve` 的報告 UI 英文化**(含 `parity map` 的互動配對流程),`<html lang>` 改為 `en`。
+- **`action.yml` 的 description 與 8 個 input 說明英文化** —— 這些直接顯示在 GitHub Marketplace
+  頁面與編輯器的 workflow 補齊上。
+- **NuGet 套件 description 英文化**;npm 平台包的 description 一併(原本是中文,而主套件是英文)。
+- **README 改為英文為主、中文並存**(`README.md` / `README.zh-Hant.md`,互相連結)。
+  `README.md` 會同時被打包進 nupkg 與 npm 主套件 —— 原本 nuget.org、npmjs.com 與
+  GitHub Marketplace 上的說明頁全是中文,但關鍵字與套件描述是英文。
+
+### 其他
+
+- **移除 `bootstrap-npm-arm64.yml`**:它是 0.10.0 為了首發兩個新的 arm64 平台包而寫的一次性
+  workflow(npm 的 OIDC 信任發布無法建立全新套件,只能更新既有的),檔頭就寫明「用完即可刪」。
+  平台包早已存在並改由 OIDC 接手,workflow 與其依賴的 `NPM_TOKEN` secret 都該收掉 ——
+  留著等於讓「repo 內零長效金鑰」這件事破一個洞。
+  **注意:secret 本身要另外到 repo settings 手動刪除。**
+- **CI 補三件事**(對齊 PolyMigrate 的 CI 形狀):`dotnet format` 排版守門、
+  ubuntu/windows/macOS 三平台的建置與測試矩陣、以及 **pack → `dotnet tool install` → 實跑**
+  的煙霧測試。最後一項針對的是 0.9.1 的真實事故:在 ubuntu 上 pack 成功、Windows 使用者
+  裝了直接 Driver not found —— 只在單一平台建置永遠看不出這種事。
+- **新增 `.editorconfig`**(排版慣例的單一來源)與 **`.github/dependabot.yml`**(nuget +
+  github-actions)。dependabot 對這個 repo 特別有意義:`Parity.Storage.csproj` 手工把
+  `SQLitePCLRaw` 釘在 3.0.3 以蓋掉 EF Sqlite 傳遞進來的 NU1903 高風險版本,那個判斷
+  現在完全靠人記得回頭看。
+- **ROADMAP 清掉一條已解的殘留**:「EF `EnsureCreated` 無 migration」仍列在已知盲點,
+  但 0.10.0 已改走正式 EF migrations。
+- 全 repo 套一次 `dotnet format`(純空白排版,無行為變更)。
+
 ## 0.11.1
 
 **0.11.0 的修法不完整,這版才真的修好。**如果你已經升到 0.11.0 並重拍過基準,升到這版**要再重拍一次**(0.11.0 拍的基準有機率是壞的)。

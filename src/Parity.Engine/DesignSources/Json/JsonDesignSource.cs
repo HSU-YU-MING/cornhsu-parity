@@ -22,11 +22,11 @@ public sealed class JsonDesignSource : IDesignSource
     {
         var path = reference.Source;
         if (!File.Exists(path))
-            throw new FileNotFoundException($"找不到設計 JSON 檔:{path}", path);
+            throw new FileNotFoundException($"design JSON file not found: {path}", path);
 
         await using var stream = File.OpenRead(path);
         var root = await JsonSerializer.DeserializeAsync<DesignNode>(stream, SerializerOptions, ct)
-            ?? throw new InvalidOperationException($"設計 JSON 解析失敗:{path}");
+            ?? throw new InvalidOperationException($"could not parse design JSON: {path}");
 
         root = FillDefaults(root);
 
@@ -35,7 +35,7 @@ public sealed class JsonDesignSource : IDesignSource
             return root;
 
         return root.DescendantsAndSelf().FirstOrDefault(n => n.Id == reference.NodeId)
-            ?? throw new InvalidOperationException($"設計 JSON 裡找不到節點 {reference.NodeId}:{path}");
+            ?? throw new InvalidOperationException($"node {reference.NodeId} is not present in the design JSON: {path}");
     }
 
     /// <summary>JSON 可省略 children → 反序列化成 null,補回空清單。</summary>

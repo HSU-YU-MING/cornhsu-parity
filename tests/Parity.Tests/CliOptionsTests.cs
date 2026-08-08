@@ -25,7 +25,7 @@ public class CliOptionsTests
     {
         // typo:--taget 少個 r——不能靜默忽略讓「只拍一頁」變成全站重拍
         var ex = Assert.Throws<CliUsageException>(() => CliOptions.Parse(["--taget", "/x"], Spec));
-        Assert.Contains("未知參數", ex.Message);
+        Assert.Contains("unknown argument", ex.Message);
         Assert.Contains("--taget", ex.Message);
     }
 
@@ -33,14 +33,14 @@ public class CliOptionsTests
     public void Stray_positional_throws()
     {
         var ex = Assert.Throws<CliUsageException>(() => CliOptions.Parse(["foo.json"], Spec));
-        Assert.Contains("多餘的參數", ex.Message);
+        Assert.Contains("unexpected argument", ex.Message);
     }
 
     [Fact]
     public void Value_flag_without_value_throws()
     {
         var ex = Assert.Throws<CliUsageException>(() => CliOptions.Parse(["--config"], Spec));
-        Assert.Contains("需要一個值", ex.Message);
+        Assert.Contains("requires a value", ex.Message);
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public class CliOptionsTests
     {
         // --refresh 是布林:後面跟著的東西不是它的值,是多餘參數 → 報錯
         var ex = Assert.Throws<CliUsageException>(() => CliOptions.Parse(["--refresh", "junk"], Spec));
-        Assert.Contains("多餘的參數", ex.Message);
+        Assert.Contains("unexpected argument", ex.Message);
     }
 
     [Theory]

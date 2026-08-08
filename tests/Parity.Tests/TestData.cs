@@ -15,8 +15,10 @@ internal static class TestData
         params DesignNode[] children)
         => new(id, name, type, box, fill, text, padding, itemSpacing, null, children)
         {
-            Characters = characters, LayoutMode = layoutMode,
-            LayoutSizingHorizontal = sizingH, LayoutSizingVertical = sizingV,
+            Characters = characters,
+            LayoutMode = layoutMode,
+            LayoutSizingHorizontal = sizingH,
+            LayoutSizingVertical = sizingV,
         };
 
     public static RenderedNode Rendered(

@@ -7,7 +7,7 @@
 - ~~**M5 下半 — `ImageDesignSource`**~~ **完成(2026-07-18)**,且超出原案:除了「圖片+標註+像素取樣」(其他設計工具的萬用轉接頭),還加了 `parity snapshot`(把現況凍結成基準,重構守門,selector 身分配對)。**M5 全部完成,M1–M5 收官。**
 - **M6 — 雲端外殼:明文不做**(2026-07-18 決定,除非出現真實使用者)。理由:設計 QA 是上線前的活,雲端只碰得到公開網址(最不重要的階段);「報告分享給非技術人」PR 留言 + Markdown 已覆蓋;架伺服器的成本(Docker/Chromium/SSRF/月費/維運)換不到新價值。
 - **WPF adapter(`WpfImplementationSource`,規畫書 4.5)**:動工時優先評估引用姊妹專案的
-  `Cornhsu.XamlContrast.Core`(靜態解析「XAML 裡應該生效的顏色」,十二條規則、
+  `Cornhsu.XamlContrast.Core`(靜態解析「XAML 裡應該生效的顏色」,十三條規則、
   四專案雙實作互證)當**預期值產生器**,執行期讀值與之對照——不要重寫顏色解析。
   該套件**尚未發佈**,觸發條件(本 adapter 動工)成立時由 XamlContrast 端抽出,
   見其 ROADMAP「與 Parity 的交會點」(2026-07-31 兩邊同步記錄)。
@@ -40,7 +40,9 @@
 - **Figma frame PNG 疊圖**(規畫書 4.4 的 images API):可選增強。現行「實作截圖 + 設計框線」足以對位;設計師若要「看設計稿本人」再做。
 - ~~**Shadow DOM / iframe 不走訪**~~ **已補(0.8.0)**:組合樹走訪(open shadow root / slot / 同源 iframe);closed shadow 與跨域 iframe 為原生限制,誠實跳過。RWD 多斷點同版補文件 + target 級 width/height。
 - ~~**頁面整體 `transform: scale` 未還原**(規畫書 4.6 有提):量測會被縮放污染~~ **已補(0.10.0)**:擷取時累積祖先 transform 的縮放係數,把 box 幾何除回版面座標系(padding 等 computed style 本不受 transform 影響)。無 transform 時逐位元不變(零回歸);實測 scale(0.5) 頁對未縮放基準 100/100。限制:非 top-left transform-origin 下絕對位置差一常數(但 Parity 比相對位置+尺寸,不受影響);跨域 iframe 內縮放仍不處理。
-- **EF `EnsureCreated` 無 migration**:未來 baseline schema 變更時,舊 `parity.baseline.db` 需處理相容。
+- ~~**EF `EnsureCreated` 無 migration**:未來 baseline schema 變更時,舊 `parity.baseline.db` 需處理相容。~~
+  **已補(0.10.0)**:改走正式 EF migrations;既有(`EnsureCreated` 建、無遷移史)的 db 首次開啟時
+  自動接管(先標記 InitialCreate 為已套用再 Migrate),不因「表已存在」而爆。
 
 ## 更遠的
 

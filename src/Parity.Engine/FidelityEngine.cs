@@ -29,8 +29,8 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         var implRef = req.Impl;
         if (implRef.ViewportWidth is null && (designTree.Box.W <= 0 || designTree.Box.H <= 0))
             throw new InvalidOperationException(
-                $"設計 frame「{designTree.Name}」尺寸是 {designTree.Box.W}×{designTree.Box.H}——" +
-                "沒有有效尺寸就無法決定渲染視窗(frame/designFile 可能指錯)。");
+                $"design frame \"{designTree.Name}\" has size {designTree.Box.W}×{designTree.Box.H} — " +
+                "without a valid size there is no way to decide the render viewport (frame/designFile may be pointing at the wrong node).");
         if (implRef.ViewportWidth is null)
             implRef = implRef with
             {

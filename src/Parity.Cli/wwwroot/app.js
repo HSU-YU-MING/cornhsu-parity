@@ -17,7 +17,7 @@ const state = {
 };
 
 const sevRank = { critical: 4, serious: 3, medium: 2, minor: 1, none: 0 };
-const matchedByLabel = { selector: '快照', explicit: '手動', 'auto-text': '文字', 'auto-name': '名稱', 'auto-container': '容器' };
+const matchedByLabel = { selector: 'snapshot', explicit: 'manual', 'auto-text': 'text', 'auto-name': 'name', 'auto-container': 'container' };
 
 // ---------- 資料 ----------
 
@@ -47,7 +47,7 @@ function render() {
   badge.className = 'badge ' + (d.gateFail ? 'fail' : 'pass');
   // 不過的原因(例如 0 配對——畫面上沒半條落差,卻 FAIL)滑鼠移上去要看得到
   badge.title = (d.gateReasons || []).join('\n');
-  $('#score').textContent = `還原度 ${d.score}/100`;
+  $('#score').textContent = `fidelity ${d.score}/100`;
   $('#generated-at').textContent = new Date(d.generatedAt).toLocaleTimeString();
   $('#watch-dot').hidden = !d.watch;
 
@@ -74,14 +74,14 @@ function renderSidebar() {
   if (state.mode === 'map') {
     side.insertAdjacentHTML('beforeend', `
       <div class="map-hint">
-        <b>配對模式</b><br>
-        1. 點選下方未配對的設計圖層<br>
-        2. 在右邊截圖上點對應的元素<br>
-        3. 確認後寫入 parity.map.json 並自動重掃
+        <b>Map mode</b><br>
+        1. Pick an unmatched design layer below<br>
+        2. Click the matching element on the screenshot<br>
+        3. Confirm — it is written to parity.map.json and re-scanned automatically
       </div>
-      <div class="section-title">未配對(${t.unmatched.length})</div>`);
+      <div class="section-title">Unmatched (${t.unmatched.length})</div>`);
     if (t.unmatched.length === 0)
-      side.insertAdjacentHTML('beforeend', '<div class="empty">🎉 沒有未配對的節點</div>');
+      side.insertAdjacentHTML('beforeend', '<div class="empty">🎉 nothing unmatched</div>');
     for (const u of t.unmatched) {
       const el = document.createElement('div');
       el.className = 'unmatched-item' + (state.mapLayer === u.designLayer ? ' selected' : '');
@@ -99,19 +99,19 @@ function renderSidebar() {
 
   const s = t.summary;
   side.insertAdjacentHTML('beforeend', `
-    <div class="section-title">摘要</div>
+    <div class="section-title">Summary</div>
     <div class="node" style="padding:8px 10px">
-      已配對 ${s.matched}/${s.designNodes} 個設計節點,${s.nodesWithDiffs} 個有落差<br>
-      <span class="muted">落差數:critical ${s.critical}、serious ${s.serious}、medium ${s.medium}、minor ${s.minor}</span>
+      matched ${s.matched}/${s.designNodes} design nodes, ${s.nodesWithDiffs} with diffs<br>
+      <span class="muted">diffs: critical ${s.critical}, serious ${s.serious}, medium ${s.medium}, minor ${s.minor}</span>
     </div>`);
 
-  side.insertAdjacentHTML('beforeend', `<div class="section-title">有落差(${withDiffs.length})</div>`);
+  side.insertAdjacentHTML('beforeend', `<div class="section-title">With diffs (${withDiffs.length})</div>`);
   if (withDiffs.length === 0)
-    side.insertAdjacentHTML('beforeend', '<div class="empty">🎉 沒有落差</div>');
+    side.insertAdjacentHTML('beforeend', '<div class="empty">🎉 no diffs</div>');
   for (const n of withDiffs) side.appendChild(nodeItem(n, true));
 
   if (t.unmatched.length > 0) {
-    side.insertAdjacentHTML('beforeend', `<div class="section-title">未配對(${t.unmatched.length})</div>`);
+    side.insertAdjacentHTML('beforeend', `<div class="section-title">Unmatched (${t.unmatched.length})</div>`);
     for (const u of t.unmatched) {
       const el = document.createElement('div');
       el.className = 'unmatched-item' + (state.selected === u.designId ? ' selected' : '');
@@ -126,7 +126,7 @@ function renderSidebar() {
   }
 
   if (clean.length > 0) {
-    side.insertAdjacentHTML('beforeend', `<div class="section-title">一致(${clean.length})</div>`);
+    side.insertAdjacentHTML('beforeend', `<div class="section-title">Matching (${clean.length})</div>`);
     for (const n of clean) side.appendChild(nodeItem(n, false));
   }
 }
@@ -163,7 +163,7 @@ function nodeItem(n, open) {
       } else {
         exp.textContent = `${diff.expected}${diff.unit ?? ''}`;
         act.textContent = `${diff.actual}${diff.unit ?? ''}` +
-          (diff.delta != null ? `(差 ${diff.delta})` : '');
+          (diff.delta != null ? ` (off by ${diff.delta})` : '');
       }
     }
     det.appendChild(table);
@@ -177,7 +177,7 @@ function figmaLink(designId) {
   const a = document.createElement('a');
   a.className = 'fig';
   a.textContent = '↗';
-  a.title = '在 Figma 開啟這個圖層';
+  a.title = 'Open this layer in Figma';
   a.target = '_blank';
   a.rel = 'noopener';
   a.href = `https://www.figma.com/design/${encodeURIComponent(state.data.figmaFileKey)}?node-id=${encodeURIComponent(designId.replaceAll(':', '-'))}`;
@@ -260,7 +260,7 @@ function drawRects() {
     el.className = 'rect unmatched' + (isSel ? ' selected' : '');
     place(el, u.designBox, t.origin);
     el.innerHTML = `<span class="tag"></span>`;
-    el.querySelector('.tag').textContent = `${u.designLayer}(未配對)`;
+    el.querySelector('.tag').textContent = `${u.designLayer} (unmatched)`;
     if (state.mode === 'map' && state.mapLayer === u.designLayer) {
       el.style.pointerEvents = 'none'; // 已選中:點擊穿透到截圖 hit-test(框正好蓋在目標元素上)
     } else {
@@ -318,14 +318,14 @@ function renderMapBar() {
   bar.hidden = false;
 
   if (!state.mapLayer) {
-    bar.innerHTML = '從左邊選一個未配對的設計圖層開始。';
+    bar.innerHTML = 'Start by picking an unmatched design layer on the left.';
     return;
   }
   if (!state.candidate) {
     bar.innerHTML = '';
     const strong = document.createElement('b');
     strong.textContent = state.mapLayer;
-    bar.append(strong, ' — 在截圖上點選對應的元素…');
+    bar.append(strong, ' — click the matching element on the screenshot…');
     return;
   }
   bar.innerHTML = '';
@@ -334,9 +334,9 @@ function renderMapBar() {
   const code = document.createElement('code');
   code.textContent = state.candidate.selector;
   const spacer = document.createElement('span'); spacer.className = 'spacer';
-  const ok = document.createElement('button'); ok.className = 'primary'; ok.textContent = '確認配對';
+  const ok = document.createElement('button'); ok.className = 'primary'; ok.textContent = 'Confirm mapping';
   ok.onclick = confirmMapping;
-  const cancel = document.createElement('button'); cancel.className = 'ghost'; cancel.textContent = '取消';
+  const cancel = document.createElement('button'); cancel.className = 'ghost'; cancel.textContent = 'Cancel';
   cancel.onclick = () => { state.candidate = null; render(); };
   bar.append(strong, ' → ', code, spacer, ok, cancel);
 }
@@ -381,12 +381,12 @@ async function confirmMapping() {
     body: JSON.stringify({ layer: state.mapLayer, selector: state.candidate.selector }),
   });
   if (res.ok) {
-    toast(`已配對 ${state.mapLayer} → ${state.candidate.selector}`);
+    toast(`mapped ${state.mapLayer} → ${state.candidate.selector}`);
     state.mapLayer = null;
     state.candidate = null;
     // SSE 會推 reload;這裡不主動重抓,避免 double render
   } else {
-    toast('配對失敗:' + (await res.text()));
+    toast('mapping failed: ' + (await res.text()));
   }
 }
 

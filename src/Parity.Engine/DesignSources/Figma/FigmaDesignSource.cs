@@ -34,7 +34,7 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         var raw = await GetRawNodeJsonAsync(reference, ct);
         var doc = raw["nodes"]?[reference.NodeId]?["document"]
             ?? throw new InvalidOperationException(
-                $"Figma 回應裡找不到節點 {reference.NodeId}(檔案 {reference.Source})。");
+                $"node {reference.NodeId} is not present in the Figma response (file {reference.Source}).");
         return FigmaNodeParser.Parse(doc);
     }
 
@@ -55,12 +55,12 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException(
-                $"Figma API 回 {(int)response.StatusCode} {response.StatusCode}" +
-                $"(檔案 {reference.Source}、節點 {reference.NodeId})。" +
-                "請確認 FIGMA_TOKEN 有 file_content:read scope、fileKey/nodeId 正確。");
+                $"Figma API returned {(int)response.StatusCode} {response.StatusCode} " +
+                $"(file {reference.Source}, node {reference.NodeId}). " +
+                "Check that FIGMA_TOKEN has the file_content:read scope and that fileKey/nodeId are correct.");
 
         var json = await response.Content.ReadAsStringAsync(ct);
-        var node = JsonNode.Parse(json) ?? throw new InvalidOperationException("Figma 回應不是合法 JSON。");
+        var node = JsonNode.Parse(json) ?? throw new InvalidOperationException("the Figma response is not valid JSON.");
 
         if (cacheFile is not null)
         {

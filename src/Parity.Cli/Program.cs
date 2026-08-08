@@ -33,13 +33,13 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"\x1b[31m錯誤:{ex.Message}\x1b[0m");
+    Console.Error.WriteLine($"\x1b[31merror: {ex.Message}\x1b[0m");
     return 2;
 }
 
 static int UnknownCommand(string cmd)
 {
-    Console.Error.WriteLine($"未知指令:{cmd}");
+    Console.Error.WriteLine($"unknown command: {cmd}");
     HelpCommand.Run();
     return 2;
 }
@@ -56,14 +56,14 @@ internal static class CheckCommand
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Check);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
-            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+            ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
 
         await using var session = new ScanSession(
             configPath,
             refreshCache: opts.ContainsKey("--refresh"),
             headless: !opts.ContainsKey("--headed"));
 
-        Console.WriteLine($"\x1b[1mParity\x1b[0m — 數值級設計還原度檢查\n設定:{configPath}\n");
+        Console.WriteLine($"\x1b[1mParity\x1b[0m — property-level design fidelity check\nconfig: {configPath}\n");
 
         // --reverse:方向反過來——「現況(實作)是真相,設計稿是被檢視的草稿」。
         // 場景:設計師照著現有頁面重畫/改版,想看自己的稿跟現況差在哪。
@@ -71,7 +71,7 @@ internal static class CheckCommand
         // (設計師要的是 diff 清單,不是被打紅)。
         var reverse = opts.ContainsKey("--reverse");
         if (reverse && opts.ContainsKey("--baseline"))
-            throw new InvalidOperationException("--reverse 與 --baseline 不能同時使用(reverse 不做把關)。");
+            throw new InvalidOperationException("--reverse and --baseline cannot be combined (reverse mode does not gate).");
 
         var scans = await session.RunAsync(opts.GetValueOrDefault("--target"));
         var reports = scans
@@ -80,8 +80,8 @@ internal static class CheckCommand
 
         foreach (var (scan, report) in scans.Zip(reports))
         {
-            Console.WriteLine($"目標 \x1b[1m{scan.Target.Route}\x1b[0m → {report.Url}" +
-                (reverse ? "\x1b[36m(reverse:期望 = 現況、實際 = 設計稿)\x1b[0m" : ""));
+            Console.WriteLine($"target \x1b[1m{scan.Target.Route}\x1b[0m → {report.Url}" +
+                (reverse ? "\x1b[36m (reverse: expected = implementation, actual = design)\x1b[0m" : ""));
             PrintReport(report);
         }
 
@@ -90,15 +90,15 @@ internal static class CheckCommand
             ?? Path.Combine(session.Config.BaseDirectory, ".parity", "report.json");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
         await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(ReportDocument.Of(reports), ReportJson.Indented));
-        Console.WriteLine($"報告已寫入:{outPath}");
+        Console.WriteLine($"report written: {outPath}");
 
-        Console.WriteLine($"還原度分數:\x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
+        Console.WriteLine($"fidelity score: \x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
 
         if (reverse)
         {
             WriteMarkdown(opts, session.Config, reports, gateFail: false,
-                gateNotes: ["reverse 模式:「期望」= 現況(實作)、「實際」= 設計稿——差異是給設計師看的,不做把關"]);
-            Console.WriteLine("\n\x1b[36mreverse 模式\x1b[0m:不做把關,exit 0。");
+                gateNotes: ["reverse mode: \"expected\" = the implementation, \"actual\" = the design file — the diff is for designers to read, no gating"]);
+            Console.WriteLine("\n\x1b[36mreverse mode\x1b[0m: no gating, exit 0.");
             return 0;
         }
 
@@ -114,7 +114,7 @@ internal static class CheckCommand
         if (integrity.Count > 0)
         {
             WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: integrity);
-            Console.WriteLine("\n\x1b[31m✘ 配對可信度不足\x1b[0m(結果不可信,未做把關判定)");
+            Console.WriteLine("\n\x1b[31m✘ MATCH INTEGRITY TOO LOW\x1b[0m (results are not trustworthy; no gate verdict was made)");
             foreach (var r in integrity)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
             return 3;
@@ -149,7 +149,7 @@ internal static class CheckCommand
         File.WriteAllText(full, MarkdownReport.Render(
             reports, gateFail, baseline, tokens, gateNotes,
             figmaFileKey: config.FigmaFileKey, baselineScore: baselineScore));
-        Console.WriteLine($"Markdown 報告:{full}");
+        Console.WriteLine($"markdown report: {full}");
     }
 
     /// <summary>回歸把關:比對現況與最新 baseline,只在有新增/惡化時 GATE FAIL(規畫書 M5)。</summary>
@@ -163,7 +163,7 @@ internal static class CheckCommand
         if (integrity.Count > 0)
         {
             WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: integrity);
-            Console.WriteLine("\n\x1b[31m✘ 配對可信度不足\x1b[0m(不做 baseline 比對)");
+            Console.WriteLine("\n\x1b[31m✘ MATCH INTEGRITY TOO LOW\x1b[0m (skipping baseline comparison)");
             foreach (var r in integrity)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
             return 3;
@@ -175,8 +175,8 @@ internal static class CheckCommand
 
         if (baseline is null)
         {
-            Console.WriteLine("\n\x1b[33m(尚無 baseline)\x1b[0m 先跑 `parity baseline save` 建立基準;這次退回一般 gate。");
-            Console.WriteLine($"\x1b[90m  提示:CI 要用 --baseline,得把 {Path.GetFileName(BaselineCommand.BaselineDbPath(session.Config))} commit 進 repo。\x1b[0m");
+            Console.WriteLine("\n\x1b[33m(no baseline yet)\x1b[0m run `parity baseline save` first; falling back to the normal gate this time.");
+            Console.WriteLine($"\x1b[90m  hint: to use --baseline in CI, commit {Path.GetFileName(BaselineCommand.BaselineDbPath(session.Config))} into the repo.\x1b[0m");
             var fail = session.ShouldFail(scans);
             WriteMarkdown(opts, session.Config, reports, fail);
             Console.WriteLine(fail ? "\x1b[31m✘ GATE FAIL\x1b[0m" : "\x1b[32m✔ PASS\x1b[0m");
@@ -185,8 +185,8 @@ internal static class CheckCommand
 
         var cmp = BaselineComparer.Compare(current, baseline.Diffs);
         WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp, baselineScore: baseline.Score);
-        Console.WriteLine($"\n對比 baseline — \x1b[31m新增 {cmp.Regressions.Count}\x1b[0m、" +
-            $"\x1b[33m惡化 {cmp.Worsened.Count}\x1b[0m、\x1b[32m修好 {cmp.Fixed.Count}\x1b[0m、不變 {cmp.Unchanged}");
+        Console.WriteLine($"\nvs baseline — \x1b[31mnew {cmp.Regressions.Count}\x1b[0m, " +
+            $"\x1b[33mworsened {cmp.Worsened.Count}\x1b[0m, \x1b[32mfixed {cmp.Fixed.Count}\x1b[0m, unchanged {cmp.Unchanged}");
 
         // 分數走勢——PM 要的「方向」:相對基準是往上還是往下
         if (baseline.Score is { } baseScore)
@@ -194,21 +194,21 @@ internal static class CheckCommand
             var score = FidelityScore.Compute(reports);
             var trend = score > baseScore ? $"\x1b[32m↑ +{score - baseScore}\x1b[0m"
                 : score < baseScore ? $"\x1b[31m↓ {score - baseScore}\x1b[0m" : "→ ±0";
-            Console.WriteLine($"還原度走勢:基準 {baseScore}/100 → 現在 {score}/100({trend})");
+            Console.WriteLine($"fidelity trend: baseline {baseScore}/100 → now {score}/100 ({trend})");
         }
         foreach (var d in cmp.Regressions)
-            Console.WriteLine($"  \x1b[31m+ 新增\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+            Console.WriteLine($"  \x1b[31m+ new\x1b[0m      {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
         foreach (var d in cmp.Worsened)
-            Console.WriteLine($"  \x1b[33m↑ 惡化\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+            Console.WriteLine($"  \x1b[33m↑ worsened\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
         foreach (var d in cmp.Fixed)
-            Console.WriteLine($"  \x1b[32m- 修好\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop}");
+            Console.WriteLine($"  \x1b[32m- fixed\x1b[0m    {d.Route} ‹{d.DesignLayer}› {d.Prop}");
 
         if (cmp.HasRegressions)
         {
-            Console.WriteLine("\n\x1b[31m✘ GATE FAIL\x1b[0m(相對 baseline 有新增/惡化)");
+            Console.WriteLine("\n\x1b[31m✘ GATE FAIL\x1b[0m (new or worsened diffs vs baseline)");
             return 1;
         }
-        Console.WriteLine("\n\x1b[32m✔ PASS\x1b[0m(相對 baseline 無回歸)");
+        Console.WriteLine("\n\x1b[32m✔ PASS\x1b[0m (no regressions vs baseline)");
         return 0;
     }
 
@@ -224,7 +224,7 @@ internal static class CheckCommand
     private static void PrintReport(FidelityReport report)
     {
         var s = report.Summary;
-        Console.WriteLine($"  已配對 {s.Matched}/{s.DesignNodes} 個設計節點;{s.NodesWithDiffs} 個有落差");
+        Console.WriteLine($"  matched {s.Matched}/{s.DesignNodes} design nodes; {s.NodesWithDiffs} with diffs");
 
         foreach (var node in Impact.Order(report.Nodes.Where(n => n.Diffs.Count > 0)))
         {
@@ -238,12 +238,12 @@ internal static class CheckCommand
                     ? $"{diff.Actual}{(diff.Delta is { } de ? $" (ΔE {de})" : "")}"
                     : $"{diff.Actual}{diff.Unit}";
                 var soft = diff.Soft ? " [soft]" : "";
-                Console.WriteLine($"      {diff.Prop,-14} 期望 {expected}  實際 {actual}{soft}");
+                Console.WriteLine($"      {diff.Prop,-14} expected {expected}  actual {actual}{soft}");
             }
         }
 
         if (report.Unmatched.Count > 0)
-            Console.WriteLine($"  \x1b[90m未配對:{string.Join("、", report.Unmatched.Select(u => $"{u.DesignLayer} ({u.Reason})"))}\x1b[0m");
+            Console.WriteLine($"  \x1b[90munmatched: {string.Join(", ", report.Unmatched.Select(u => $"{u.DesignLayer} ({u.Reason})"))}\x1b[0m");
         Console.WriteLine();
     }
 }
@@ -260,27 +260,27 @@ internal static class ReportCommand
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Report);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
-            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+            ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
         var config = ParityConfig.Load(configPath);
 
         var inPath = opts.GetValueOrDefault("--in")
             ?? Path.Combine(config.BaseDirectory, ".parity", "report.json");
         if (!File.Exists(inPath))
-            throw new FileNotFoundException($"找不到報告:{inPath}(先跑 `parity check`,或用 --in 指定路徑)", inPath);
+            throw new FileNotFoundException($"report not found: {inPath} (run `parity check` first, or pass --in)", inPath);
 
         ReportDocument doc;
         try
         {
             doc = JsonSerializer.Deserialize<ReportDocument>(File.ReadAllText(inPath), ReportJson.Indented)
-                ?? throw new InvalidOperationException($"報告解析失敗:{inPath}");
+                ?? throw new InvalidOperationException($"could not parse report: {inPath}");
         }
         catch (JsonException)
         {
             throw new InvalidOperationException(
-                $"報告格式無法辨識:{inPath}(可能是舊版格式;重跑 `parity check` 產生新報告)");
+                $"unrecognized report format: {inPath} (likely an older format; re-run `parity check` to regenerate)");
         }
         var reports = doc.Reports
-            ?? throw new InvalidOperationException($"報告缺少 reports 欄位:{inPath}(重跑 `parity check`)");
+            ?? throw new InvalidOperationException($"report has no `reports` field: {inPath} (re-run `parity check`)");
 
         var tokens = config.TokensFile is { } tf
             ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
@@ -296,7 +296,7 @@ internal static class ReportCommand
             var full = Path.GetFullPath(mdPath);
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             File.WriteAllText(full, md);
-            Console.WriteLine($"Markdown 報告:{full}");
+            Console.WriteLine($"markdown report: {full}");
         }
         else
         {
@@ -319,7 +319,7 @@ internal static class LintCommand
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Lint);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
-            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+            ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
         var config = ParityConfig.Load(configPath);
 
         var tokens = config.TokensFile is { } tf
@@ -327,15 +327,15 @@ internal static class LintCommand
             : null;
         if (tokens is null)
             throw new InvalidOperationException(
-                "lint 需要 design token:請在設定檔設 tokensFile(平面 JSON:{\"token 名\":\"值\"})。");
+                "lint requires design tokens: set `tokensFile` in the config (a flat JSON object: {\"token name\": \"value\"}).");
 
         var targets = opts.GetValueOrDefault("--target") is { } routeFilter
             ? config.Targets.Where(t => t.Route == routeFilter).ToList()
             : config.Targets;
         if (targets.Count == 0)
-            throw new InvalidOperationException("設定檔裡沒有任何 target。");
+            throw new InvalidOperationException("the config file declares no targets.");
 
-        Console.WriteLine($"\x1b[1mParity lint\x1b[0m — 設計稿 token 規範檢查(只看設計,不比實作)\n");
+        Console.WriteLine($"\x1b[1mParity lint\x1b[0m — design-token conformance of the design file (design only, no implementation)\n");
 
         var source = ScanSession.CreateDesignSource(config, refresh: opts.ContainsKey("--refresh"));
         try
@@ -348,31 +348,31 @@ internal static class LintCommand
                     Source: config.DesignFile is { } df
                         ? Path.GetFullPath(Path.Combine(config.BaseDirectory, df))
                         : config.FigmaFileKey ?? throw new InvalidOperationException(
-                            "設定檔需要 figmaFileKey 或 designFile 其中之一。"),
+                            "the config needs either figmaFileKey or designFile."),
                     NodeId: t.Frame);
                 var tree = await source.GetFrameAsync(designRef);
                 var nodes = tree.DescendantsAndSelf().Count();
                 total += nodes;
                 var violations = DesignLint.Run(tree, tokens, config.Tolerances.ColorDeltaE);
                 allViolations.AddRange(violations.Select(v => (t.Route, v)));
-                Console.WriteLine($"目標 \x1b[1m{t.Route}\x1b[0m:{nodes} 個節點,{violations.Count} 條違規");
+                Console.WriteLine($"target \x1b[1m{t.Route}\x1b[0m: {nodes} nodes, {violations.Count} violation(s)");
             }
 
             foreach (var (route, v) in allViolations)
             {
                 var near = v.NearestToken is null
                     ? ""
-                    : $";最近:\x1b[36m{v.NearestToken}\x1b[0m = {v.NearestValue}" +
-                      (v.Prop == "color" ? $"(ΔE {v.Distance})" : $"(差 {v.Distance})");
-                Console.WriteLine($"  \x1b[33m✘ {v.Layer}\x1b[0m {v.Prop} = {v.Value} 不在 token 內{near}");
+                    : $"; nearest: \x1b[36m{v.NearestToken}\x1b[0m = {v.NearestValue}" +
+                      (v.Prop == "color" ? $" (ΔE {v.Distance})" : $" (off by {v.Distance})");
+                Console.WriteLine($"  \x1b[33m✘ {v.Layer}\x1b[0m {v.Prop} = {v.Value} is not a token value{near}");
             }
 
             if (allViolations.Count > 0)
             {
-                Console.WriteLine($"\n\x1b[31m✘ {allViolations.Count} 條違規\x1b[0m(共檢查 {total} 個節點)");
+                Console.WriteLine($"\n\x1b[31m✘ {allViolations.Count} violation(s)\x1b[0m ({total} nodes checked)");
                 return 1;
             }
-            Console.WriteLine($"\n\x1b[32m✔ 全部符合 token 規範\x1b[0m(共檢查 {total} 個節點)");
+            Console.WriteLine($"\n\x1b[32m✔ everything conforms to the token set\x1b[0m ({total} nodes checked)");
             return 0;
         }
         finally
@@ -396,22 +396,22 @@ internal static class SnapshotCommand
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Snapshot);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
-            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+            ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
         var config = ParityConfig.Load(configPath);
         if (config.Targets.Count == 0)
-            throw new InvalidOperationException("設定檔裡沒有任何 target。");
+            throw new InvalidOperationException("the config file declares no targets.");
 
         var targets = opts.GetValueOrDefault("--target") is { } route
             ? config.Targets.Where(t => t.Route == route).ToList()
             : config.Targets;
         if (targets.Count == 0)
-            throw new InvalidOperationException("找不到指定 route 的 target。");
+            throw new InvalidOperationException("no target matches the requested route.");
 
         // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
         var width = int.TryParse(opts.GetValueOrDefault("--width"), out var w) ? w : 1280;
         var height = int.TryParse(opts.GetValueOrDefault("--height"), out var h) ? h : 800;
 
-        Console.WriteLine($"\x1b[1mParity snapshot\x1b[0m — 把現在的畫面凍結成設計基準({width}×{height})\n");
+        Console.WriteLine($"\x1b[1mParity snapshot\x1b[0m — freezing the current rendering as the design baseline ({width}×{height})\n");
 
         await using var impl = new Parity.Engine.ImplementationSources.Web.WebImplementationSource(
             new Parity.Engine.ImplementationSources.Web.WebCaptureOptions(
@@ -439,7 +439,7 @@ internal static class SnapshotCommand
                 await File.WriteAllBytesAsync(shot, png);
                 shotPaths.Add(shot);
             }
-            Console.WriteLine($"  ✓ {t.Route} → {tree.DescendantsAndSelf().Count()} 個節點");
+            Console.WriteLine($"  ✓ {t.Route} → {tree.DescendantsAndSelf().Count()} node(s)");
         }
 
         // 單 target:frame 直接當根;多 target:包一層,frame id = route(對 config 的 target.frame)
@@ -456,18 +456,18 @@ internal static class SnapshotCommand
             Directory.CreateDirectory(bakDir);
             var bak = Path.Combine(bakDir, "snapshot.bak.json");
             File.Copy(outPath, bak, overwrite: true);
-            Console.WriteLine($"既有基準已備份:{bak}(誤拍可用它救回)");
+            Console.WriteLine($"previous baseline backed up: {bak} (use it to recover from a bad snapshot)");
         }
         await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(root, ReportJson.Indented));
 
-        Console.WriteLine($"\n已寫入:{outPath}");
-        foreach (var s in shotPaths) Console.WriteLine($"參考截圖:{s}");
+        Console.WriteLine($"\nwritten: {outPath}");
+        foreach (var s in shotPaths) Console.WriteLine($"reference screenshot: {s}");
         Console.WriteLine($"""
 
-            下一步(把快照當設計基準,重構不跑版):
-              1. {Path.GetFileName(configPath)} 設 "designFile": "{Path.GetFileName(outPath)}"(figmaFileKey 可拿掉)
-              2. 每個 target 的 "frame" 填自己的 route(如 "/")
-              3. 之後 parity check = 檢查畫面是否仍與快照一致
+            Next steps (use the snapshot as the design baseline so refactors cannot drift):
+              1. In {Path.GetFileName(configPath)} set "designFile": "{Path.GetFileName(outPath)}" (figmaFileKey can be dropped)
+              2. Set each target's "frame" to its own route (e.g. "/")
+              3. From then on `parity check` verifies the UI still matches the snapshot
             """);
         return 0;
     }
@@ -482,12 +482,12 @@ internal static class InitCommand
         const string path = "parity.config.json";
         if (File.Exists(path))
         {
-            Console.Error.WriteLine($"{path} 已存在,不覆蓋。");
+            Console.Error.WriteLine($"{path} already exists; not overwriting.");
             return 2;
         }
         File.WriteAllText(path, """
             {
-              "figmaFileKey": "你的 Figma 檔案 key",
+              "figmaFileKey": "your Figma file key",
               "designToken": "env:FIGMA_TOKEN",
               "mapFile": "parity.map.json",
               "targets": [
@@ -499,10 +499,10 @@ internal static class InitCommand
               "gate": { "failOn": ["critical", "serious"] }
             }
             """);
-        Console.WriteLine($"已建立 {path}。接著:");
-        Console.WriteLine("  1. 填入 figmaFileKey 與 target(frame nodeId + URL)");
-        Console.WriteLine("  2. 設定環境變數 FIGMA_TOKEN");
-        Console.WriteLine("  3. parity install-browser(第一次)");
+        Console.WriteLine($"created {path}. Next:");
+        Console.WriteLine("  1. Fill in figmaFileKey and the targets (frame nodeId + URL)");
+        Console.WriteLine("  2. Set the FIGMA_TOKEN environment variable");
+        Console.WriteLine("  3. parity install-browser (first run only)");
         Console.WriteLine("  4. parity check");
         return 0;
     }
@@ -518,10 +518,10 @@ internal static class InstallBrowserCommand
         var withDeps = opts.ContainsKey("--with-deps");
         string[] pwArgs = withDeps ? ["install", "--with-deps", "chromium"] : ["install", "chromium"];
         Console.WriteLine(withDeps
-            ? "下載 Chromium 並安裝系統相依(CI 用,第一次需要幾分鐘)…"
-            : "下載 Playwright Chromium(第一次需要幾分鐘)…");
+            ? "Downloading Chromium and installing system dependencies (for CI; takes a few minutes the first time)…"
+            : "Downloading Playwright Chromium (takes a few minutes the first time)…");
         var exitCode = Microsoft.Playwright.Program.Main(pwArgs);
-        Console.WriteLine(exitCode == 0 ? "完成。" : "安裝失敗。");
+        Console.WriteLine(exitCode == 0 ? "Done." : "Install failed.");
         return exitCode;
     }
 }
@@ -534,68 +534,70 @@ internal static class Usage
 {
     public const string Check = """
           parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse] [--md <path>]
-              抓設計端與實作端真實數值比對,輸出報告 + exit code
-              --refresh   忽略 Figma 本機快取重抓
-              --headed    顯示瀏覽器視窗(除錯用)
-              --baseline  回歸模式:只擋「相對基準新增/惡化」的落差(見 parity baseline)
-              --reverse   反向檢視:「期望」= 現況(實作)、「實際」= 設計稿;不做把關
-                          (設計師照現有頁面重畫/改版時,看自己的稿跟現況差在哪)
-              --md <path> 另外輸出 Markdown 報告(含還原度分數 + 建議修法,可貼 PR 留言)
-              target 的 url 可以是:
-                http(s):// 或 file://   一般網頁 / 本機頁面
-                cdp:http://host:port    連進已在跑的 Electron 桌面 app(抓活視窗)
-                cdp:http://host:port#url片段  多視窗時指定 URL 含該片段的視窗
-                (Electron 端啟動時加 --remote-debugging-port=<port>)
+              Compare the real numeric values of the design and the implementation; writes a report and sets the exit code.
+              --refresh   Ignore the local Figma cache and re-fetch
+              --headed    Show the browser window (for debugging)
+              --baseline  Regression mode: only gate on diffs that are new or worse than the baseline (see `parity baseline`)
+              --reverse   Reverse view: "expected" = the implementation, "actual" = the design file; never gates.
+                          (For designers redrawing an existing page: see how the draft differs from what ships.)
+              --md <path> Also write a Markdown report (fidelity score + suggested fixes; suitable for a PR comment)
+              A target's url may be:
+                http(s):// or file://          a normal web page / local file
+                cdp:http://host:port           attach to a running Electron desktop app (live window)
+                cdp:http://host:port#fragment  with several windows, pick the one whose URL contains the fragment
+                (start Electron with --remote-debugging-port=<port>)
         """;
 
     public const string Report = """
           parity report [--config <path>] [--in <report.json>] [--md <path>]
-              從既有 report.json 重生 Markdown 報告,免重掃(預設讀 .parity/report.json;
-              沒給 --md 就印到 stdout)
+              Re-render a Markdown report from an existing report.json without re-scanning
+              (defaults to .parity/report.json; prints to stdout when --md is omitted).
         """;
 
     public const string Snapshot = """
           parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>] [--headed]
-              把「現在跑著的實作」凍結成設計基準(JSON + 參考截圖)——重構/改版守門:
-              現在的畫面是對的,之後 check 保證不跑版。不需要 Figma。
-              會覆寫既有基準(覆寫前自動備份到 .parity/snapshot.bak.json)
+              Freeze the currently running implementation into a design baseline (JSON + reference screenshot)
+              — a refactor/redesign guard: today's rendering is correct, and later checks prove it has not drifted.
+              No Figma required. Overwrites an existing baseline (backed up to .parity/snapshot.bak.json first).
         """;
 
     public const string Serve = """
           parity serve [--config <path>] [--port <n>] [--watch] [--open]
-              本機報告 UI(只綁 127.0.0.1):落差清單 + 截圖疊框視圖
-              --watch     設定/設計/頁面檔變更時自動重掃
+              Local report UI (binds 127.0.0.1 only): diff list plus a screenshot overlay view.
+              --watch     Re-scan automatically when the config, design or page files change
         """;
 
     public const string Map = """
           parity map [--config <path>] [--port <n>]
-              互動配對:點選未配對的設計節點 → 點頁面元素 → 寫入 parity.map.json
+              Interactive matching: pick an unmatched design node → click the page element → writes parity.map.json
         """;
 
     public const string Lint = """
           parity lint [--config <path>] [--target <route>] [--refresh]
-              design lint:只看設計稿,驗值是否落在 design token 允許集合
-              (顏色/字級/內距/間距/圓角;需 tokensFile)。設計師畫新頁面守設計系統用。
+              Design lint: looks only at the design file and checks its values against the allowed design-token set
+              (color/font size/padding/spacing/corner radius; requires tokensFile).
+              For designers keeping a new page inside the design system.
         """;
 
     public const string Baseline = """
           parity baseline save|list [--config <path>]
-              存/看落差基準快照(SQLite);搭配 check --baseline 做回歸把關
+              Save or list diff baseline snapshots (SQLite); pair with `check --baseline` for regression gating.
         """;
 
     public const string Init = """
-          parity init             產生 parity.config.json 範本
+          parity init             Generate a parity.config.json template
         """;
 
     public const string InstallBrowser = """
           parity install-browser [--with-deps]
-              下載 Playwright Chromium(第一次必要);--with-deps 連系統相依一起裝(CI 用)
+              Download Playwright Chromium (required on first use); --with-deps also installs system
+              dependencies (needed on CI Linux runners).
         """;
 
     /// <summary>子指令 --help:印該指令的用法,exit 0。</summary>
     public static int Print(string usage)
     {
-        Console.WriteLine("用法:");
+        Console.WriteLine("Usage:");
         Console.WriteLine(usage);
         return 0;
     }
@@ -605,16 +607,17 @@ internal static class HelpCommand
 {
     public static int Run()
     {
-        Console.WriteLine("Parity — 數值級設計還原度檢查工具\n");
-        Console.WriteLine("用法:");
+        Console.WriteLine("Parity — property-level design fidelity checking\n");
+        Console.WriteLine("Usage:");
         foreach (var usage in new[]
         {
             Usage.Check, Usage.Report, Usage.Snapshot, Usage.Serve, Usage.Map,
             Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser,
         })
             Console.WriteLine(usage);
-        Console.WriteLine("\nexit code:0 = 通過;1 = 落差超過 gate 門檻;2 = 執行錯誤;3 = 配對可信度不足(結果不可信)");
-        Console.WriteLine("每個子指令都可加 --help 看自己的用法。");
+        Console.WriteLine("\nExit codes: 0 = pass; 1 = diffs exceed the gate threshold; 2 = execution error; " +
+            "3 = match integrity too low (results not trustworthy)");
+        Console.WriteLine("Every subcommand accepts --help for its own usage.");
         return 0;
     }
 }

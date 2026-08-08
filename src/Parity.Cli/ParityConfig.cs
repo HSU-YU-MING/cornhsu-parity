@@ -55,9 +55,9 @@ public sealed class ParityConfig
     {
         if (!File.Exists(path))
             throw new FileNotFoundException(
-                $"找不到設定檔:{path}(可用 `parity init` 產生範本)", path);
+                $"config file not found: {path} (run `parity init` to generate a template)", path);
         var config = JsonSerializer.Deserialize<ParityConfig>(File.ReadAllText(path), SerializerOptions)
-            ?? throw new InvalidOperationException($"設定檔解析失敗:{path}");
+            ?? throw new InvalidOperationException($"could not parse config file: {path}");
         config.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
         config.Validate(path);
         return config;
@@ -69,17 +69,18 @@ public sealed class ParityConfig
         foreach (var s in Gate.FailOn)
             if (!Enum.TryParse<Severity>(s, ignoreCase: true, out _))
                 throw new InvalidOperationException(
-                    $"設定檔 {path}:gate.failOn 的「{s}」不是有效等級(可用:minor、medium、serious、critical)。");
+                    $"config {path}: gate.failOn contains \"{s}\", which is not a valid severity (use: minor, medium, serious, critical).");
         if (Gate.MinMatchRate is < 0 or > 1)
             throw new InvalidOperationException(
-                $"設定檔 {path}:gate.minMatchRate 必須在 0–1 之間(目前:{Gate.MinMatchRate})。");
+                $"config {path}: gate.minMatchRate must be between 0 and 1 (got: {Gate.MinMatchRate}).");
         if (!string.Equals(Compare.Position, "relative", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(Compare.Position, "none", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
-                $"設定檔 {path}:compare.position 的「{Compare.Position}」無效(可用:relative、none)。");
+                $"config {path}: compare.position is \"{Compare.Position}\", which is not valid (use: relative, none).");
         if (DesignImage is not null && DesignFile is null)
             throw new InvalidOperationException(
-                $"設定檔 {path}:designImage 需要搭配 designFile(標註檔:DesignNode 格式、fill 可省略由圖片取樣)。");
+                $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
+                "fill may be omitted and sampled from the image).");
     }
 
     /// <summary>從 cwd 往上找 parity.config.json。</summary>
@@ -123,7 +124,7 @@ public sealed class ParityConfig
         if (MatchIntegrityFailure(report) is { } untrusted) return untrusted;
         var failOn = Gate.FailOn.Select(s => Enum.Parse<Severity>(s, ignoreCase: true)).ToHashSet();
         return report.Nodes.SelectMany(n => n.Diffs).Any(diff => failOn.Contains(diff.Severity))
-            ? $"有 {string.Join("/", Gate.FailOn)} 等級落差"
+            ? $"has {string.Join("/", Gate.FailOn)} severity diffs"
             : null;
     }
 
@@ -139,7 +140,7 @@ public sealed class ParityConfig
         IEnumerable<FidelityReport> reports, Func<FidelityReport, string?> check)
         => reports.Select(r => (r.Route, Reason: check(r)))
             .Where(x => x.Reason is not null)
-            .Select(x => $"{x.Route}:{x.Reason}")
+            .Select(x => $"{x.Route}: {x.Reason}")
             .ToList();
 
     /// <summary>
@@ -151,12 +152,12 @@ public sealed class ParityConfig
     {
         var s = report.Summary;
         if (s.DesignNodes == 0)
-            return "設計端 0 個節點——frame/designFile 可能指錯,沒有東西可驗";
+            return "0 design nodes — frame/designFile is probably pointing at the wrong place; there is nothing to verify";
         if (s.Matched == 0)
-            return $"0/{s.DesignNodes} 個設計節點配對成功——沒有東西可比,結果不可信" +
-                "(檢查 target 的 url/frame,或用 parity map 補配對)";
+            return $"0/{s.DesignNodes} design nodes matched — there is nothing to compare, results are not trustworthy " +
+                "(check the target's url/frame, or fill in matches with `parity map`)";
         if (Gate.MinMatchRate > 0 && (double)s.Matched / s.DesignNodes < Gate.MinMatchRate)
-            return $"配對率 {s.Matched}/{s.DesignNodes} 低於 gate.minMatchRate({Gate.MinMatchRate})";
+            return $"match rate {s.Matched}/{s.DesignNodes} is below gate.minMatchRate ({Gate.MinMatchRate})";
         return null;
     }
 }

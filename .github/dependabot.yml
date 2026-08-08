@@ -1,0 +1,24 @@
+version: 2
+
+# 為什麼需要:這個 repo 的 csproj 裡有數個「手工釘住已修補版本」的相依
+# (SQLitePCLRaw pin 到 3.0.3 以蓋掉 EF Sqlite 傳遞進來的 NU1903 高風險版本)。
+# 那些 pin 現在完全靠人記得回頭看。dependabot 讓「有新的修補版了」變成一則 PR,
+# 而不是下一次 restore 時才在 audit 警告裡被發現。
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      # 同一版本線的相依一起升,避免一次開五個彼此相關的 PR
+      microsoft:
+        patterns: ["Microsoft.*", "System.*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

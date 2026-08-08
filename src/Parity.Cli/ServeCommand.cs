@@ -27,17 +27,17 @@ internal static class ServeCommand
         if (opts.ContainsKey("--help")) return Usage.Print(mapMode ? Usage.Map : Usage.Serve);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
-            ?? throw new FileNotFoundException("找不到 parity.config.json(可用 `parity init` 產生範本)。");
+            ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
         var port = int.TryParse(opts.GetValueOrDefault("--port"), out var p) ? p : 4321;
         var watch = opts.ContainsKey("--watch");
 
         await using var session = new ScanSession(configPath, captureScreenshots: true);
         var state = new ServeState(session);
 
-        Console.WriteLine($"\x1b[1mParity serve\x1b[0m — 設定:{configPath}");
-        Console.WriteLine("首次掃描中…");
+        Console.WriteLine($"\x1b[1mParity serve\x1b[0m — config: {configPath}");
+        Console.WriteLine("Running the first scan…");
         await state.RescanAsync();
-        Console.WriteLine($"完成:{state.StatusLine()}");
+        Console.WriteLine($"done: {state.StatusLine()}");
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -58,7 +58,7 @@ internal static class ServeCommand
             if (!IsLoopbackHost(ctx.Request.Host.Host))
             {
                 ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await ctx.Response.WriteAsync("Parity serve 只接受本機請求。");
+                await ctx.Response.WriteAsync("Parity serve only accepts requests from localhost.");
                 return;
             }
             if (HttpMethods.IsPost(ctx.Request.Method))
@@ -68,7 +68,7 @@ internal static class ServeCommand
                     !(Uri.TryCreate(origin, UriKind.Absolute, out var o) && IsLoopbackHost(o.Host)))
                 {
                     ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    await ctx.Response.WriteAsync("跨來源請求被拒。");
+                    await ctx.Response.WriteAsync("Cross-origin request rejected.");
                     return;
                 }
             }
@@ -127,7 +127,7 @@ internal static class ServeCommand
         app.MapPost("/api/rerun", async () =>
         {
             await state.RescanAsync();
-            Console.WriteLine($"重新掃描:{state.StatusLine()}");
+            Console.WriteLine($"re-scanned: {state.StatusLine()}");
             return Results.Json(new { ok = true }, JsonOptions);
         });
 
@@ -135,10 +135,10 @@ internal static class ServeCommand
         app.MapPost("/api/map", async (MapRequest req) =>
         {
             if (string.IsNullOrWhiteSpace(req.Layer) || string.IsNullOrWhiteSpace(req.Selector))
-                return Results.BadRequest(new { error = "layer 與 selector 都必填" });
+                return Results.BadRequest(new { error = "both `layer` and `selector` are required" });
             session.SaveMapping(req.Layer, req.Selector);
             await state.RescanAsync();
-            Console.WriteLine($"已配對 \x1b[1m{req.Layer}\x1b[0m → {req.Selector},{state.StatusLine()}");
+            Console.WriteLine($"mapped \x1b[1m{req.Layer}\x1b[0m → {req.Selector}; {state.StatusLine()}");
             return Results.Json(new { ok = true }, JsonOptions);
         });
 
@@ -168,8 +168,8 @@ internal static class ServeCommand
             watchers = StartWatchers(session, state);
 
         var url = $"http://127.0.0.1:{port}/{(mapMode ? "#map" : "")}";
-        Console.WriteLine($"\n報告 UI:\x1b[1m{url}\x1b[0m{(watch ? "(watch 模式)" : "")}");
-        Console.WriteLine("Ctrl+C 結束。");
+        Console.WriteLine($"\nreport UI: \x1b[1m{url}\x1b[0m{(watch ? " (watch mode)" : "")}");
+        Console.WriteLine("Ctrl+C to stop.");
 
         if (mapMode || opts.ContainsKey("--open"))
             TryOpenBrowser(url);
@@ -208,15 +208,15 @@ internal static class ServeCommand
                 debounce?.Dispose();
                 debounce = new Timer(async _ =>
                 {
-                try
-                {
-                    await state.RescanAsync();
-                    Console.WriteLine($"偵測到 {Path.GetFileName(e.FullPath)} 變更,已重掃:{state.StatusLine()}");
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"\x1b[31m重掃失敗:{ex.Message}\x1b[0m");
-                }
+                    try
+                    {
+                        await state.RescanAsync();
+                        Console.WriteLine($"{Path.GetFileName(e.FullPath)} changed, re-scanned: {state.StatusLine()}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"\x1b[31mre-scan failed: {ex.Message}\x1b[0m");
+                    }
                 }, null, 400, Timeout.Infinite);
             }
         }
@@ -285,7 +285,7 @@ internal static class ServeCommand
         {
             var diffs = Scans.Sum(s => s.Result.Report.Summary.NodesWithDiffs);
             var unmatched = Scans.Sum(s => s.Result.Report.Summary.Unmatched);
-            return $"{Scans.Count} 個 target、{diffs} 個節點有落差、{unmatched} 個未配對 → {(GateFail ? "GATE FAIL" : "PASS")}";
+            return $"{Scans.Count} target(s), {diffs} node(s) with diffs, {unmatched} unmatched → {(GateFail ? "GATE FAIL" : "PASS")}";
         }
 
         public (Guid, ChannelReader<string>) Subscribe()
@@ -331,11 +331,11 @@ internal static class CliOptions
                 continue;
             }
             if (!arg.StartsWith("--"))
-                throw new CliUsageException($"多餘的參數:「{arg}」(--help 看用法)");
+                throw new CliUsageException($"unexpected argument: \"{arg}\" (see --help)");
             if (spec.Contains(arg + "="))
             {
                 if (i + 1 >= args.Length || args[i + 1].StartsWith("--"))
-                    throw new CliUsageException($"參數 {arg} 需要一個值(--help 看用法)");
+                    throw new CliUsageException($"{arg} requires a value (see --help)");
                 result[arg] = args[++i];
             }
             else if (spec.Contains(arg))
@@ -344,7 +344,7 @@ internal static class CliOptions
             }
             else
             {
-                throw new CliUsageException($"未知參數:「{arg}」(--help 看用法)");
+                throw new CliUsageException($"unknown argument: \"{arg}\" (see --help)");
             }
         }
         return result;

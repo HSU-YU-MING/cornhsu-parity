@@ -65,7 +65,7 @@ for (const t of TARGETS) {
       {
         name: `@cornhsu/${t.pkg}`,
         version,
-        description: `Cornhsu.Parity 的 ${t.os}-${t.cpu} 執行檔。請安裝 cornhsu-parity,不要直接安裝這個套件。`,
+        description: `The ${t.os}-${t.cpu} binary for Cornhsu.Parity. Install cornhsu-parity instead — do not depend on this package directly.`,
         homepage: "https://cornhsu.com/parity",
         repository: {
           type: "git",

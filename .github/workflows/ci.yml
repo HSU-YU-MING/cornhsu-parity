@@ -6,6 +6,62 @@ on:
   pull_request:
 
 jobs:
+  # 排版守門(對齊 PolyMigrate 的 CI 形狀)。風格規則見 .editorconfig。
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet format Parity.slnx --verify-no-changes
+
+  # 這個工具是給「各平台的 CI」用的,自己就得證明在各平台建得起來、跑得動。
+  # 0.9.1 的教訓:在 ubuntu 上 pack 出來的包,Windows 使用者裝了直接 Driver not found。
+  # 只在 ubuntu 建置看不出這種事,所以這裡明確跑三個 OS 的建置與單元測試。
+  test-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test Parity.slnx -c Release
+
+  # 打包 + 真的把工具裝起來跑一次 --help。
+  # `dotnet pack` 成功不代表裝得起來:Playwright driver 的平台檔案要真的進到包裡,
+  # 而那件事只有「安裝後執行」才驗得到(0.9.1 正是 pack 綠、安裝後才爆)。
+  pack-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Pack
+        run: dotnet pack src/Parity.Cli/Parity.Cli.csproj -c Release -p:Version=0.0.0-ci -o nupkg
+      - name: Install the packed tool and run it
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool install --global --add-source ./nupkg --version 0.0.0-ci Cornhsu.Parity
+          export PATH="$HOME/.dotnet/tools:$PATH"
+          parity --help > /dev/null
+          echo "✓ 打包出來的工具在 ${{ matrix.os }} 上裝得起來也跑得動"
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: nupkg
+          path: nupkg/*.nupkg
+
   build-test:
     name: Build + Test + Parity 自我把關
     runs-on: ubuntu-latest
