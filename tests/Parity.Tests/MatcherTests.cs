@@ -195,6 +195,57 @@ public class MatcherTests
         => Assert.Equal(Matcher.NormalizeName(layerName), Matcher.NormalizeName(domName));
 
     [Fact]
+    public void Name_match_with_absurd_size_difference_is_rejected()
+    {
+        // 路線 B 實查 B3:設計稿的「Content」(整頁容器)撞上無關文件站的 #content——
+        // 面積比 300×,任何落差都是垃圾。幾何不合理 → 拒配,理由講明白
+        var design = Design("1", "frame", children:
+            Design("2", "Content", box: new Box(0, 0, 1969, 3948)));
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900),
+            children: Rendered("#content", domId: "content", box: new Box(0, 0, 603, 41)));
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Empty(result.Pairs);
+        Assert.Equal("size-implausible", Assert.Single(result.Unmatched).Reason);
+    }
+
+    [Fact]
+    public void Name_match_with_plausible_size_still_works()
+    {
+        // 防線不能誤殺正當配對(demo 實測:正當 auto-name 面積比全部 ≈1×)
+        var design = Design("1", "frame", children:
+            Design("2", "CTA Button", box: new Box(0, 0, 160, 48)));
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900),
+            children: Rendered(".cta-button", classes: "cta-button", box: new Box(40, 40, 172, 52)));
+
+        var result = Matcher.Match(design, rendered);
+
+        var pair = Assert.Single(result.Pairs);
+        Assert.Equal("auto-name", pair.MatchedBy);
+        Assert.Empty(result.Unmatched);
+    }
+
+    [Fact]
+    public void Implausible_first_candidate_yields_to_a_plausible_second()
+    {
+        // 同名兩個候選:第一個幾何荒謬、第二個合理 → 配第二個,不是放棄
+        var design = Design("1", "frame", children:
+            Design("2", "card", box: new Box(0, 0, 300, 200)));
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900),
+            children:
+            [
+                Rendered("div.card:nth-of-type(1)", classes: "card", box: new Box(0, 0, 8, 8)),
+                Rendered("div.card:nth-of-type(2)", classes: "card", box: new Box(0, 20, 310, 210)),
+            ]);
+
+        var result = Matcher.Match(design, rendered);
+
+        var pair = Assert.Single(result.Pairs);
+        Assert.Equal("div.card:nth-of-type(2)", pair.Rendered.Selector);
+    }
+
+    [Fact]
     public void Randomized_id_in_selector_gets_a_specific_unmatched_reason()
     {
         // 野生實查 F2(MDN):snapshot 凍住的隨機 id 在下次載入不存在 → 配不到是必然,

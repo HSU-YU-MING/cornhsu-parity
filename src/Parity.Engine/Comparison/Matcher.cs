@@ -95,7 +95,7 @@ public static class Matcher
             stillRemaining.Add(d);
         }
 
-        // --- 第 3 關:圖層名 ↔ id / class / aria-label ---
+        // --- 第 3 關:圖層名 ↔ id / class / aria-label(附尺寸合理性防線)---
         var pending = new List<(DesignNode Node, string Reason)>();
         foreach (var d in stillRemaining)
         {
@@ -106,11 +106,13 @@ public static class Matcher
                 continue;
             }
 
-            var hit = candidates.FirstOrDefault(r =>
-                !taken.Contains(r) && NameMatches(r, key));
+            var named = candidates.Where(r => !taken.Contains(r) && NameMatches(r, key)).ToList();
+            var hit = named.FirstOrDefault(r => SizePlausible(d, r));
 
             if (hit is not null)
                 Pair(d, hit, "auto-name");
+            else if (named.Count > 0)
+                pending.Add((d, "size-implausible"));
             else
                 pending.Add((d, !string.IsNullOrWhiteSpace(d.Characters) ? "ambiguous-or-missing-text" : "no-anchor"));
         }
@@ -214,6 +216,21 @@ public static class Matcher
             len = i;
         }
         return len > 0 ? common[len - 1] : null;
+    }
+
+    /// <summary>
+    /// auto-name 的尺寸合理性防線(2026-08-11 路線 B 實查 B3):通用圖層名(Content/Button)
+    /// 會在無關頁面撞到同名元素,產生 critical 級荒謬落差、傷害信任。實測數據:
+    /// 假配對的面積比 148×~703×(Content 1969×3948 vs 603×41 = 318×),正當配對全部 ≈1×;
+    /// 「設計畫 3 筆、實作長出 20 筆」的合法內容差也只到個位數——面積比 16(等於雙軸各 4×)
+    /// 之上不可能是同一個東西,拒當配對。已知極限:同尺寸的撞名(16×16 圖示 vs 16×16 圖示)
+    /// 幾何分不出來,誠實放行——那要語意才殺得掉。
+    /// </summary>
+    private static bool SizePlausible(DesignNode d, RenderedNode r)
+    {
+        var da = Math.Max(1, d.Box.W) * Math.Max(1, d.Box.H);
+        var ra = Math.Max(1, r.Box.W) * Math.Max(1, r.Box.H);
+        return Math.Max(da, ra) / Math.Min(da, ra) <= 16;
     }
 
     private static bool NameMatches(RenderedNode r, string normalizedLayerName)

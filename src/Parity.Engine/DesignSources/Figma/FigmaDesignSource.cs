@@ -54,10 +54,17 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
 
         using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
+        {
+            // 429 是流量限制,不是設定錯——照舊訊息提示查 scope/key 會把人帶去錯的方向
+            // (2026-08-11 路線 B 實查:連續掃多個 frame 就會撞到)
+            var hint = response.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+                ? "Figma is rate-limiting this token — wait a minute and retry; " +
+                  "already-fetched frames keep working from .parity/cache."
+                : "Check that FIGMA_TOKEN has the file_content:read scope and that fileKey/nodeId are correct.";
             throw new HttpRequestException(
                 $"Figma API returned {(int)response.StatusCode} {response.StatusCode} " +
-                $"(file {reference.Source}, node {reference.NodeId}). " +
-                "Check that FIGMA_TOKEN has the file_content:read scope and that fileKey/nodeId are correct.");
+                $"(file {reference.Source}, node {reference.NodeId}). {hint}");
+        }
 
         var json = await response.Content.ReadAsStringAsync(ct);
         var node = JsonNode.Parse(json) ?? throw new InvalidOperationException("the Figma response is not valid JSON.");
