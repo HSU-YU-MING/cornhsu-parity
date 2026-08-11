@@ -38,6 +38,15 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         return FigmaNodeParser.Parse(doc);
     }
 
+    /// <summary>Retry-After 的人話:秒數在「分/小時/天」間挑合適的單位;沒有 header 就只說被限流。</summary>
+    internal static string DescribeRetryAfter(TimeSpan? retryAfter) => retryAfter switch
+    {
+        null => "",
+        { TotalHours: >= 24 } d => $" — the API says retry in about {d.TotalDays:0.#} day(s)",
+        { TotalMinutes: >= 90 } d => $" — the API says retry in about {d.TotalHours:0.#} hour(s)",
+        { } d => $" — the API says retry in about {Math.Max(1, d.TotalMinutes):0} minute(s)",
+    };
+
     private async Task<JsonNode> GetRawNodeJsonAsync(DesignRef reference, CancellationToken ct)
     {
         var cacheFile = CacheFilePath(reference);
@@ -55,11 +64,12 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
         {
-            // 429 是流量限制,不是設定錯——照舊訊息提示查 scope/key 會把人帶去錯的方向
-            // (2026-08-11 路線 B 實查:連續掃多個 frame 就會撞到)
+            // 429 是流量限制,不是設定錯——照舊訊息提示查 scope/key 會把人帶去錯的方向。
+            // 而且要把 Retry-After 讀出來講:Figma 的方案級額度(免費方案)一撞就是「幾天」,
+            // 不是「等一分鐘」(2026-08-11 路線 B 實查:Retry-After 367422 秒 ≈ 4.3 天)。
             var hint = response.StatusCode == System.Net.HttpStatusCode.TooManyRequests
-                ? "Figma is rate-limiting this token — wait a minute and retry; " +
-                  "already-fetched frames keep working from .parity/cache."
+                ? $"Figma is rate-limiting this token{DescribeRetryAfter(response.Headers.RetryAfter?.Delta)}. " +
+                  "Plan-tier quotas (free plans) can span days — already-fetched frames keep working from .parity/cache."
                 : "Check that FIGMA_TOKEN has the file_content:read scope and that fileKey/nodeId are correct.";
             throw new HttpRequestException(
                 $"Figma API returned {(int)response.StatusCode} {response.StatusCode} " +

@@ -99,4 +99,13 @@ public class FigmaParserTests
         // 0.06/0.09/0.16 → 15/23/41
         Assert.Equal("#0F1729", title.Fill!.Value.ToHex());
     }
+
+    [Theory]
+    [InlineData(null, "")]                          // 沒有 Retry-After → 只說被限流
+    [InlineData(90, " — the API says retry in about 2 minute(s)")]
+    [InlineData(7200, " — the API says retry in about 2 hour(s)")]
+    [InlineData(367422, " — the API says retry in about 4.3 day(s)")] // 路線 B 實測值:方案級額度是「天」
+    public void Retry_after_speaks_the_right_unit(int? seconds, string expected)
+        => Assert.Equal(expected, FigmaDesignSource.DescribeRetryAfter(
+            seconds is { } s ? TimeSpan.FromSeconds(s) : null));
 }
