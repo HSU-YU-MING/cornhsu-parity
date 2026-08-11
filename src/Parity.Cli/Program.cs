@@ -246,9 +246,9 @@ internal static class CheckCommand
         {
             Console.WriteLine($"  \x1b[90munmatched: {string.Join(", ", report.Unmatched.Select(u => $"{u.DesignLayer} ({u.Reason})"))}\x1b[0m");
             if (report.Unmatched.Any(u => u.Reason == "randomized-id"))
-                Console.WriteLine("  \x1b[90mhint: randomized-id = the selector contains an id that is regenerated on every page load " +
-                    "(React useId, CSS-in-JS, …), so snapshot selector matching cannot track it. " +
-                    "Exclude the region via \"ignore\", or give the element a stable anchor (data-parity / a fixed id).\x1b[0m");
+                Console.WriteLine("  \x1b[90mhint: randomized-id = the baseline froze a selector containing a randomly generated id " +
+                    "(React useId, CSS-in-JS, …). Newer baselines use structural paths that survive id regeneration — " +
+                    "re-run `parity snapshot` once to migrate.\x1b[0m");
         }
         Console.WriteLine();
     }
@@ -491,7 +491,7 @@ internal static class SnapshotCommand
             File.Copy(outPath, bak, overwrite: true);
             Console.WriteLine($"previous baseline backed up: {bak} (use it to recover from a bad snapshot)");
         }
-        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(root, ReportJson.Indented));
+        await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(root));
 
         Console.WriteLine($"\nwritten: {outPath}");
         foreach (var s in shotPaths) Console.WriteLine($"reference screenshot: {s}");

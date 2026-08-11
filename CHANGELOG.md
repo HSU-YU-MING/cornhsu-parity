@@ -11,16 +11,21 @@
 - **修正:深 DOM 讓 snapshot 落地/回讀 crash**(F1)。Wikipedia 條目頁(約 31 層巢狀)
   擷取成功、序列化炸掉——擷取端早已為此放寬 `MaxDepth`,但落地(`ReportJson`)與回讀
   (`JsonDesignSource`)沒跟上。兩處補齊 512,同一個教訓修完整。
-- **修正:隨機 id 的未配對講明原因**(F2)。React `useId` / CSS-in-JS 的隨機 id 每次載入
-  重新生成,snapshot 的 selector 身分配對必落空——未配對理由從籠統的 `no-anchor` 改為
-  `randomized-id`(附一行提示:ignore 該區或給 `data-parity` 錨點);README 對
-  「100% 確定性」宣稱補上這條已知限制。
+- **修正:隨機 id 根治**(F2)。React `useId` / CSS-in-JS 的隨機 id 每次載入重新生成,
+  拿它當 selector 錨點 = snapshot 凍住的路徑下次載入必失效。擷取端偵測高熵 id、
+  改走結構路徑(nth-of-type),路徑跨載入穩定——MDN 實測未配對 48 → **0**。
+  舊 snapshot 若凍有隨機 id selector,該節點列為 `randomized-id` 並提示重跑一次
+  `parity snapshot` 完成遷移(那些節點在舊版本來就永遠配不到,遷移只會變好)。
+  純字母隨機字串(rkxvdnnzty)仍分不出來,但結構路徑讓它不再是問題。
 - **修正:SVG 當葉子**(F3)。內部繪圖指令(path/g/defs)沒有 padding/字體語意,動畫下
   nth-of-type 又不穩(tailwindcss.com 實測 44 個 unmatched、兩次配對數不同)。svg 本身
   照量,內部不展開。既有 snapshot 若凍有 SVG 內部節點,重拍一次即可對齊。
 - **新增:`parity snapshot --stabilize`**(F4)。連拍 3 次、比對擷取樹,列出「會動」的
   區域(廣告輪播、動畫、lazy 媒體;收攏到最高的不穩定祖先),並給可直接貼進 config 的
   `ignore` 建議——MDN 實測一次抓出 79 個不穩定區域。
+- **修正:超深頁面的錯誤訊息講人話**(F1 殘留)。超過 512 層 JSON 深度時,原生訊息是
+  誤導的「object cycle」——snapshot 落地與 designFile 回讀兩處都包成「DOM 巢狀超過
+  支援上限(約 250 層),用 ignore 修剪最深的區域」。
 - **修正:分數不再四捨五入進成 100**(F5)。99.5% 忠實被進位成 100,「100/100」與
   GATE FAIL 同框(Stripe 實測 3306/3322)。滿分保留給「全部忠實」,差一個節點就是 99。
 

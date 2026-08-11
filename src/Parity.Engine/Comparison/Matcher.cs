@@ -157,6 +157,8 @@ public static class Matcher
     /// 樣態:selector 裡有長度 ≥8、字母數字混雜的高熵 token,例如 label-92g58lqqado、
     /// #3jrOqJD10fXAt6AjqpbEG。純字母的隨機字串(rkxvdnnzty)分不出來,誠實漏放——
     /// 這是提示用啟發法,寧可漏標也不把穩定 id 誤標成隨機。Figma id("10:2")不會誤中。
+    /// 啟發法與 CaptureScript 的 looksRandom 同步(那邊擷取時就不拿高熵 id 當錨點,
+    /// 新 snapshot 的 selector 不會再含隨機 id;這裡只剩舊 snapshot 的遷移提示)——兩邊改要一起改。
     /// </summary>
     internal static bool ContainsRandomizedToken(string selector)
     {

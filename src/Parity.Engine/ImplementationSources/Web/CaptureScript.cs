@@ -29,10 +29,26 @@ internal static class CaptureScript
             try { document.querySelectorAll(sel).forEach(el => ignored.add(el)); } catch {}
           }
 
+          // 隨機 id 偵測(野生實查 F2 根治):React useId / CSS-in-JS 的 id 每次載入重新生成,
+          // 拿它當 selector 錨點 = snapshot 凍住的路徑下次載入必失效(MDN 實測 48 個未配對)。
+          // 高熵 id 不當錨點、改走結構路徑(nth-of-type),路徑就跨載入穩定。
+          // 啟發法與 C# 端 Matcher.ContainsRandomizedToken 同步(兩邊改要一起改):
+          // 長度 ≥8 的純字母數字 token,(≥2 位數字 + ≥3 字母)或(≥10 字元 + 內嵌數字)。
+          const looksRandom = (id) => {
+            for (const token of id.split(/[^A-Za-z0-9]+/)) {
+              if (token.length < 8) continue;
+              const digits = (token.match(/[0-9]/g) || []).length;
+              const letters = token.length - digits;
+              if (digits >= 2 && letters >= 3) return true;
+              if (digits >= 1 && token.length >= 10 && /^[A-Za-z]/.test(token) && /[A-Za-z]$/.test(token)) return true;
+            }
+            return false;
+          };
+
           // el 在自己的 root(body / shadowRoot / iframe body)內的路徑;prefix 帶上外層脈絡
           const pathIn = (el, stopNode, prefix, rootLabel) => {
             if (el === stopNode) return prefix + rootLabel;
-            if (el.id) return prefix + '#' + CSS.escape(el.id);
+            if (el.id && !looksRandom(el.id)) return prefix + '#' + CSS.escape(el.id);
             const parts = [];
             let cur = el;
             while (cur && cur.nodeType === 1 && cur !== stopNode) {
@@ -40,7 +56,7 @@ internal static class CaptureScript
               while ((sib = sib.previousElementSibling)) if (sib.tagName === cur.tagName) idx++;
               parts.unshift(cur.tagName.toLowerCase() + ':nth-of-type(' + idx + ')');
               const parent = cur.parentElement;
-              if (parent && parent !== stopNode && parent.id) {
+              if (parent && parent !== stopNode && parent.id && !looksRandom(parent.id)) {
                 parts.unshift('#' + CSS.escape(parent.id));
                 return prefix + parts.join(' > ');
               }
