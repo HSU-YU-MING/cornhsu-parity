@@ -27,12 +27,28 @@ public sealed class JsonDesignSource : IDesignSource
         if (!File.Exists(path))
             throw new FileNotFoundException($"design JSON file not found: {path}", path);
 
-        await using var stream = File.OpenRead(path);
+        var json = await File.ReadAllTextAsync(path, ct);
         DesignNode root;
         try
         {
-            root = await JsonSerializer.DeserializeAsync<DesignNode>(stream, SerializerOptions, ct)
-                ?? throw new InvalidOperationException($"could not parse design JSON: {path}");
+            // 兩種頂層形狀(1.0 審查面 6):新式信封 { "schemaVersion": 1, "root": {...} },
+            // 或裸 DesignNode 樹(舊 snapshot 與手寫 design JSON)——沒有版本欄就視為 v1 照吃。
+            var probe = JsonSerializer.Deserialize<SnapshotEnvelopeProbe>(json, SerializerOptions);
+            if (probe?.SchemaVersion is { } version)
+            {
+                if (version > Snapshot.SnapshotDocument.CurrentSchemaVersion)
+                    throw new InvalidOperationException(
+                        $"design JSON {path} has schemaVersion {version}, which this Parity " +
+                        $"(schemaVersion {Snapshot.SnapshotDocument.CurrentSchemaVersion}) does not understand — " +
+                        "it was probably produced by a newer Parity. Upgrade the tool, or re-run `parity snapshot` with this version.");
+                root = probe.Root
+                    ?? throw new InvalidOperationException($"design JSON {path} has a schemaVersion but no \"root\" node.");
+            }
+            else
+            {
+                root = JsonSerializer.Deserialize<DesignNode>(json, SerializerOptions)
+                    ?? throw new InvalidOperationException($"could not parse design JSON: {path}");
+            }
         }
         catch (JsonException ex) when (ex.Message.Contains("depth", StringComparison.OrdinalIgnoreCase))
         {
@@ -60,4 +76,10 @@ public sealed class JsonDesignSource : IDesignSource
     /// <summary>JSON 可省略 children → 反序列化成 null,補回空清單。</summary>
     private static DesignNode FillDefaults(DesignNode node)
         => node with { Children = (node.Children ?? []).Select(FillDefaults).ToList() };
+
+    /// <summary>
+    /// 頂層形狀嗅探用:裸 DesignNode 也能安全反序列化進來(兩欄皆 null),
+    /// 有 SchemaVersion 才走信封路徑。
+    /// </summary>
+    private sealed record SnapshotEnvelopeProbe(int? SchemaVersion, DesignNode? Root);
 }

@@ -95,6 +95,50 @@ public class SnapshotBuilderTests
     }
 
     [Fact]
+    public async Task Snapshot_now_carries_a_schema_version_envelope()
+    {
+        // 1.0 審查面 6:對齊 report.json 的 0.10.0 決定——裸樹無從辨識版本
+        var rendered = Rendered("body", box: new Box(0, 0, 800, 600),
+            children: Rendered("body > div:nth-of-type(1)", box: new Box(0, 0, 100, 50)));
+        var json = ReportJson.SerializeSnapshotTree(SnapshotBuilder.ToFrame(rendered, "/"));
+
+        Assert.Contains("\"schemaVersion\": 1", json);
+
+        var path = Path.Combine(Path.GetTempPath(), $"parity-env-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, json);
+            var back = await new JsonDesignSource().GetFrameAsync(new DesignRef(path, ""));
+            Assert.Equal("/", back.Id); // 信封拆掉後拿到的是樹本身
+            Assert.Single(back.Children);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task A_newer_schema_version_fails_loudly_not_silently()
+    {
+        // 相容規則的另一半:讀到比自己新的版本要講清楚,不能靜默失敗或亂讀
+        var path = Path.Combine(Path.GetTempPath(), $"parity-v99-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(path,
+                """{"schemaVersion": 99, "root": {"id":"/","name":"x","type":"Frame","box":{"x":0,"y":0,"width":1,"height":1}}}""");
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => new JsonDesignSource().GetFrameAsync(new DesignRef(path, "")));
+            Assert.Contains("schemaVersion 99", ex.Message);
+            Assert.Contains("newer Parity", ex.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Beyond_the_512_limit_the_error_speaks_dom_levels_not_object_cycles()
     {
         // F1 殘留:超過 512 的極端頁面,原生訊息是誤導的「object cycle」——要翻成人話

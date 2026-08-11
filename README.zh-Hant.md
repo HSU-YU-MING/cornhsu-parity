@@ -283,6 +283,12 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 
 > action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 
+## 報告字彙表(給解析 `report.json` 的人)
+
+- `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
+- `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`randomized-id`、`size-implausible`。
+- `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。
+
 ## 回歸把關:baseline(M5)
 
 已經有一堆落差的專案,不可能一開就「零落差才給過」。baseline 讓你**只擋新增/惡化**:
