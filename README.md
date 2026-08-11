@@ -11,7 +11,7 @@
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v0.12.0   # pin exact versions while 0.x; a floating @v1 arrives with 1.0
+- uses: HSU-YU-MING/cornhsu-parity@v0.13.0   # pin exact versions while 0.x; a floating @v1 arrives with 1.0
   with:
     config: parity.config.json      # optional, defaults to parity.config.json
     target: /pricing                # optional, check only this route (omit for all)
@@ -318,7 +318,7 @@ jobs:
       - run: |
           npm ci && npm run build
           npm run preview &   # e.g. serving on localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v0.12.0   # pin exact versions while 0.x
+      - uses: HSU-YU-MING/cornhsu-parity@v0.13.0   # pin exact versions while 0.x
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # omit when the design source is a local JSON file
