@@ -142,10 +142,45 @@ public static class Matcher
         }
 
         foreach (var (node, reason) in pending)
-            unmatched.Add(new UnmatchedNode(node.Name, node.Id, reason, node.Box));
+            unmatched.Add(new UnmatchedNode(node.Name, node.Id,
+                reason == "no-anchor" && ContainsRandomizedToken(node.Id) ? "randomized-id" : reason,
+                node.Box));
 
         return new MatchResult(pairs, unmatched);
     }
+
+    /// <summary>
+    /// snapshot 模式的已知盲點(野生實查 F2):React useId / CSS-in-JS 之類的隨機 id 每次載入
+    /// 重新生成,凍在 snapshot 裡的 selector 在下次載入的頁面上不存在,selector 身分關必落空。
+    /// 這裡不救配對(改寫 selector 會讓既有 snapshot 全數失效),只把原因講清楚:
+    /// 「randomized-id」而不是籠統的「no-anchor」,使用者才知道該 ignore 掉或改用 data-parity。
+    /// 樣態:selector 裡有長度 ≥8、字母數字混雜的高熵 token,例如 label-92g58lqqado、
+    /// #3jrOqJD10fXAt6AjqpbEG。純字母的隨機字串(rkxvdnnzty)分不出來,誠實漏放——
+    /// 這是提示用啟發法,寧可漏標也不把穩定 id 誤標成隨機。Figma id("10:2")不會誤中。
+    /// </summary>
+    internal static bool ContainsRandomizedToken(string selector)
+    {
+        foreach (var token in selector.Split(SelectorSeparators, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token.Length < 8) continue;
+            int digits = 0, letters = 0;
+            foreach (var ch in token)
+            {
+                if (char.IsAsciiDigit(ch)) digits++;
+                else if (char.IsAsciiLetter(ch)) letters++;
+            }
+            if (digits + letters != token.Length) continue; // 只看純字母數字 token
+            if (digits >= 2 && letters >= 3) return true;
+            // 長 token + 內部數字(頭尾是字母)也算:wtz1gbigyt、bpi6prqmqwr——
+            // 真實命名的數字幾乎都在字尾(html5、col2),內嵌數字的長字串多半是雜湊
+            if (digits >= 1 && token.Length >= 10
+                && char.IsAsciiLetter(token[0]) && char.IsAsciiLetter(token[^1])) return true;
+        }
+        return false;
+    }
+
+    private static readonly char[] SelectorSeparators =
+        [' ', '>', '.', '#', ':', '(', ')', '[', ']', '=', '"', '\'', '-', '_', ','];
 
     /// <summary>每個實作節點 → 從 root 到自己的祖先鏈(含自己),供算 LCA。</summary>
     private static Dictionary<RenderedNode, IReadOnlyList<RenderedNode>> BuildAncestorChains(RenderedNode root)

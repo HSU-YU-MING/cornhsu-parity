@@ -193,4 +193,38 @@ public class MatcherTests
     [InlineData("cta_button", "CTA-BUTTON")]
     public void Name_normalization_bridges_conventions(string layerName, string domName)
         => Assert.Equal(Matcher.NormalizeName(layerName), Matcher.NormalizeName(domName));
+
+    [Fact]
+    public void Randomized_id_in_selector_gets_a_specific_unmatched_reason()
+    {
+        // 野生實查 F2(MDN):snapshot 凍住的隨機 id 在下次載入不存在 → 配不到是必然,
+        // 理由要講清楚是 randomized-id,不是籠統的 no-anchor
+        var design = Design("1", "frame", children:
+        [
+            Design("body > div#label-92g58lqqado", "div"),           // 隨機 id 樣態
+            Design("body > section:nth-of-type(9)", "div"),          // 穩定 selector,單純配不到
+        ]);
+        var rendered = Rendered("body",
+            children: Rendered("body > p:nth-of-type(1)", "p"));
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Equal(2, result.Unmatched.Count);
+        Assert.Equal("randomized-id", result.Unmatched[0].Reason);
+        Assert.Equal("no-anchor", result.Unmatched[1].Reason);
+    }
+
+    [Theory]
+    [InlineData("body > div#label-92g58lqqado", true)]              // MDN 實測樣態
+    [InlineData("#3jrOqJD10fXAt6AjqpbEG-shapes-title", true)]       // Excalidraw 實測樣態
+    [InlineData("div.css-x9k2mq4w > span", true)]                   // CSS-in-JS class
+    [InlineData("#label-bpi6prqmqwr", true)]                        // 單數字內嵌的長雜湊(MDN 實測)
+    [InlineData("#wtz1gbigyt-input", true)]                         // 同上
+    [InlineData("#label-rkxvdnnzty", false)]                        // 純字母隨機字串:分不出來,誠實漏放
+    [InlineData("10:2", false)]                                     // Figma id 不誤中
+    [InlineData("body > main#content > aside:nth-of-type(1)", false)]
+    [InlineData("#hero > div.cta-button", false)]
+    [InlineData("html5-video-player", false)]                       // 短數字 token 不誤中
+    public void Randomized_token_detection(string selector, bool expected)
+        => Assert.Equal(expected, Matcher.ContainsRandomizedToken(selector));
 }

@@ -243,7 +243,13 @@ internal static class CheckCommand
         }
 
         if (report.Unmatched.Count > 0)
+        {
             Console.WriteLine($"  \x1b[90munmatched: {string.Join(", ", report.Unmatched.Select(u => $"{u.DesignLayer} ({u.Reason})"))}\x1b[0m");
+            if (report.Unmatched.Any(u => u.Reason == "randomized-id"))
+                Console.WriteLine("  \x1b[90mhint: randomized-id = the selector contains an id that is regenerated on every page load " +
+                    "(React useId, CSS-in-JS, …), so snapshot selector matching cannot track it. " +
+                    "Exclude the region via \"ignore\", or give the element a stable anchor (data-parity / a fixed id).\x1b[0m");
+        }
         Console.WriteLine();
     }
 }
