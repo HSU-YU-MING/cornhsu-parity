@@ -48,8 +48,13 @@ public sealed class JsonDesignSource : IDesignSource
         if (string.IsNullOrEmpty(reference.NodeId) || reference.NodeId == root.Id)
             return root;
 
+        // 新手最常見的組合:init 範本的 frame "10:2" + snapshot 基準(DX 實查 D6)——
+        // 只說「找不到」不夠,要說該填什麼:snapshot 的 frame id 就是 target 的 route。
         return root.DescendantsAndSelf().FirstOrDefault(n => n.Id == reference.NodeId)
-            ?? throw new InvalidOperationException($"node {reference.NodeId} is not present in the design JSON: {path}");
+            ?? throw new InvalidOperationException(
+                $"node {reference.NodeId} is not present in the design JSON: {path}. " +
+                $"Available top-level ids: {string.Join(", ", root.DescendantsAndSelf().Take(4).Select(n => $"\"{n.Id}\""))}…" +
+                " If this is a snapshot baseline, the frame id is the target's route (e.g. \"/\").");
     }
 
     /// <summary>JSON 可省略 children → 反序列化成 null,補回空清單。</summary>
