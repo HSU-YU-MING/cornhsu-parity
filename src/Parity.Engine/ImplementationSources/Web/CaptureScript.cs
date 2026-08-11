@@ -102,6 +102,13 @@ internal static class CaptureScript
               const assigned = el.assignedElements();
               kids = assigned.length ? assigned : [...el.children];
               ctxForKids = ctx; // 塞進來的是外層 light DOM 的元素,脈絡沿用
+            } else if (el.tagName.toLowerCase() === 'svg') {
+              // SVG 當葉子(野生實查 F3):內部是繪圖指令(path/g/defs),沒有 padding/字體
+              // 語意,對設計比對是雜訊;動畫/重繪下 nth-of-type 又不穩,配對必 flaky
+              // (tailwindcss.com 實測 44 個 unmatched、兩次配對數不同)。svg 本身照量
+              // (圖示的尺寸/位置還是要比),內部不展開。
+              kids = [];
+              ctxForKids = ctx;
             } else {
               kids = [...el.children];
               // 自身有縮放才開新脈絡累積,否則沿用(避免每層都複製物件)
