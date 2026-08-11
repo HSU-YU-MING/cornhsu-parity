@@ -45,6 +45,18 @@ public class ReportingTests
     public void Empty_reports_score_100() => Assert.Equal(100, FidelityScore.Compute([]));
 
     [Fact]
+    public void Score_never_rounds_up_to_a_perfect_100()
+    {
+        // 野生實查 F5(Stripe 3306/3322 忠實 = 99.5%):四捨五入進成 100,
+        // 和 GATE FAIL 同框出現。100 保留給「全部忠實」,差一個節點就是 99。
+        var nodes = new List<NodeResult>();
+        for (var i = 0; i < 995; i++) nodes.Add(Node($"ok{i}"));
+        nodes.Add(Node("bad", Diff("fontSize", "32", "30")));
+
+        Assert.Equal(99, FidelityScore.Compute([Report(996, nodes)]));
+    }
+
+    [Fact]
     public void Score_ignores_pure_soft_diff_nodes()
     {
         // 只有軟落差(font-family)的節點算「忠實」,不扣分(與 gate 判定一致)

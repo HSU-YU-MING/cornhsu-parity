@@ -31,7 +31,10 @@ public static class FidelityScore
         var total = list.Sum(r => r.Summary.DesignNodes);
         if (total == 0) return 100;
         var clean = list.Sum(r => r.Nodes.Count(IsFaithful));
-        return (int)Math.Round(100.0 * clean / total);
+        var score = (int)Math.Round(100.0 * clean / total);
+        // 100 保留給「全部忠實」:四捨五入會把 99.5+ 進成 100,出現「100/100 卻 GATE FAIL」
+        // 的矛盾標題(野生實查 F5,Stripe 3306/3322 忠實)。封頂 99,滿分只有一種拿法。
+        return score == 100 && clean < total ? 99 : score;
     }
 }
 
