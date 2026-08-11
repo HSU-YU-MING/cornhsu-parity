@@ -14,7 +14,7 @@
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v0.12.0   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
+- uses: HSU-YU-MING/cornhsu-parity@v0.13.0   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
   with:
     config: parity.config.json      # 選填,預設 parity.config.json
     target: /pricing                # 選填,只檢查這個 route(省略 = 全部)
@@ -268,7 +268,7 @@ jobs:
       - run: |
           npm ci && npm run build
           npm run preview &   # 例:serve 在 localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v0.12.0   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
+      - uses: HSU-YU-MING/cornhsu-parity@v0.13.0   # 0.x 期間 pin 版本;發 1.0 後可改用移動式 @v1
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # 設計來源用本機 JSON 時可省略
