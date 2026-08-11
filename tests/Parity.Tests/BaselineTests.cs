@@ -184,4 +184,52 @@ public class BaselineStoreTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
+    [Fact]
+    public async Task Adopts_pre_score_era_db_by_adding_the_missing_column()
+    {
+        // v0.13.0 三通路驗證實測抓到的(parity-action-test 的 db 是 0.2.0 建的):
+        // 0.6.0 之前的 db 連 Score 欄都沒有——「legacy schema 恰好等於 InitialCreate」
+        // 的接管假設只對 0.6+ 成立,標完 InitialCreate 後 EF 認定 schema 已最新,
+        // 缺欄永遠不會補 → 'no such column: s.Score'。
+        // 上面那條測試抓不到它:EnsureCreated 用的是「現在的」model,天生就有 Score。
+        var path = TempDb();
+        try
+        {
+            var options = new DbContextOptionsBuilder<BaselineDbContext>()
+                .UseSqlite($"Data Source={path};Pooling=False").Options;
+            await using (var legacy = new BaselineDbContext(options))
+            {
+                // 0.2.0 的實際 schema(raw SQL,不經現在的 model):Snapshots 沒有 Score
+                await legacy.Database.ExecuteSqlRawAsync("""
+                    CREATE TABLE "Snapshots" ("Id" INTEGER NOT NULL CONSTRAINT "PK_Snapshots" PRIMARY KEY AUTOINCREMENT,
+                        "CreatedAt" TEXT NOT NULL, "Commit" TEXT NULL, "Branch" TEXT NULL);
+                    CREATE TABLE "Diffs" ("Id" INTEGER NOT NULL CONSTRAINT "PK_Diffs" PRIMARY KEY AUTOINCREMENT,
+                        "SnapshotId" INTEGER NOT NULL, "Route" TEXT NOT NULL, "DesignLayer" TEXT NOT NULL,
+                        "Selector" TEXT NOT NULL, "Prop" TEXT NOT NULL, "Severity" TEXT NOT NULL,
+                        "Expected" TEXT NOT NULL, "Actual" TEXT NOT NULL,
+                        CONSTRAINT "FK_Diffs_Snapshots_SnapshotId" FOREIGN KEY ("SnapshotId") REFERENCES "Snapshots" ("Id") ON DELETE CASCADE);
+                    CREATE INDEX "IX_Diffs_SnapshotId" ON "Diffs" ("SnapshotId");
+                    INSERT INTO "Snapshots" ("CreatedAt", "Commit", "Branch") VALUES ('2026-07-01 00:00:00', 'abc123', 'main');
+                    INSERT INTO "Diffs" ("SnapshotId", "Route", "DesignLayer", "Selector", "Prop", "Severity", "Expected", "Actual")
+                        VALUES (1, '/', 'btn', 'sel', 'color', 'Serious', 'e', 'a');
+                    """);
+            }
+
+            await using (var store = new BaselineStore(path))
+            {
+                var legacyLatest = await store.GetLatestAsync(); // 舊資料要讀得動(Score 為 null)
+                Assert.NotNull(legacyLatest);
+                Assert.Null(legacyLatest!.Score);
+                Assert.Equal("btn", Assert.Single(legacyLatest.Diffs).DesignLayer);
+
+                await store.SaveAsync(
+                    [new DiffRecord("/", "btn", "sel", "color", Severity.Serious, "e", "a")],
+                    new DateTime(2026, 8, 11), score: 88);
+                var latest = await store.GetLatestAsync();
+                Assert.Equal(88, latest!.Score); // 新資料寫得進補上的欄
+            }
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
 }

@@ -2,6 +2,16 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 0.13.1
+
+- **修正:0.6.0 之前建的 baseline db 開啟即炸**(`no such column: s.Score`)。0.10.0 的
+  EF migration 自動接管假設「legacy schema 恰好等於 InitialCreate」——只對 0.6.0+ 成立,
+  更早的 db 連 Score 欄都沒有(0.6.0 是手動 ALTER 加的);標完 InitialCreate 後 EF 認定
+  schema 已最新,缺欄永遠不會補。接管前先檢查並補上歷史缺欄。
+  **v0.13.0 的三通路發佈驗證抓到的**:parity-action-test 的 db 是 0.2.0 建的——又一個
+  自家樣本(全部 0.6+)量不出的盲區;既有的接管測試用「現在的 model」EnsureCreated,
+  天生就有 Score,所以也抓不到。新增用 raw SQL 重現 0.2.0 schema 的回歸測試。
+
 ## 0.13.0
 
 **首輪野生實查的產物**(對照 XamlContrast 的外部專案實查;方法與完整發現見
