@@ -1,7 +1,7 @@
 # Parity 1.0 — 介面凍結前審查表
 
 > **用途**:1.0.0 = 對外承諾「以下介面凍結,破壞它就升 major」。這份表把**當前所有公開契約面**攤開,讓你在 dogfooding 這 2–4 週(2026-07-18 起)逐項決定「凍結 / 趁現在改 / 待議」。
-> **狀態**:審查中。動工前 = 0.x,改介面免費;發 1.0 後 = 改介面要 major。**這是最後一次免費窗口。**
+> **狀態**:**審查完成(2026-08-11)——六面全數拍板,唯餘發版當下的機械動作(CHANGELOG 凍結清單、`v1` tag)**。動工前 = 0.x,改介面免費;發 1.0 後 = 改介面要 major。
 > **產生**:2026-07-22,盤點自當時原始碼(`ParityConfig.cs` / `Program.cs` / `Report.cs` / `action.yml` / `BaselineDbContext.cs`)。
 > **進度更新**:2026-08-01——**0.10.0 已把面 4、面 5 的高風險待決項全部做掉**(見下方各項的 `已於 0.10.0 處理`)。剩餘待決集中在「字面拼寫凍結」與「發 1.0 時的 `v1` tag」,見文末動作清單。
 > **進度更新**:2026-08-11(野生實查輪,PR #26 + onboarding 分支)——面 2 新增 `snapshot --stabilize` 旗標(加法,不破壞);面 4 **發現一個先前漏盤的契約面**:`unmatched[].reason` 字彙(本輪就長出 `randomized-id` 與 `size-implausible` 兩個新值),見面 4 新增待決項;面 1 的「init 範本最小子集」決定被 DX 實查 D1 推翻(改為註解並列 Figma/snapshot 兩條路——範本不是 schema,不影響凍結)。動作清單的「npx 端到端」已實測打勾。
@@ -36,9 +36,10 @@
 | `gate.minMatchRate` | 0(=不設門檻) | 0–1;0 配對永遠擋 | |
 
 **凍結前要決的點** — 已定案(2026-07-22)
-- [ ] **`tolerances` 各項預設值**(2026-08-11 補列):預設值改變會讓同一頁面 PASS↔FAIL 翻轉,
+- [x] **`tolerances` 各項預設值**(2026-08-11 補列):預設值改變會讓同一頁面 PASS↔FAIL 翻轉,
   對 CI 使用者是實質行為變更,但先前只凍結了「欄位」沒凍結「預設」。
-  **建議**:預設值凍結;調整預設 = minor + CHANGELOG 顯著標示(比照「演進條款」節)。決定:__
+  ——**已定案(2026-08-11):凍**。預設值凍結;調整預設 = minor + CHANGELOG 顯著標示
+  (演進條款第 3 級)。使用者視角:這是「什麼都沒改 CI 卻紅了」的最典型來源,必須可預期。
 - [x] `frame` 一欄兩義 → **維持**(「設計來源內的 frame 識別」是一致概念,只是各來源字串形式不同;不改名/不拆欄)。
 - [x] 嚴重度字彙 `minor/medium/serious/critical` → **維持凍結**(清楚通用;`medium` 保留)。
 - [x] `designToken` 命名 → **維持**(來源中立,未來 Penpot 等也可能需 token;與 action 的 `figma-token` 分屬不同層,非真衝突)。
@@ -93,7 +94,9 @@
 - [x] ⚠️ **README 引用不一致**:line 14 用 `@v0.9.7`、line 266 用 `@v1`,但 repo **沒有 `v1` 這個移動式 major tag**。這是別人 copy-paste 就會踩的坑。
   ——**引用不一致已解**(0.10.1:兩處統一為 `@v0.10.1`,都指向真實存在的 tag)。
   但 **① 建立並維護 `v1` moving tag 仍未做**,那是發 1.0 當下的動作,見文末清單。
-- [ ] input 名(kebab-case)與預設值凍結——`comment`/`upload-report` 預設為 true 是對外行為承諾。
+- [x] input 名(kebab-case)與預設值凍結——`comment`/`upload-report` 預設為 true 是對外行為承諾。
+  ——**已定案(2026-08-11):凍**,並明文:**新增「選填」input = minor,不算破壞**
+  (凍結是為了保護既有 workflow,不是為了阻止功能演進——不寫這句,以後加任何選項都會猶豫)。
 
 ---
 
@@ -111,13 +114,20 @@
 - `*Box` (`Box`): **`x, y, w, h`**(注意是 `w`/`h`,不是 `width`/`height`)
 
 **凍結前要決的點**
-- [ ] `severity` 字串值:`none/minor/medium/serious/critical`;`status`:`mismatch/missing`——這些字面拼寫凍結後改一個字母就是 major。**仍待決。**
+- [x] `severity` 字串值:`none/minor/medium/serious/critical`;`status`:`mismatch/missing`——這些字面拼寫凍結後改一個字母就是 major。
+  ——**已定案(2026-08-11):凍——且為「封閉集」,拼寫與成員都凍結**。消費端視角:
+  嚴重度會進 switch 語句與 `gate.failOn` 設定,冒出新等級與改拼寫同等災難——
+  新增等級 = major。(與 reason/matchedBy 的「開放集合」刻意相反:嚴重度是 gate 的
+  判斷基礎,字彙必須封閉;未配對理由是診斷資訊,字彙必須能長。)
 - [ ] **`unmatched[].reason` 與 `nodes[].matchedBy` 的字彙**(2026-08-11 補盤,先前漏列):
   `reason` 目前有 `no-anchor` / `ambiguous-or-missing-text` / `randomized-id` / `size-implausible`——
   後兩個就是野生實查這一輪長出來的,**證明這是會持續演進的開放字彙**。建議凍結策略:
   **明文宣告為開放集合**(消費端必須容忍未知值,已知值的拼寫不變)而非凍死清單——
   否則每輪實查加一個理由就是 major。`matchedBy`(`selector`/`explicit`/`auto-text`/
   `auto-name`/`auto-container`)同此處理。
+  ——**已定案(2026-08-11):凍結策略 = 開放集合**。消費端必須容忍未知值(標準的
+  forward-compatible enum 作法);已知值拼寫不變;**配套義務:README/文件維護
+  「當前字彙表」,每次新增值同步更新**——開放但無文件 = 黑箱,消費端無從得知有哪些值。
 - [x] `WhenWritingNull`:`unit`/`delta` 為 null 時整個 key 消失。消費者(含未來自家伺服器)必須容忍「key 不存在」。要不要改成永遠輸出(null 顯式)以簡化消費端?
   ——**已於 0.10.0 處理**:改為顯式輸出 `null`(`ReportJson.cs` 刻意不設 `WhenWritingNull`),契約少一個「有時消失的 key」。
 - [x] `Box` 的 `w/h` 簡寫——疊框視圖消費者要知道。要不要正名 `width/height` 讓 JSON 自我解釋?
@@ -157,13 +167,17 @@
 - 深度 512 → 讀寫都放寬(w/h 舊欄名相容已於 0.10.0 處理,`BoxJsonConverter` 讀時照吃)
 
 **凍結前要決的點**
-- [ ] **相容策略明文化**。目前事實上的策略是「格式向後可讀 + 語意演進靠重拍一次遷移」
+- [x] **相容策略明文化**。目前事實上的策略是「格式向後可讀 + 語意演進靠重拍一次遷移」
   (工具會以 `randomized-id` 之類的理由提示重拍,不靜默壞掉)。
-  **建議**:1.0 承諾寫成——「snapshot 檔新版**永遠讀得動舊檔**(欄位相容);但**量測/
-  selector 語意演進**可能使舊基準過時,此時工具必須明確提示重拍(不得靜默誤報),
-  屬 minor(見演進條款)」。決定:__
-- [ ] snapshot 檔要不要加 `schemaVersion`(report.json 於 0.10.0 加過同款)?
-  **建議**:加(趁 0.x 免費;讀到沒有版本欄的舊檔視為 v1 照吃,不破壞)。決定:__
+  ——**已定案(2026-08-11):凍**,措辭收窄為——「**1.x 內**新版永遠讀得動舊檔
+  (欄位相容);量測/selector 語意演進可能使舊基準過時,此時工具必須明確提示重拍
+  (不得靜默誤報),屬 minor(演進條款第 2 級);major 才允許丟棄讀取相容」。
+  維護者視角:「永遠」是無限期承諾,配上 schemaVersion 才有 2.0 的逃生門。
+- [x] snapshot 檔要不要加 `schemaVersion`(report.json 於 0.10.0 加過同款)?
+  ——**已定案並實作(2026-08-11):加**。信封 `{ "schemaVersion": 1, "root": {...} }`
+  (`SnapshotDocument`);讀取端嗅探:無版本欄的舊檔(裸 DesignNode,含手寫 design JSON)
+  視為 v1 照吃、零破壞;讀到比自己新的版本給明確錯誤(「由較新的 Parity 產生,請升級」),
+  不靜默失敗。E2E:新檔含信封、samples/demo 裸檔照常運作。
 
 ---
 
@@ -174,12 +188,14 @@ breaking,但把每次量測修正都升 major 等於凍結工具的核心價值�
 (修捲動進場動畫的量測 → 破壞基準相容 → 依 0.x 慣例升 minor 並在 CHANGELOG 開頭
 標「升級必做:重拍基準」)。**不先寫下規則,1.0 後第一次量測修正就會陷入 major/minor 辯論。**
 
-**建議寫進 1.0 承諾的規則**(決定:__):
+**建議寫進 1.0 承諾的規則**——**已定案(2026-08-11):採納**,並補第 5 條(使用者保護):
 1. **介面**(config / CLI / action / report / baseline / snapshot 六面)破壞 → **major**
 2. **量測語意演進**(量得更準、配對規則變化,可能需重拍 snapshot 基準或使 baseline
    計數變化)→ **minor**,且 CHANGELOG 開頭顯著標示「升級必做」(0.11.0 格式)
 3. **預設值調整**(容差、gate 預設)→ **minor** + 顯著標示
 4. 行為完全不變的修正 → patch
+5. **minor 若需要重拍基準,工具必須大聲失敗並給指引**(如 `randomized-id` 的遷移提示、
+   配對可信度 exit 3)——不得靜默給錯誤結果。這已是現行行為,升格為承諾。
 
 ---
 

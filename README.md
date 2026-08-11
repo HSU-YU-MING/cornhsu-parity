@@ -340,6 +340,12 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 > nuget.org). This repo's own `.github/workflows/ci.yml` instead **builds from source** and runs
 > the offline demo as a self-check, so it does not depend on a published release.
 
+## Report vocabulary (for anyone parsing `report.json`)
+
+- `severity` — **closed set** (spelling and membership frozen): `none` / `minor` / `medium` / `serious` / `critical`. `status`: `mismatch` / `missing`.
+- `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `randomized-id`, `size-implausible`.
+- `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`.
+
 ## Regression gating: baselines (M5)
 
 A project that already has a pile of gaps cannot start at "zero gaps or no merge". A baseline

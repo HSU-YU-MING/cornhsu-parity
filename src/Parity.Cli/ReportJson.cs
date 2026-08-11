@@ -27,7 +27,9 @@ public static class ReportJson
     public static readonly JsonSerializerOptions Indented = new(Compact) { WriteIndented = true };
 
     /// <summary>
-    /// snapshot 樹的序列化,超深時給人話:System.Text.Json 超過 MaxDepth 丟的是
+    /// snapshot 樹的序列化——自 1.0 審查面 6 起包 schemaVersion 信封
+    /// (無版本欄的舊檔讀取端視為 v1 照吃,見 JsonDesignSource)。
+    /// 超深時給人話:System.Text.Json 超過 MaxDepth 丟的是
     /// 「A possible object cycle was detected」——樹沒有環,只是深,照原文丟出去
     /// 只會讓人往錯的方向查(野生實查 F1 的殘留備忘)。
     /// </summary>
@@ -35,7 +37,8 @@ public static class ReportJson
     {
         try
         {
-            return JsonSerializer.Serialize(root, Indented);
+            return JsonSerializer.Serialize(
+                Parity.Engine.DesignSources.Snapshot.SnapshotDocument.Of(root), Indented);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException && ex.Message.Contains("object cycle"))
         {
