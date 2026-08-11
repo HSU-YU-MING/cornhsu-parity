@@ -17,10 +17,33 @@ public static class ReportJson
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+        // snapshot 也用這組落地整棵 DesignNode 樹:真實網站 DOM 常見 30+ 層巢狀
+        // (每層 Children 佔 2 個 JSON 深度),預設 MaxDepth 64 會炸。與擷取端
+        // WebImplementationSource.CaptureParseOptions 同值。
+        MaxDepth = 512,
     };
 
     /// <summary>report.json 落地用(縮排,方便人看與 diff);回讀也用這組。</summary>
     public static readonly JsonSerializerOptions Indented = new(Compact) { WriteIndented = true };
+
+    /// <summary>
+    /// snapshot 樹的序列化,超深時給人話:System.Text.Json 超過 MaxDepth 丟的是
+    /// 「A possible object cycle was detected」——樹沒有環,只是深,照原文丟出去
+    /// 只會讓人往錯的方向查(野生實查 F1 的殘留備忘)。
+    /// </summary>
+    public static string SerializeSnapshotTree(Parity.Engine.DesignSources.DesignNode root)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(root, Indented);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException && ex.Message.Contains("object cycle"))
+        {
+            throw new InvalidOperationException(
+                "the captured DOM nests deeper than the supported limit (JSON depth 512 ≈ 250 DOM levels) — " +
+                "cannot write the snapshot. Add the deepest region to \"ignore\" in parity.config.json to prune it.", ex);
+        }
+    }
 }
 
 /// <summary>

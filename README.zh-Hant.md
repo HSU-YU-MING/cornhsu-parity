@@ -91,6 +91,8 @@ export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
 parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
 parity snapshot            # 把「現在跑著的畫面」凍結成設計基準——重構/改版守門,不需要 Figma
+                           #   (--stabilize 連拍 3 次,把「會動」的區域——廣告輪播、動畫、
+                           #   lazy 媒體——列出來並給可貼進 config 的 ignore 建議)
 parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
 parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
 ```
@@ -155,7 +157,7 @@ electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
 | 設計來源 | config | 適合誰 |
 |---|---|---|
 | **Figma**(主力) | `figmaFileKey` + `FIGMA_TOKEN` | 有 Figma 檔的正規流程 |
-| **快照**(`parity snapshot`) | `designFile` 指向產出的快照 JSON | **重構/改版守門**:現在的畫面是對的,存成基準,之後 check 保證不跑版(visual regression 的數值版)。配對走 selector 身分,100% 確定性 |
+| **快照**(`parity snapshot`) | `designFile` 指向產出的快照 JSON | **重構/改版守門**:現在的畫面是對的,存成基準,之後 check 保證不跑版(visual regression 的數值版)。配對走 selector 身分,100% 確定性——隨機 id(React `useId`、CSS-in-JS)在擷取時就被偵測、改走結構路徑,重新生成也不受影響。舊版拍的基準若把隨機 id 凍進了 selector,會列為未配對(理由 `randomized-id`)——重跑一次 `parity snapshot` 即完成遷移 |
 | **一張圖 + 標註** | `designImage`(PNG/JPG)+ `designFile`(標註) | 只有圖的場景:外包 PNG、老專案只剩截圖。**XD / Sketch / PS 等其他工具匯出圖片就能走這條**(萬用轉接頭)。標註 = DesignNode JSON,`fill` 可省略——顏色由引擎從圖片對應區域取樣(TEXT 字色刻意不取樣:反鋸齒混色取不準,可手填) |
 | 手寫 JSON | `designFile` | 離線示範/測試 |
 

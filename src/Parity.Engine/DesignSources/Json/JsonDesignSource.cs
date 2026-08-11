@@ -16,6 +16,9 @@ public sealed class JsonDesignSource : IDesignSource
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
         Converters = { new JsonStringEnumConverter() },
+        // snapshot 凍結的真實網站 DOM 常見 30+ 層巢狀(每層 Children 佔 2 個 JSON 深度),
+        // 預設 MaxDepth 64 讀不回來。與擷取端 WebImplementationSource.CaptureParseOptions 同值。
+        MaxDepth = 512,
     };
 
     public async Task<DesignNode> GetFrameAsync(DesignRef reference, CancellationToken ct = default)
@@ -25,8 +28,19 @@ public sealed class JsonDesignSource : IDesignSource
             throw new FileNotFoundException($"design JSON file not found: {path}", path);
 
         await using var stream = File.OpenRead(path);
-        var root = await JsonSerializer.DeserializeAsync<DesignNode>(stream, SerializerOptions, ct)
-            ?? throw new InvalidOperationException($"could not parse design JSON: {path}");
+        DesignNode root;
+        try
+        {
+            root = await JsonSerializer.DeserializeAsync<DesignNode>(stream, SerializerOptions, ct)
+                ?? throw new InvalidOperationException($"could not parse design JSON: {path}");
+        }
+        catch (JsonException ex) when (ex.Message.Contains("depth", StringComparison.OrdinalIgnoreCase))
+        {
+            // 超深時 System.Text.Json 的訊息只講 JSON 深度,讀的人對不回自己的頁面——翻成人話
+            throw new InvalidOperationException(
+                $"design JSON nests deeper than the supported limit (JSON depth 512 ≈ 250 DOM levels): {path}. " +
+                "If this is a snapshot, add the deepest region to \"ignore\" and re-run parity snapshot.", ex);
+        }
 
         root = FillDefaults(root);
 

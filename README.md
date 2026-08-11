@@ -99,6 +99,8 @@ parity report              # Re-render the Markdown report from an existing repo
                            #   (no re-scan; --md writes a file, otherwise it prints to stdout)
 parity snapshot            # Freeze the currently rendered UI as the design baseline —
                            #   a refactor/redesign guard that needs no Figma at all
+                           #   (--stabilize captures 3× and suggests "ignore" entries for
+                           #   regions that move: rotating ads, animations, lazy media)
 parity lint                # Design lint: are the design file's values inside the allowed
                            #   design-token set? (design only, no implementation)
 parity check --reverse     # Reverse view, for a designer redrawing an existing page:
@@ -171,7 +173,7 @@ electron . --remote-debugging-port=9222      # your app, with this one extra fla
 | Design source | config | Who it is for |
 |---|---|---|
 | **Figma** (primary) | `figmaFileKey` + `FIGMA_TOKEN` | The normal workflow, when you have a Figma file |
-| **Snapshot** (`parity snapshot`) | `designFile` pointing at the generated snapshot JSON | **Refactor/redesign guard**: today's rendering is correct, so freeze it as the baseline and later checks prove nothing drifted (the numeric version of visual regression). Matching goes through selector identity, so it is 100% deterministic |
+| **Snapshot** (`parity snapshot`) | `designFile` pointing at the generated snapshot JSON | **Refactor/redesign guard**: today's rendering is correct, so freeze it as the baseline and later checks prove nothing drifted (the numeric version of visual regression). Matching goes through selector identity, so it is 100% deterministic — randomized ids (React `useId`, CSS-in-JS) are detected at capture time and replaced with structural paths, so they survive regeneration. Baselines taken by older versions may list such nodes as unmatched (reason `randomized-id`); re-run `parity snapshot` once to migrate |
 | **An image + annotations** | `designImage` (PNG/JPG) + `designFile` (annotations) | When all you have is a picture: an outsourced PNG, or a legacy project down to screenshots. **This is also the path for XD / Sketch / Photoshop and anything else that can export an image** — a universal adapter. The annotations are DesignNode JSON, and `fill` may be omitted: the engine samples the color from the corresponding region of the image. (Text color is deliberately not sampled — anti-aliasing blends it and the reading is unreliable — but you can fill it in by hand.) |
 | Hand-written JSON | `designFile` | Offline demos and tests |
 

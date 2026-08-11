@@ -95,7 +95,7 @@ public static class Matcher
             stillRemaining.Add(d);
         }
 
-        // --- 第 3 關:圖層名 ↔ id / class / aria-label ---
+        // --- 第 3 關:圖層名 ↔ id / class / aria-label(附尺寸合理性防線)---
         var pending = new List<(DesignNode Node, string Reason)>();
         foreach (var d in stillRemaining)
         {
@@ -106,11 +106,13 @@ public static class Matcher
                 continue;
             }
 
-            var hit = candidates.FirstOrDefault(r =>
-                !taken.Contains(r) && NameMatches(r, key));
+            var named = candidates.Where(r => !taken.Contains(r) && NameMatches(r, key)).ToList();
+            var hit = named.FirstOrDefault(r => SizePlausible(d, r));
 
             if (hit is not null)
                 Pair(d, hit, "auto-name");
+            else if (named.Count > 0)
+                pending.Add((d, "size-implausible"));
             else
                 pending.Add((d, !string.IsNullOrWhiteSpace(d.Characters) ? "ambiguous-or-missing-text" : "no-anchor"));
         }
@@ -142,10 +144,47 @@ public static class Matcher
         }
 
         foreach (var (node, reason) in pending)
-            unmatched.Add(new UnmatchedNode(node.Name, node.Id, reason, node.Box));
+            unmatched.Add(new UnmatchedNode(node.Name, node.Id,
+                reason == "no-anchor" && ContainsRandomizedToken(node.Id) ? "randomized-id" : reason,
+                node.Box));
 
         return new MatchResult(pairs, unmatched);
     }
+
+    /// <summary>
+    /// snapshot 模式的已知盲點(野生實查 F2):React useId / CSS-in-JS 之類的隨機 id 每次載入
+    /// 重新生成,凍在 snapshot 裡的 selector 在下次載入的頁面上不存在,selector 身分關必落空。
+    /// 這裡不救配對(改寫 selector 會讓既有 snapshot 全數失效),只把原因講清楚:
+    /// 「randomized-id」而不是籠統的「no-anchor」,使用者才知道該 ignore 掉或改用 data-parity。
+    /// 樣態:selector 裡有長度 ≥8、字母數字混雜的高熵 token,例如 label-92g58lqqado、
+    /// #3jrOqJD10fXAt6AjqpbEG。純字母的隨機字串(rkxvdnnzty)分不出來,誠實漏放——
+    /// 這是提示用啟發法,寧可漏標也不把穩定 id 誤標成隨機。Figma id("10:2")不會誤中。
+    /// 啟發法與 CaptureScript 的 looksRandom 同步(那邊擷取時就不拿高熵 id 當錨點,
+    /// 新 snapshot 的 selector 不會再含隨機 id;這裡只剩舊 snapshot 的遷移提示)——兩邊改要一起改。
+    /// </summary>
+    internal static bool ContainsRandomizedToken(string selector)
+    {
+        foreach (var token in selector.Split(SelectorSeparators, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token.Length < 8) continue;
+            int digits = 0, letters = 0;
+            foreach (var ch in token)
+            {
+                if (char.IsAsciiDigit(ch)) digits++;
+                else if (char.IsAsciiLetter(ch)) letters++;
+            }
+            if (digits + letters != token.Length) continue; // 只看純字母數字 token
+            if (digits >= 2 && letters >= 3) return true;
+            // 長 token + 內部數字(頭尾是字母)也算:wtz1gbigyt、bpi6prqmqwr——
+            // 真實命名的數字幾乎都在字尾(html5、col2),內嵌數字的長字串多半是雜湊
+            if (digits >= 1 && token.Length >= 10
+                && char.IsAsciiLetter(token[0]) && char.IsAsciiLetter(token[^1])) return true;
+        }
+        return false;
+    }
+
+    private static readonly char[] SelectorSeparators =
+        [' ', '>', '.', '#', ':', '(', ')', '[', ']', '=', '"', '\'', '-', '_', ','];
 
     /// <summary>每個實作節點 → 從 root 到自己的祖先鏈(含自己),供算 LCA。</summary>
     private static Dictionary<RenderedNode, IReadOnlyList<RenderedNode>> BuildAncestorChains(RenderedNode root)
@@ -177,6 +216,21 @@ public static class Matcher
             len = i;
         }
         return len > 0 ? common[len - 1] : null;
+    }
+
+    /// <summary>
+    /// auto-name 的尺寸合理性防線(2026-08-11 路線 B 實查 B3):通用圖層名(Content/Button)
+    /// 會在無關頁面撞到同名元素,產生 critical 級荒謬落差、傷害信任。實測數據:
+    /// 假配對的面積比 148×~703×(Content 1969×3948 vs 603×41 = 318×),正當配對全部 ≈1×;
+    /// 「設計畫 3 筆、實作長出 20 筆」的合法內容差也只到個位數——面積比 16(等於雙軸各 4×)
+    /// 之上不可能是同一個東西,拒當配對。已知極限:同尺寸的撞名(16×16 圖示 vs 16×16 圖示)
+    /// 幾何分不出來,誠實放行——那要語意才殺得掉。
+    /// </summary>
+    private static bool SizePlausible(DesignNode d, RenderedNode r)
+    {
+        var da = Math.Max(1, d.Box.W) * Math.Max(1, d.Box.H);
+        var ra = Math.Max(1, r.Box.W) * Math.Max(1, r.Box.H);
+        return Math.Max(da, ra) / Math.Min(da, ra) <= 16;
     }
 
     private static bool NameMatches(RenderedNode r, string normalizedLayerName)

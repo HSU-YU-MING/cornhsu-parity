@@ -2,6 +2,41 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發佈
+
+**首輪野生實查的產物**(對照 XamlContrast 的外部專案實查;方法與完整發現見
+`docs/野生實查-2026-08-10-路線A-snapshot.md`):8 個公開網站 × snapshot 模式,
+6 個發現全部是自家 dogfooding 樣本(同作者、cornhsu.com 21 頁)量不出來的。
+
+- **修正:深 DOM 讓 snapshot 落地/回讀 crash**(F1)。Wikipedia 條目頁(約 31 層巢狀)
+  擷取成功、序列化炸掉——擷取端早已為此放寬 `MaxDepth`,但落地(`ReportJson`)與回讀
+  (`JsonDesignSource`)沒跟上。兩處補齊 512,同一個教訓修完整。
+- **修正:隨機 id 根治**(F2)。React `useId` / CSS-in-JS 的隨機 id 每次載入重新生成,
+  拿它當 selector 錨點 = snapshot 凍住的路徑下次載入必失效。擷取端偵測高熵 id、
+  改走結構路徑(nth-of-type),路徑跨載入穩定——MDN 實測未配對 48 → **0**。
+  舊 snapshot 若凍有隨機 id selector,該節點列為 `randomized-id` 並提示重跑一次
+  `parity snapshot` 完成遷移(那些節點在舊版本來就永遠配不到,遷移只會變好)。
+  純字母隨機字串(rkxvdnnzty)仍分不出來,但結構路徑讓它不再是問題。
+- **修正:SVG 當葉子**(F3)。內部繪圖指令(path/g/defs)沒有 padding/字體語意,動畫下
+  nth-of-type 又不穩(tailwindcss.com 實測 44 個 unmatched、兩次配對數不同)。svg 本身
+  照量,內部不展開。既有 snapshot 若凍有 SVG 內部節點,重拍一次即可對齊。
+- **新增:`parity snapshot --stabilize`**(F4)。連拍 3 次、比對擷取樹,列出「會動」的
+  區域(廣告輪播、動畫、lazy 媒體;收攏到最高的不穩定祖先),並給可直接貼進 config 的
+  `ignore` 建議——MDN 實測一次抓出 79 個不穩定區域。
+- **修正:auto-name 假配對的尺寸合理性防線**(路線 B 實查 B3)。通用圖層名(Content/
+  Button)會在無關頁面撞到同名元素,產生 critical 級荒謬落差。實測數據:假配對面積比
+  148×~703×,正當配對全部 ≈1×——面積比 >16(雙軸各 4×)拒當配對,理由列
+  `size-implausible`。已知極限:同尺寸撞名(16×16 圖示對 16×16 圖示)幾何分不出來。
+- **修正:Figma API 429 的錯誤訊息(兩層)**。被限流時原訊息提示「查 scope/fileKey」,
+  把人帶去錯的方向;而且免費方案的方案級額度一撞就是「天」(實測 Retry-After 367422 秒
+  ≈ 4.3 天),說「等一下」也是誤導——現在把 `Retry-After` 讀出來換算成分/時/天講,
+  並提醒已抓過的 frame 走 `.parity/cache` 不受影響。
+- **修正:超深頁面的錯誤訊息講人話**(F1 殘留)。超過 512 層 JSON 深度時,原生訊息是
+  誤導的「object cycle」——snapshot 落地與 designFile 回讀兩處都包成「DOM 巢狀超過
+  支援上限(約 250 層),用 ignore 修剪最深的區域」。
+- **修正:分數不再四捨五入進成 100**(F5)。99.5% 忠實被進位成 100,「100/100」與
+  GATE FAIL 同框(Stripe 實測 3306/3322)。滿分保留給「全部忠實」,差一個節點就是 99。
+
 ## 0.12.0
 
 **對外語言統一為英文。** 引擎行為、報告 schema、exit code、CLI 介面(指令與旗標名稱)全部不變 ——
