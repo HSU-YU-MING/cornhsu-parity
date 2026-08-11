@@ -21,6 +21,17 @@
 
 ## 已知盲點 / 該補的
 
+- **auto-name 通用名假配對**(2026-08-11 路線 B 實查 B3):「Content」之類的通用圖層名
+  會在無關頁面上撞到 `#content` 等容器,產生 critical 級荒謬落差。候選規則:auto-name
+  配對加箱體合理性檢查,或通用名單字不做 auto-name。動工前先蒐集更多野生樣本。
+- **隨機 id 的偵測降級**(2026-08-10 路線 A 實查 F2 殘留):純字母隨機字串(rkxvdnnzty)
+  現行啟發法分不出來,誠實漏放;且「偵測到隨機 id 就改用結構路徑」會讓既有 snapshot
+  失效,需要遷移設計。
+- **深度超過 512 的錯誤訊息**(F1 殘留):仍是誤導的「object cycle」,值得包成人話。
+- **取樣紀律**(對照 XamlContrast 憲法 8.3):實查樣本必須包含非作者的網站/設計檔——
+  路線 A(8 個野生網站)與路線 B(2 個公開設計系統 Figma 檔)的 11 個發現,沒有一個
+  能在自家 dogfooding 樣本上量出來。方法與結果見 docs/野生實查-*.md。
+
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。
 - ~~**CI 裡的 `--baseline` 沒實跑**~~ **已實證**(2026-07-18,parity-action-test):main 留一條既有落差 + commit `parity.baseline.db` + `baseline: true` → ✓ CI 綠(舊債不擋)✓ PR 新增一條落差 → 精確只擋那條(留言列「相對基準:新增 1、不變 1」)。
