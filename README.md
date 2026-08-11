@@ -99,6 +99,8 @@ parity report              # Re-render the Markdown report from an existing repo
                            #   (no re-scan; --md writes a file, otherwise it prints to stdout)
 parity snapshot            # Freeze the currently rendered UI as the design baseline —
                            #   a refactor/redesign guard that needs no Figma at all
+                           #   (--stabilize captures 3× and suggests "ignore" entries for
+                           #   regions that move: rotating ads, animations, lazy media)
 parity lint                # Design lint: are the design file's values inside the allowed
                            #   design-token set? (design only, no implementation)
 parity check --reverse     # Reverse view, for a designer redrawing an existing page:

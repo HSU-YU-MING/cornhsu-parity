@@ -44,7 +44,7 @@ DOM 巢狀約 31 層 × 每層 Children 佔 2 個 JSON 深度 = 超過 System.Te
 4718/4718 全配對、100/100 PASS。殘留備忘:錯誤訊息「object cycle」對使用者是誤導
 (樹沒有環,只是深),超過 512 的極端頁面仍會看到它,值得包一層看得懂的錯誤。
 
-### F2【設計盲點】隨機 id 打破「snapshot 配對 100% 決定論」的宣稱
+### F2【設計盲點,**已修(同日):理由改標 randomized-id + CLI 提示 + README 揭露;偵測降級不做**(改寫 selector 會讓既有 snapshot 全失效)】隨機 id 打破「snapshot 配對 100% 決定論」的宣稱
 
 README 說 snapshot 模式「配對走 selector 身分,100% 決定論」。野外反例兩種:
 
@@ -58,14 +58,14 @@ React `useId`、CSS-in-JS 隨機 class、隨機 `aria-labelledby` 是現代前�
 結構路徑(nth-of-type);(b) 文件揭露此限制 + 教學用 `ignore`;(c) unmatched 訊息在偵測到
 隨機 id 樣態時直接提示原因,而不是籠統的 `no-anchor`。
 
-### F3【決策點】SVG 內部節點(path/g/defs)該不該進樹
+### F3【決策點,**已決策並實作(同日):SVG 當葉子**——tailwind 重測 unmatched 44→0、兩次配對數一致】SVG 內部節點(path/g/defs)該不該進樹
 
 tailwindcss.com 的 unmatched 全部是 `path` / `g` / `defs`(44–45 個),且兩次配對數不同
 (2169 → 2171)——SVG 內部元素被擷取進樹,但在動畫/重繪下配對不穩,而 path 的
 box/padding/字體語意本來就跟設計比對關係薄弱。值得明文決策:**把 `<svg>` 當葉子**
 (內部不展開),或至少文件揭露。這同時會消掉一批野外雜訊。
 
-### F4【天生限制,該量化揭露 + 可做緩解】動態內容站的 snapshot 漂移
+### F4【天生限制,**緩解已落地(同日):`parity snapshot --stabilize`**——MDN 實測一次抓出 79 個不穩定區域】動態內容站的 snapshot 漂移
 
 引擎本身是決定性的(本地鏡像與 shoelace 逐位元一致);漂移全部來自頁面本身會動:
 
@@ -83,7 +83,7 @@ box/padding/字體語意本來就跟設計比對關係薄弱。值得明文決�
 2. 文件:野生/含廣告/含動畫的站用 snapshot 前,先 ignore 動態區;動畫等 cornhsu.com
    0.11.1 的 scroll 動畫教訓已有先例,可歸納成一節「snapshot 模式的適用邊界」。
 
-### F5【UX 小刺】「fidelity score: 100/100」與 GATE FAIL 同時出現
+### F5【UX 小刺,**已修(同日):滿分保留給全部忠實,封頂 99**】「fidelity score: 100/100」與 GATE FAIL 同時出現
 
 Stripe run1:分數四捨五入顯示 **100/100**,但同時有 9 筆 critical → exit 1。
 「100 分卻紅燈」對 CI log 的讀者是困惑的。建議分數在「有 failOn 等級落差」時不顯示滿分

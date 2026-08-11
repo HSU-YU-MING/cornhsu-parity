@@ -91,6 +91,8 @@ export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
 parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
 parity snapshot            # 把「現在跑著的畫面」凍結成設計基準——重構/改版守門,不需要 Figma
+                           #   (--stabilize 連拍 3 次,把「會動」的區域——廣告輪播、動畫、
+                           #   lazy 媒體——列出來並給可貼進 config 的 ignore 建議)
 parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
 parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
 ```

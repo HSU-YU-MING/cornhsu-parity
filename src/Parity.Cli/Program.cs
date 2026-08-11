@@ -398,8 +398,9 @@ internal static class SnapshotCommand
     public static async Task<int> RunAsync(string[] args)
     {
         var opts = CliOptions.Parse(args,
-            "--config=", "--target=", "--out=", "--width=", "--height=", "--headed");
+            "--config=", "--target=", "--out=", "--width=", "--height=", "--headed", "--stabilize");
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Snapshot);
+        var stabilize = opts.ContainsKey("--stabilize");
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
@@ -428,13 +429,39 @@ internal static class SnapshotCommand
         var frames = new List<DesignNode>();
         var shotPaths = new List<string>();
 
+        var unstableBySelector = new List<string>(); // 建議 ignore 用(跨 target 彙整,保序去重)
         foreach (var (t, i) in targets.Select((t, i) => (t, i)))
         {
             var url = ScanSession.ResolveUrl(t.Url, config.BaseDirectory);
-            var tree = await impl.CaptureAsync(new ImplRef(url, t.Width ?? width, t.Height ?? height)
+            var implRef = new ImplRef(url, t.Width ?? width, t.Height ?? height)
             {
                 IgnoreSelectors = config.Ignore,
-            });
+            };
+            var tree = await impl.CaptureAsync(implRef);
+
+            // --stabilize:連拍三次,列出「會動」的區域(廣告輪播/動畫/lazy 媒體),
+            // 給可貼進 config 的 ignore 建議——與其之後 check 踩到落差才回頭猜,不如現在就講。
+            if (stabilize)
+            {
+                var captures = new List<Parity.Engine.ImplementationSources.RenderedNode> { tree };
+                for (var probe = 1; probe < 3; probe++)
+                    captures.Add(await impl.CaptureAsync(implRef));
+                var unstable = SnapshotStabilizer.FindUnstable(captures);
+                if (unstable.Count > 0)
+                {
+                    Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstable.Count} region(s) changed across 3 captures — " +
+                        "the baseline freezes whichever state capture #1 happened to catch:\x1b[0m");
+                    foreach (var u in unstable)
+                        Console.WriteLine($"      {u.Selector}  ({u.Reason})");
+                    foreach (var sel in unstable.Select(u => SnapshotStabilizer.ToIgnoreSelector(u.Selector)))
+                        if (!unstableBySelector.Contains(sel))
+                            unstableBySelector.Add(sel);
+                }
+                else
+                {
+                    Console.WriteLine($"  \x1b[32m✓ {t.Route}: stable across 3 captures\x1b[0m");
+                }
+            }
             frames.Add(SnapshotBuilder.ToFrame(tree, t.Route, t.Width ?? width, t.Height ?? height));
 
             if (impl.Screenshots.TryGetValue(url, out var png))
@@ -468,6 +495,16 @@ internal static class SnapshotCommand
 
         Console.WriteLine($"\nwritten: {outPath}");
         foreach (var s in shotPaths) Console.WriteLine($"reference screenshot: {s}");
+
+        if (unstableBySelector.Count > 0)
+        {
+            // JsonSerializer 逐項序列化:selector 可能含 CSS.escape 產生的反斜線("#\\33 abc"),
+            // 手拼字串會給出貼了就爆的 JSON
+            Console.WriteLine("\n\x1b[33msuggested \"ignore\" for parity.config.json (unstable regions; " +
+                "add them, then re-run parity snapshot):\x1b[0m");
+            Console.WriteLine("  \"ignore\": [" + string.Join(", ",
+                unstableBySelector.Select(s => JsonSerializer.Serialize(s))) + "]");
+        }
         Console.WriteLine($"""
 
             Next steps (use the snapshot as the design baseline so refactors cannot drift):
@@ -561,10 +598,13 @@ internal static class Usage
         """;
 
     public const string Snapshot = """
-          parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>] [--headed]
+          parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>] [--headed] [--stabilize]
               Freeze the currently running implementation into a design baseline (JSON + reference screenshot)
               — a refactor/redesign guard: today's rendering is correct, and later checks prove it has not drifted.
               No Figma required. Overwrites an existing baseline (backed up to .parity/snapshot.bak.json first).
+              --stabilize   Capture 3 times and report regions that changed between captures (rotating ads,
+                            animations, lazy media) with a ready-to-paste "ignore" suggestion — freeze only
+                            what is actually stable.
         """;
 
     public const string Serve = """

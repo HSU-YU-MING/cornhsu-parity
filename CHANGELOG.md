@@ -2,6 +2,28 @@
 
 版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
 
+## 未發佈
+
+**首輪野生實查的產物**(對照 XamlContrast 的外部專案實查;方法與完整發現見
+`docs/野生實查-2026-08-10-路線A-snapshot.md`):8 個公開網站 × snapshot 模式,
+6 個發現全部是自家 dogfooding 樣本(同作者、cornhsu.com 21 頁)量不出來的。
+
+- **修正:深 DOM 讓 snapshot 落地/回讀 crash**(F1)。Wikipedia 條目頁(約 31 層巢狀)
+  擷取成功、序列化炸掉——擷取端早已為此放寬 `MaxDepth`,但落地(`ReportJson`)與回讀
+  (`JsonDesignSource`)沒跟上。兩處補齊 512,同一個教訓修完整。
+- **修正:隨機 id 的未配對講明原因**(F2)。React `useId` / CSS-in-JS 的隨機 id 每次載入
+  重新生成,snapshot 的 selector 身分配對必落空——未配對理由從籠統的 `no-anchor` 改為
+  `randomized-id`(附一行提示:ignore 該區或給 `data-parity` 錨點);README 對
+  「100% 確定性」宣稱補上這條已知限制。
+- **修正:SVG 當葉子**(F3)。內部繪圖指令(path/g/defs)沒有 padding/字體語意,動畫下
+  nth-of-type 又不穩(tailwindcss.com 實測 44 個 unmatched、兩次配對數不同)。svg 本身
+  照量,內部不展開。既有 snapshot 若凍有 SVG 內部節點,重拍一次即可對齊。
+- **新增:`parity snapshot --stabilize`**(F4)。連拍 3 次、比對擷取樹,列出「會動」的
+  區域(廣告輪播、動畫、lazy 媒體;收攏到最高的不穩定祖先),並給可直接貼進 config 的
+  `ignore` 建議——MDN 實測一次抓出 79 個不穩定區域。
+- **修正:分數不再四捨五入進成 100**(F5)。99.5% 忠實被進位成 100,「100/100」與
+  GATE FAIL 同框(Stripe 實測 3306/3322)。滿分保留給「全部忠實」,差一個節點就是 99。
+
 ## 0.12.0
 
 **對外語言統一為英文。** 引擎行為、報告 schema、exit code、CLI 介面(指令與旗標名稱)全部不變 ——
