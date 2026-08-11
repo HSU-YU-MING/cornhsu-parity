@@ -17,6 +17,10 @@ public static class ReportJson
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+        // snapshot 也用這組落地整棵 DesignNode 樹:真實網站 DOM 常見 30+ 層巢狀
+        // (每層 Children 佔 2 個 JSON 深度),預設 MaxDepth 64 會炸。與擷取端
+        // WebImplementationSource.CaptureParseOptions 同值。
+        MaxDepth = 512,
     };
 
     /// <summary>report.json 落地用(縮排,方便人看與 diff);回讀也用這組。</summary>

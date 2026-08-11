@@ -1,4 +1,7 @@
+using System.Text.Json;
+using Parity.Cli;
 using Parity.Engine.DesignSources;
+using Parity.Engine.DesignSources.Json;
 using Parity.Engine.DesignSources.Snapshot;
 using Parity.Engine.Model;
 using static Parity.Tests.TestData;
@@ -63,5 +66,31 @@ public class SnapshotBuilderTests
         Assert.Equal("hero", frame.Children[0].Name);
         Assert.Equal("card", frame.Children[1].Name);
         Assert.Equal("div", frame.Children[2].Name);
+    }
+
+    [Fact]
+    public async Task Deep_dom_snapshot_survives_write_and_read_back()
+    {
+        // 真實網站 DOM 常見 30+ 層巢狀(Wikipedia 條目頁實測 31 層),每層 Children 佔
+        // 2 個 JSON 深度,System.Text.Json 預設 MaxDepth 64 在「寫 snapshot」與
+        // 「讀 designFile」都會炸。60 層 ≈ JSON 深度 120+,兩端都必須撐得住。
+        var node = Rendered("div.leaf", box: new Box(0, 0, 10, 10));
+        for (var i = 0; i < 60; i++)
+            node = Rendered($"div.level-{i}", box: new Box(0, 0, 800, 600), children: node);
+
+        var frame = SnapshotBuilder.ToFrame(node, "/");
+        var json = JsonSerializer.Serialize(frame, ReportJson.Indented); // snapshot 落地同一組設定
+
+        var path = Path.Combine(Path.GetTempPath(), $"parity-deep-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(path, json);
+            var back = await new JsonDesignSource().GetFrameAsync(new DesignRef(path, ""));
+            Assert.Equal(61, back.DescendantsAndSelf().Count()); // 最外層成為 frame + 59 層 + leaf,一個都不少
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

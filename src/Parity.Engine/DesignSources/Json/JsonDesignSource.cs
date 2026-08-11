@@ -16,6 +16,9 @@ public sealed class JsonDesignSource : IDesignSource
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
         Converters = { new JsonStringEnumConverter() },
+        // snapshot 凍結的真實網站 DOM 常見 30+ 層巢狀(每層 Children 佔 2 個 JSON 深度),
+        // 預設 MaxDepth 64 讀不回來。與擷取端 WebImplementationSource.CaptureParseOptions 同值。
+        MaxDepth = 512,
     };
 
     public async Task<DesignNode> GetFrameAsync(DesignRef reference, CancellationToken ct = default)
