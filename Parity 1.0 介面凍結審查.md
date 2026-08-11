@@ -4,6 +4,7 @@
 > **狀態**:審查中。動工前 = 0.x,改介面免費;發 1.0 後 = 改介面要 major。**這是最後一次免費窗口。**
 > **產生**:2026-07-22,盤點自當時原始碼(`ParityConfig.cs` / `Program.cs` / `Report.cs` / `action.yml` / `BaselineDbContext.cs`)。
 > **進度更新**:2026-08-01——**0.10.0 已把面 4、面 5 的高風險待決項全部做掉**(見下方各項的 `已於 0.10.0 處理`)。剩餘待決集中在「字面拼寫凍結」與「發 1.0 時的 `v1` tag」,見文末動作清單。
+> **進度更新**:2026-08-11(野生實查輪,PR #26 + onboarding 分支)——面 2 新增 `snapshot --stabilize` 旗標(加法,不破壞);面 4 **發現一個先前漏盤的契約面**:`unmatched[].reason` 字彙(本輪就長出 `randomized-id` 與 `size-implausible` 兩個新值),見面 4 新增待決項;面 1 的「init 範本最小子集」決定被 DX 實查 D1 推翻(改為註解並列 Figma/snapshot 兩條路——範本不是 schema,不影響凍結)。動作清單的「npx 端到端」已實測打勾。
 
 決定欄填法:`凍` = 就這樣凍結 / `改` = 凍結前要改(附想改成什麼)/ `議` = 還沒想清楚。
 
@@ -53,7 +54,7 @@
 |---|---|---|
 | `check` | `--config --target --out --md --refresh --headed --baseline --reverse` | |
 | `report` | `--config --in --md` | |
-| `snapshot` | `--config --target --out --width --height --headed` | |
+| `snapshot` | `--config --target --out --width --height --headed --stabilize`(`--stabilize` 為 2026-08-11 新增,加法) | |
 | `lint` | `--config --target --refresh` | |
 | `serve` | `--config --port --watch --open` | |
 | `map` | `--config --port` | |
@@ -107,6 +108,12 @@
 
 **凍結前要決的點**
 - [ ] `severity` 字串值:`none/minor/medium/serious/critical`;`status`:`mismatch/missing`——這些字面拼寫凍結後改一個字母就是 major。**仍待決。**
+- [ ] **`unmatched[].reason` 與 `nodes[].matchedBy` 的字彙**(2026-08-11 補盤,先前漏列):
+  `reason` 目前有 `no-anchor` / `ambiguous-or-missing-text` / `randomized-id` / `size-implausible`——
+  後兩個就是野生實查這一輪長出來的,**證明這是會持續演進的開放字彙**。建議凍結策略:
+  **明文宣告為開放集合**(消費端必須容忍未知值,已知值的拼寫不變)而非凍死清單——
+  否則每輪實查加一個理由就是 major。`matchedBy`(`selector`/`explicit`/`auto-text`/
+  `auto-name`/`auto-container`)同此處理。
 - [x] `WhenWritingNull`:`unit`/`delta` 為 null 時整個 key 消失。消費者(含未來自家伺服器)必須容忍「key 不存在」。要不要改成永遠輸出(null 顯式)以簡化消費端?
   ——**已於 0.10.0 處理**:改為顯式輸出 `null`(`ReportJson.cs` 刻意不設 `WhenWritingNull`),契約少一個「有時消失的 key」。
 - [x] `Box` 的 `w/h` 簡寫——疊框視圖消費者要知道。要不要正名 `width/height` 讓 JSON 自我解釋?
@@ -138,7 +145,9 @@
 
 - [ ] dogfooding 滿 2–4 週,且期間對上面五面**沒有再想改的**
 - [ ] 上面每個 ⚠️ 都已拍板:schema 遷移策略 ✅(0.10.0 選 EF migrations)、report `schemaVersion` ✅(0.10.0 已加)、action `v1` tag ⬜(**唯一未解**,是發 1.0 當下的動作,見下方最後一項)
-- [ ] `npx cornhsu-parity` 端到端實裝跑過一次(通路才 0.9.5 生,1.0 等於承諾它也穩)
+- [x] `npx cornhsu-parity` 端到端實裝跑過一次(通路才 0.9.5 生,1.0 等於承諾它也穩)
+  ——**已實測**(2026-08-11,DX 實查):Windows x64 上 `npx -y cornhsu-parity` 首跑 12 秒
+  (含平台包下載),snapshot + check 全程正常,exit code 正確。
 - [ ] CHANGELOG 寫 1.0.0:不列功能,**列「以下介面自此凍結」**
 - [ ] `git tag v1.0.0 && git push origin v1.0.0`(觸發 release.yml 發 NuGet + npm)
 - [ ] 建立 / 移動 `v1` major tag → v1.0.0(之後每個 1.x 都把 `v1` 前移)
