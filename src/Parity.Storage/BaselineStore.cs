@@ -49,8 +49,26 @@ public sealed class BaselineStore : IAsyncDisposable
                 return reader.Read();
             }
 
+            bool ColumnExists(string table, string column)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"PRAGMA table_info(\"{table}\")";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    if (string.Equals(reader["name"] as string, column, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                return false;
+            }
+
             if (TableExists("Snapshots") && !TableExists("__EFMigrationsHistory"))
             {
+                // 「legacy schema 恰好等於 InitialCreate」只對 0.6.0+ 成立——更早的 db 連
+                // Score 欄都沒有(0.6.0 是手動 ALTER 加的)。標記 InitialCreate 之前先把
+                // 已知的歷史缺欄補上,否則標完 EF 認定 schema 已是最新,缺欄永遠不會補。
+                // (v0.13.0 三通路驗證實測:0.2.0 時代的 db → 'no such column: s.Score')
+                if (!ColumnExists("Snapshots", "Score"))
+                    db.Database.ExecuteSqlRaw("""ALTER TABLE "Snapshots" ADD COLUMN "Score" INTEGER NULL;""");
+
                 db.Database.ExecuteSqlRaw(
                     """CREATE TABLE "__EFMigrationsHistory" ("MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY, "ProductVersion" TEXT NOT NULL);""");
                 // 只標記「基準」migration(InitialCreate)——legacy db 的 schema 恰好等於它。
