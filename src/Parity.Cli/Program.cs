@@ -518,6 +518,33 @@ internal static class SnapshotCommand
 
 internal static class InitCommand
 {
+    /// <summary>
+    /// 範本刻意用註解並列兩條路(設定檔解析吃註解):snapshot 模式不需要 Figma,
+    /// 是「五秒內第一次綠燈」的最快路徑——只給 Figma 欄位會在第一分鐘勸退沒有
+    /// Figma 檔的人(DX 實查 D1)。
+    /// </summary>
+    internal const string Template = """
+        {
+          // Design source — pick ONE of the two:
+          // (a) Figma (needs a file + a FIGMA_TOKEN with the file_content:read scope)
+          "figmaFileKey": "your Figma file key",
+          "designToken": "env:FIGMA_TOKEN",
+          // (b) No Figma? Freeze today's rendering as the baseline instead (refactor guard):
+          //     delete the two lines above, uncomment the next line, set each target's
+          //     "frame" to its route (e.g. "/"), then run `parity snapshot` once.
+          // "designFile": "parity.snapshot.json",
+
+          "mapFile": "parity.map.json",
+          "targets": [
+            { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
+          ],
+          "compare": { "position": "relative" },
+          "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0 },
+          "ignore": ["[data-parity-ignore]"],
+          "gate": { "failOn": ["critical", "serious"] }
+        }
+        """;
+
     public static int Run(string[] args)
     {
         var opts = CliOptions.Parse(args);
@@ -528,25 +555,18 @@ internal static class InitCommand
             Console.Error.WriteLine($"{path} already exists; not overwriting.");
             return 2;
         }
-        File.WriteAllText(path, """
-            {
-              "figmaFileKey": "your Figma file key",
-              "designToken": "env:FIGMA_TOKEN",
-              "mapFile": "parity.map.json",
-              "targets": [
-                { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
-              ],
-              "compare": { "position": "relative" },
-              "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0 },
-              "ignore": ["[data-parity-ignore]"],
-              "gate": { "failOn": ["critical", "serious"] }
-            }
-            """);
+        File.WriteAllText(path, Template);
         Console.WriteLine($"created {path}. Next:");
-        Console.WriteLine("  1. Fill in figmaFileKey and the targets (frame nodeId + URL)");
-        Console.WriteLine("  2. Set the FIGMA_TOKEN environment variable");
-        Console.WriteLine("  3. parity install-browser (first run only)");
-        Console.WriteLine("  4. parity check");
+        Console.WriteLine("  With a Figma file:");
+        Console.WriteLine("    1. Fill in figmaFileKey and the targets (frame nodeId + URL)");
+        Console.WriteLine("    2. Set the FIGMA_TOKEN environment variable");
+        Console.WriteLine("  No Figma? Use snapshot mode (freeze today's rendering as the baseline):");
+        Console.WriteLine("    1. In the config: switch to \"designFile\" (see the comments), point the");
+        Console.WriteLine("       target's url at your page, set its \"frame\" to the route (e.g. \"/\")");
+        Console.WriteLine("    2. parity snapshot");
+        Console.WriteLine("  Then (either path):");
+        Console.WriteLine("    parity install-browser   (first run only)");
+        Console.WriteLine("    parity check");
         return 0;
     }
 }
