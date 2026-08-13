@@ -47,11 +47,17 @@ runs:
       with:
         dotnet-version: '10.0.x'
 
+    # inputs 一律先進 env 再用 shell 變數引用,不直接 ${{ }} 內插進 run:。
+    # 內插是在 shell 看到指令之前就完成的字串替換,呼叫端只要把 input 接到不可信的來源
+    # (例如 `version: ${{ github.event.issue.body }}`),那段內容就會變成 runner 上的指令。
+    # 走 env 的話它永遠只是一個字串值。
     - name: Install Parity
       shell: bash
+      env:
+        PARITY_VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
-          dotnet tool install --global Cornhsu.Parity --version "${{ inputs.version }}"
+        if [ -n "$PARITY_VERSION" ]; then
+          dotnet tool install --global Cornhsu.Parity --version "$PARITY_VERSION"
         else
           dotnet tool install --global Cornhsu.Parity
         fi
@@ -69,11 +75,14 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         FIGMA_TOKEN: ${{ inputs.figma-token }}
+        PARITY_CONFIG: ${{ inputs.config }}
+        PARITY_TARGET: ${{ inputs.target }}
+        PARITY_BASELINE: ${{ inputs.baseline }}
       run: |
         set +e
-        args=(check --config "${{ inputs.config }}" --md "$RUNNER_TEMP/parity-report.md")
-        [ -n "${{ inputs.target }}" ] && args+=(--target "${{ inputs.target }}")
-        [ "${{ inputs.baseline }}" = "true" ] && args+=(--baseline)
+        args=(check --config "$PARITY_CONFIG" --md "$RUNNER_TEMP/parity-report.md")
+        [ -n "$PARITY_TARGET" ] && args+=(--target "$PARITY_TARGET")
+        [ "$PARITY_BASELINE" = "true" ] && args+=(--baseline)
         parity "${args[@]}"
         echo "exit=$?" >> "$GITHUB_OUTPUT"
 
@@ -86,6 +95,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
         report="$RUNNER_TEMP/parity-report.md"
         out="$RUNNER_TEMP/parity-comment.md"
@@ -97,7 +107,7 @@ runs:
         else
           { echo "$marker"; cat "$report"; } > "$out"
         fi
-        pr=${{ github.event.pull_request.number }}
+        pr="$PR_NUMBER"
         existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
           --jq 'map(select(.body | startswith("<!-- parity-report -->"))) | .[0].id // empty')
         if [ -n "$existing" ]; then
@@ -119,4 +129,6 @@ runs:
     # 報告貼完了,現在才依 gate 結論決定 job 成敗
     - name: Enforce gate
       shell: bash
-      run: exit ${{ steps.check.outputs.exit }}
+      env:
+        PARITY_EXIT: ${{ steps.check.outputs.exit }}
+      run: exit "$PARITY_EXIT"

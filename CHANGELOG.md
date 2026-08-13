@@ -13,6 +13,24 @@
 - **README 補「報告字彙表」**(審查面 4 開放集合決定的配套義務):severity/status 為
   封閉集,reason/matchedBy 為開放集合(解析端容忍未知值),當前值一覽。
 
+以下四項是 1.0 前的文件與供應鏈收尾,不影響既有介面:
+
+- **修正:`parity version` 在原始碼建置下自報錯誤版號。** csproj 的 `<Version>` 寫死
+  `0.13.0` 而 tag 已 v0.13.1,任何非 CI 的建置都會自稱 0.13.0。改為固定佔位值
+  `0.0.0-dev`(版號的唯一真相源是 tag,release 以 `-p:Version=` 覆蓋),並讓 `version`
+  改印 InformationalVersion:本機建置顯示 `0.0.0-dev+db22749`,發行版顯示
+  `0.13.1+db22749`——bug 回報直接帶著 commit。
+- **新增:`scripts/verify-readme-facts.ps1`(CI 每次跑)。** 兩份 README 的測試條數、
+  累計發佈版數、Action 的 `@v` pin 對著實際情況與 CHANGELOG 比,不一致就紅;
+  `-Update` 一鍵重貼。**首度執行就抓到測試條數寫 195、實際 197。**
+  `release.yml` 另加一道「tag 必須等於 CHANGELOG 頂端版本」的把關。
+- **新增:`SECURITY.md`。** 私下通報管道(GitHub private advisory)、0.x 只支援最新版的
+  支援範圍、in-scope/不算漏洞的界線,以及給使用者的加固建議(pin Action 版本、
+  Figma token 只給 `file_content:read`、別把 Action inputs 接到不可信文字)。
+- **強化:`action.yml` 不再把 `inputs` 直接內插進 `run:`。** `config` / `target` /
+  `version` 等一律改走 `env:` 再以 shell 變數引用;呼叫端若把 input 接到 PR 標題、
+  issue 內文這類不可信來源,原本會變成 runner 上的指令。行為不變,介面不變。
+
 ## 0.13.1
 
 - **修正:0.6.0 之前建的 baseline db 開啟即炸**(`no such column: s.Score`)。0.10.0 的
