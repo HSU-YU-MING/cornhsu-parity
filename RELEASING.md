@@ -17,13 +17,40 @@
 
 4. **npm 發布**已設定（OIDC 信任發布,見 `release.yml` 的 npm job,scope `@cornhsu`）——同樣無長效 token。
 
+## 版號的唯一真相源:git tag
+
+**發版不需要、也不應該去改任何檔案裡的版號。** 全部由 tag 推導:
+
+| 檔案 | 應該長怎樣 | 為什麼 |
+|---|---|---|
+| `src/Parity.Cli/Parity.Cli.csproj` 的 `<Version>` | **固定 `0.0.0-dev`** | 寫真版號一定會跟 tag 漂開(2026-08 就發生過:csproj 停在 0.13.0、tag 已 v0.13.1),而從原始碼建出來的執行檔會自稱那個舊版號。留空更糟——退回 MSBuild 預設 `1.0.0`,等於謊稱介面已凍結。 |
+| `npm/cornhsu-parity/package.json` 的 `version` | **固定 `0.0.0-placeholder`** | 同理,由 `prepare.mjs` 在發布時以 tag 版號改寫。 |
+
+`release.yml` 用 `-p:Version=${GITHUB_REF_NAME#v}` 覆蓋這兩處。`parity version` 印的是
+InformationalVersion,所以本機建置顯示 `0.0.0-dev+<commit>`——一眼看得出不是發行版,
+而且 bug 回報裡直接帶著 commit。
+
+> 唯一要人手維護版號的地方是 **`CHANGELOG.md`**,而且它是「還沒推 tag 之前」的版本真相源:
+> README 裡兩處 `@vX.Y.Z` 與「發佈 N 版」的數字都對著它比(`scripts/verify-readme-facts.ps1`),
+> `release.yml` 再確認 tag 與 CHANGELOG 頂端一致。
+
 ## 每次發布
 
 ```sh
-# 版號由 tag 推導(release.yml 用 -p:Version 覆蓋 csproj 裡的本機預設值)
+# 版號由 tag 推導(release.yml 用 -p:Version 覆蓋 csproj 與 package.json 裡的佔位值)
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+推 tag 之前先在本機跑一次文件檢查(CI 也會擋,但先跑比較快):
+
+```sh
+pwsh scripts/verify-readme-facts.ps1            # 只檢查
+pwsh scripts/verify-readme-facts.ps1 -Update    # 確認新數字對之後,一鍵更新兩份 README
+```
+
+> 沒裝 PowerShell 7 的話,Windows PowerShell 5.1 直接跑 `.\scripts\verify-readme-facts.ps1` 也可以
+> （腳本存成 UTF-8 with BOM 就是為了讓 5.1 也讀得對中文訊息）。CI 用的是 runner 內建的 `pwsh`。
 
 `release.yml` 會自動發**兩個通路**（版號都從 tag 推導,`-p:Version` 覆蓋 csproj 裡的本機預設值）:
 
@@ -49,7 +76,8 @@ git tag v1 v1.0.0 && git push origin v1
 
 收尾:
 
-- [ ] README 兩處 `uses: …@v0.9.x` → **`@v1`**（0.x 期間刻意 pin 版本,1.0 起才切移動式）
+- [ ] README 兩份共四處 `uses: …@v0.x.y` → **`@v1`**（0.x 期間刻意 pin 版本,1.0 起才切移動式）；
+      同時把 `scripts/verify-readme-facts.ps1` 的 pin 檢查改成認 `@v1`，否則它會擋下這次變更
 - [ ] 之後**每發一個 1.x**,把 `v1` 前移到最新:`git tag -f v1 v1.x.y && git push -f origin v1`
 
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
