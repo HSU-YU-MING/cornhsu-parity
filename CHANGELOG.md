@@ -20,6 +20,10 @@
   `0.0.0-dev`(版號的唯一真相源是 tag,release 以 `-p:Version=` 覆蓋),並讓 `version`
   改印 InformationalVersion:本機建置顯示 `0.0.0-dev+db22749`,發行版顯示
   `0.13.1+db22749`——bug 回報直接帶著 commit。
+- **變更(輸出格式):`parity version` 現在會多帶一段 `+<commit>`。**
+  `parity 0.13.1` → `parity 0.13.1+db22749`。commit 編號由 SourceLink 在建置時填入,
+  截為 7 碼。**若你有腳本在 parse 這一行,請改成取 `+` 之前的部分。**
+  CLI 輸出是 1.0 要凍結的介面之一,所以刻意在 1.0 之前調整;1.0 之後再動就得升 major。
 - **新增:`scripts/verify-readme-facts.ps1`(CI 每次跑)。** 兩份 README 的測試條數、
   累計發佈版數、Action 的 `@v` pin 對著實際情況與 CHANGELOG 比,不一致就紅;
   `-Update` 一鍵重貼。**首度執行就抓到測試條數寫 195、實際 197。**
