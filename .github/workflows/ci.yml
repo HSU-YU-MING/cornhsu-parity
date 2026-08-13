@@ -85,6 +85,13 @@ jobs:
       - name: Unit tests
         run: dotnet test Parity.slnx -c Release --no-build
 
+      # README 的數字會走鐘:v0.13.1 當下就已經寫著「195 條測試」而實際是 197。
+      # 加測試的人不會想到 README,所以讓 CI 自己數一次再比(測試數 / 發佈版數 / @v pin,
+      # 兩份 README 一起)。不一致時跑 `pwsh scripts/verify-readme-facts.ps1 -Update` 重貼。
+      # 刻意只在 ubuntu 跑一次、不進 matrix:三個 OS 比同一份文字只會多三倍換行與 locale 的雜訊。
+      - name: Verify README facts
+        run: pwsh scripts/verify-readme-facts.ps1 -NoBuild
+
       # 離線示範刻意做壞 → 預期 GATE FAIL(exit 1)。這正是 CI 把關該有的行為,
       # 所以「跑出 exit 1」= 成功;跑出別的才是回歸。
       - name: Parity check (offline demo, 預期 GATE FAIL)

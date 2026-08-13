@@ -10,8 +10,11 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>parity</ToolCommandName>
     <PackageId>Cornhsu.Parity</PackageId>
-    <!-- 只是本機建置的預設值:release 一律以 tag 版號 -p:Version= 覆蓋(見 .github/workflows/release.yml)-->
-    <Version>0.13.0</Version>
+    <!-- 版本的唯一真相源是 git tag:release 一律以 -p:Version= 覆蓋(見 .github/workflows/release.yml)。
+         這裡刻意寫 0.0.0-dev 而不是真版號 —— 寫真版號一定會跟 tag 漂開(0.13.0 vs v0.13.1 就發生過),
+         而從原始碼建出來的執行檔會**自稱那個舊版號**;留空則退回 MSBuild 預設的 1.0.0,等於謊稱介面已凍結。
+         `parity version` 印的是 InformationalVersion,所以本機建置會顯示 0.0.0-dev+<commit>,一眼看得出不是發行版。 -->
+    <Version>0.0.0-dev</Version>
     <!-- 授權 / 作者 / README / icon / SourceLink 等共用中繼資料在根目錄 Directory.Build.props -->
     <Description>Parity — property-level design fidelity checking. Compares the real numeric values of your Figma design and the rendered UI programmatically; runs locally, in CI, or fully on-premises.</Description>
     <!-- NU5111:Playwright 套件內含的 .ps1(非 install 腳本),打包時的無害提醒 -->

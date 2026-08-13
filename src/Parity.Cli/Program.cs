@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -692,7 +693,33 @@ internal static class VersionCommand
 {
     public static int Run()
     {
-        Console.WriteLine($"parity {typeof(VersionCommand).Assembly.GetName().Version?.ToString(3) ?? "0.1.0"}");
+        Console.WriteLine($"parity {Describe()}");
         return 0;
+    }
+
+    /// <summary>
+    /// 版號取自 InformationalVersion,不是 AssemblyVersion。
+    /// AssemblyVersion 只有三段數字,`0.0.0-dev` 這種本機建置會被截成 `0.0.0`,
+    /// 看不出是哪個 commit;InformationalVersion 帶 SourceLink 補上的 `+<sha>`,
+    /// 使用者回報 bug 時貼這一行就足以定位。發行版(tag 推導版號)則印乾淨的 `0.13.1+<sha>`。
+    /// </summary>
+    internal static string Describe()
+    {
+        var informational = typeof(VersionCommand).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+
+        if (string.IsNullOrWhiteSpace(informational))
+        {
+            return typeof(VersionCommand).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        }
+
+        // SourceLink 接的是 40 字元完整 sha,對人來說太長,截成慣用的 7 碼
+        var plus = informational.IndexOf('+');
+        if (plus >= 0 && informational.Length - plus - 1 > 7)
+        {
+            return informational[..(plus + 8)];
+        }
+
+        return informational;
     }
 }
