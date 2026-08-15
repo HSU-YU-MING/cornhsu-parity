@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   pull_request:
 
+# CI 只讀原始碼,不需要任何寫入權限。明確寫死最小權限,不吃 repo 的預設值。
+permissions:
+  contents: read
+
 jobs:
   # 排版守門(對齊 PolyMigrate 的 CI 形狀)。風格規則見 .editorconfig。
   format:
