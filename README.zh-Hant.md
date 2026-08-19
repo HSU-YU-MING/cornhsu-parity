@@ -325,6 +325,12 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 
 ## 另見
 
+[**設計還原度要怎麼自動檢查**](https://cornhsu.com/articles/figma-design-fidelity-check)
+—— 講的是整個品類而不是這個工具:疊圖、像素回歸、屬性級比對三者回答的其實是不同的問題;
+顏色為什麼不能用 hex 全等比、絕對座標為什麼不能比;以及這類工具幫不上忙的地方
+(圖示 SVG 路徑、字型實際渲染、陰影、圖片裁切)。文中誠實列出同類工具,
+並說明什麼情況下該選別人的方案。
+
 [**XamlContrast**](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast) —— 同作者的姊妹專案,
 同一套哲學(數值檢查、CI 把關)。Parity 回答「**實作跟設計稿一不一樣**」(還原度);
 XamlContrast 回答「**做出來的東西看不看得見**」(WCAG 對比,靜態掃 XAML 原始碼)。

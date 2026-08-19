@@ -393,6 +393,13 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
 
 ## See also
 
+[**設計還原度怎麼自動檢查**](https://cornhsu.com/articles/figma-design-fidelity-check)
+(in Traditional Chinese) — background on the whole category rather than this tool: what overlays,
+pixel regression and property-level comparison each actually answer, why colour needs CIEDE2000
+instead of hex equality, why absolute coordinates cannot be compared at all, and where this class
+of tool does not help (SVG paths, font rasterisation, shadows, image cropping). It names the other
+tools in the space and says when to pick one of them over this one.
+
 [**XamlContrast**](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast) — a sibling project by the
 same author, built on the same philosophy: numeric checks that gate CI. Parity answers "**does the
 implementation match the design?**" (fidelity); XamlContrast answers "**can anyone actually see
