@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- 不上 NuGet:網頁外殼的資料層,隨 Parity.Server 部署 -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parity.Engine\Parity.Engine.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <!-- 與 Parity.Storage 同款 pin(NU1903 修補版 SQLite) -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <!-- M1 用 SQLite 開發;M5 定案供應商時換(PostgreSQL 之類),migrations 屆時重生
+         ——已知的一次性成本,記在規畫書「動工時的待決區」。 -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Parity.Tests" />
+  </ItemGroup>
+
+</Project>

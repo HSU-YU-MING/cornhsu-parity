@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- 不上 NuGet:這是部署用的 Web API,不是套件 -->
+    <IsPackable>false</IsPackable>
+    <!-- 鐵則的實體化:這個專案永遠不引用 Playwright——雲端不跑瀏覽器(規畫書第 3 節)。 -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parity.Server.Data\Parity.Server.Data.csproj" />
+    <!-- dotnet-ef 產 migration 用(migrations 放 Server.Data,startup 是本專案);
+         PrivateAssets=all:設計期工具,不進發佈輸出 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

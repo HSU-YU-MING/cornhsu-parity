@@ -73,3 +73,16 @@ public sealed record FidelityReport(
     IReadOnlyList<NodeResult> Nodes,
     IReadOnlyList<UnmatchedNode> Unmatched,
     ReportSummary Summary);
+
+/// <summary>
+/// report.json 的頂層信封(0.10.0 起;1.0 凍結面 4)。裸陣列無從辨識版本;包一層
+/// schemaVersion,報告格式演進時消費端(parity report / serve / **Parity.Server**)有據可判。
+/// 原住在 Parity.Cli;網頁外殼動工(2026-08-26)時移入引擎——報告契約的每一個消費者
+/// 都該對同一個型別,而不是各抄一份。wire 格式逐位元不變。
+/// </summary>
+public sealed record ReportDocument(int SchemaVersion, IReadOnlyList<FidelityReport> Reports)
+{
+    public const int CurrentSchemaVersion = 1;
+
+    public static ReportDocument Of(IReadOnlyList<FidelityReport> reports) => new(CurrentSchemaVersion, reports);
+}

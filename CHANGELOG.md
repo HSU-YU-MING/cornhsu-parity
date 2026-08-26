@@ -2,7 +2,24 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節);0.x 期間為新功能升 minor、修正升 patch。
 
-## 1.1.0
+## 未發佈
+
+**網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
+只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一的寫入口收「已完成的報告」,
+不存在任何「給我 URL 我去掃」的入口;掃描永遠發生在本機/CI。
+
+- **新增:`parity push` 子指令**(CLI 面加法 = minor)。把既有的 report.json 送上
+  Parity.Server:token 走 `PARITY_TOKEN` 環境變數(CI secret;`--token` 旗標僅供本機
+  試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
+  commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`/`GITHUB_REF_NAME`)。
+  送出前在本機先驗報告信封,壞檔案不浪費往返。
+- **新增:`Parity.Server` + `Parity.Server.Data`**(不上 NuGet,部署用)。
+  `POST /api/runs`(Bearer 專案 token,只存 SHA-256)收報告落庫(SQLite + EF migrations
+  從第一天),`GET /api/runs`、`/runs/{id}` 與最陽春的瀏覽頁;`create-project` 指令
+  發 token(只印一次)。M1 綁 127.0.0.1(帳號權限是 M3、對外部署是 M5)。
+  報告解析走引擎的 `ReportDocument`/`ReportWire`(信封與序列化設定自 CLI 移入引擎,
+  wire 格式逐位元不變)——契約單一來源,伺服器不自己抄一份。
+  E2E:離線 demo `check` → `push` → 網頁逐條看得到落差(75/100、6 條 diff、metadata)。
 
 介面凍結後的第一個 minor(演進條款第 2 級:量測/配對語意演進,無介面變更)。
 

@@ -7,6 +7,9 @@ obj/
 # Parity 本機產物(報告、Figma 快取)
 .parity/
 
+# Parity.Server 的本機開發資料庫(M1 SQLite;部署環境的 db 不在 repo 裡)
+parity-server.db*
+
 # demo 的 map 檔由 parity map 互動產生,保持示範的「未配對」教學情境
 samples/demo/parity.map.json
 # demo 的 baseline 由 parity baseline save 產生,不進版控(真實專案的 parity.baseline.db 才要 commit)
