@@ -115,13 +115,14 @@ $facts = @(
        Pattern = '(?<=\| 發佈 \| NuGet 共 \d+ 版\(v\d+\.\d+\.\d+ → v)\d+\.\d+\.\d+'
        Expected = $latestVersion }
 
-    # 0.x 期間刻意 pin 確切版本；1.0 之後這兩條要改成認 @v1（見 RELEASING.md 的 1.0 收尾清單）
-    @{ Label = 'Action @v pin (en)'; Path = $enPath; Occurrences = 2
-       Pattern = '(?<=HSU-YU-MING/cornhsu-parity@v)\d+\.\d+\.\d+'
-       Expected = $latestVersion }
-    @{ Label = 'Action @v pin (zh)'; Path = $zhPath; Occurrences = 2
-       Pattern = '(?<=HSU-YU-MING/cornhsu-parity@v)\d+\.\d+\.\d+'
-       Expected = $latestVersion }
+    # 1.0 起 README 一律引用移動式 @v1（0.x 時代是 pin 確切版本，這兩條當時對著 CHANGELOG 版號比）。
+    # 進 2.0 時把 Expected 改成 'v2'。
+    @{ Label = 'Action @v ref (en)'; Path = $enPath; Occurrences = 2
+       Pattern = '(?<=HSU-YU-MING/cornhsu-parity@)v[\d.]+'
+       Expected = 'v1' }
+    @{ Label = 'Action @v ref (zh)'; Path = $zhPath; Occurrences = 2
+       Pattern = '(?<=HSU-YU-MING/cornhsu-parity@)v[\d.]+'
+       Expected = 'v1' }
 )
 
 Write-Host ''

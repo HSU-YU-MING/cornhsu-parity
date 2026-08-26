@@ -25,12 +25,12 @@ escalation.
 
 | Version | Supported |
 |---|---|
-| The latest `0.x` release | ✅ |
-| Anything older | ❌ |
+| The latest `1.x` release | ✅ |
+| `0.x` and anything older | ❌ |
 
-Parity is pre-1.0 and the public interfaces are not frozen yet, so fixes land on the newest
-release only — there are no patch branches for older versions. Upgrading to the newest `0.x` is
-always the fix. From 1.0 onward this table will name a real support window.
+Fixes land on the newest release only — there are no patch branches for older versions.
+Upgrading to the newest `1.x` is always the fix; the interfaces have been frozen since 1.0
+(see the CHANGELOG's 1.0.0 entry), so upgrading within 1.x is safe by contract.
 
 ## What is in scope
 
@@ -61,8 +61,9 @@ These are deliberate, documented behaviour:
 
 ## Hardening notes for users
 
-- **Pin the Action to an exact version** while Parity is on `0.x`
-  (`HSU-YU-MING/cornhsu-parity@v0.13.1`). A floating `@v1` arrives with 1.0.
+- **Reference the Action as `@v1`** (tracks the latest 1.x — safe now that the interfaces are
+  frozen), or pin an exact version (`HSU-YU-MING/cornhsu-parity@v1.0.0`) if your policy
+  requires immutable refs.
 - **Give the Figma token only `file_content:read`.** Nothing else is used. Pass it through
   `secrets`, never inline in `parity.config.json` — the config's `designToken` field takes
   `env:FIGMA_TOKEN` precisely so the value never has to sit in a committed file.

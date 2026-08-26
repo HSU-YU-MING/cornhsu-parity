@@ -11,7 +11,7 @@
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v0.14.0   # pin exact versions while 0.x; a floating @v1 arrives with 1.0
+- uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 tracks the latest 1.x (interfaces frozen since 1.0)
   with:
     config: parity.config.json      # optional, defaults to parity.config.json
     target: /pricing                # optional, check only this route (omit for all)
@@ -63,7 +63,7 @@ PR comment, updating the same comment rather than adding new ones.
 
 | | |
 |---|---|
-| Releases | 25 on NuGet (v0.1.0 → v0.14.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
+| Releases | 26 on NuGet (v0.1.0 → v1.0.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
@@ -326,7 +326,7 @@ jobs:
       - run: |
           npm ci && npm run build
           npm run preview &   # e.g. serving on localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v0.14.0   # pin exact versions while 0.x
+      - uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 tracks the latest 1.x
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # omit when the design source is a local JSON file
