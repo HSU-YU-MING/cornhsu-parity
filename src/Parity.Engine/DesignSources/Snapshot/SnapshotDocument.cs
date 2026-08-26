@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Parity.Engine.DesignSources.Snapshot;
 
 /// <summary>
@@ -10,5 +12,16 @@ public sealed record SnapshotDocument(int SchemaVersion, DesignNode Root)
 {
     public const int CurrentSchemaVersion = 1;
 
-    public static SnapshotDocument Of(DesignNode root) => new(CurrentSchemaVersion, root);
+    /// <summary>
+    /// 拍照時實測穩定的 id 白名單(F2 殘留的根治,ROADMAP「連拍實測」設計)。
+    /// 只在偵測到「每次載入重新生成的 id」時才存:check 擷取現場頁面時只拿名單內的 id
+    /// 當 selector 錨點,現場新長出的隨機 id(不在名單上)自然走結構路徑——快照與現場
+    /// 兩邊的 selector 生成規則才對得上。null(含舊檔無此欄)= 不限制,現行行為;
+    /// 選填欄位,同 schemaVersion 1(讀不懂它的舊版忽略此欄,該站在舊版本來就配不上)。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? StableIdAnchors { get; init; }
+
+    public static SnapshotDocument Of(DesignNode root, IReadOnlyList<string>? stableIdAnchors = null)
+        => new(CurrentSchemaVersion, root) { StableIdAnchors = stableIdAnchors };
 }

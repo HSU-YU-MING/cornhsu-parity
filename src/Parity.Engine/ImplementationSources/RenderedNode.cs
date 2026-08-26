@@ -45,6 +45,13 @@ public sealed record ImplRef(
 
     /// <summary>要忽略的 selector 清單(如 "[data-parity-ignore]")。</summary>
     public IReadOnlyList<string>? IgnoreSelectors { get; init; }
+
+    /// <summary>
+    /// 允許當 selector 錨點的 id 白名單(snapshot 的連拍實測產物,見 SnapshotDocument
+    /// .StableIdAnchors)。null = 不限制(現行行為);有名單時,名單外的 id 一律走結構路徑
+    /// ——純字母隨機 id(rkxvdnnzty)字元啟發法認不出,實測名單認得出。
+    /// </summary>
+    public IReadOnlyList<string>? AllowedIdAnchors { get; init; }
 }
 
 /// <summary>實作來源抽象——留給 WPF/桌面的門(規畫書 4.5)。</summary>

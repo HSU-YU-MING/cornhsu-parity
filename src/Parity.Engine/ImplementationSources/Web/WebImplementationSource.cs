@@ -128,6 +128,8 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             {
                 mapSelectors = reference.MapSelectors ?? new Dictionary<string, string>(),
                 ignoreSelectors = reference.IgnoreSelectors ?? [],
+                // null 原樣傳(腳本端 null = 不限制);空清單語意是「全部 id 都不可信」,不可混同
+                allowedIdAnchors = reference.AllowedIdAnchors,
             };
             // 擷取腳本回傳 JSON 字串(見 CaptureScript:避開 Playwright 值序列化的深度放大)。
             // 用放寬的 MaxDepth 解析——真實網站 DOM 常有十幾層巢狀,預設 64 不夠。

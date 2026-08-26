@@ -51,6 +51,12 @@ public sealed class ScanSession : IAsyncDisposable
             throw new InvalidOperationException($"no target with route {routeFilter}.");
 
         var mapSelectors = LoadMapFile();
+        // snapshot 基準若帶「穩定 id 白名單」(連拍實測的產物),擷取現場頁面時只拿名單內的
+        // id 當錨點——名單外的(現場新長出的隨機 id)走結構路徑,與快照端的 selector 才對得上
+        var allowedIdAnchors = Config.DesignFile is { } designFile
+            ? JsonDesignSource.TryReadStableIdAnchors(
+                Path.GetFullPath(Path.Combine(Config.BaseDirectory, designFile)))
+            : null;
         var scans = new List<TargetScan>();
 
         foreach (var target in targets)
@@ -68,6 +74,7 @@ public sealed class ScanSession : IAsyncDisposable
             {
                 MapSelectors = mapSelectors,
                 IgnoreSelectors = Config.Ignore,
+                AllowedIdAnchors = allowedIdAnchors,
             };
 
             var result = await _engine.RunDetailedAsync(new ScanRequest(designRef, implRef, target.Route), ct);

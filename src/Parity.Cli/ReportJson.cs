@@ -33,12 +33,14 @@ public static class ReportJson
     /// 「A possible object cycle was detected」——樹沒有環,只是深,照原文丟出去
     /// 只會讓人往錯的方向查(野生實查 F1 的殘留備忘)。
     /// </summary>
-    public static string SerializeSnapshotTree(Parity.Engine.DesignSources.DesignNode root)
+    public static string SerializeSnapshotTree(
+        Parity.Engine.DesignSources.DesignNode root,
+        IReadOnlyList<string>? stableIdAnchors = null)
     {
         try
         {
             return JsonSerializer.Serialize(
-                Parity.Engine.DesignSources.Snapshot.SnapshotDocument.Of(root), Indented);
+                Parity.Engine.DesignSources.Snapshot.SnapshotDocument.Of(root, stableIdAnchors), Indented);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException && ex.Message.Contains("object cycle"))
         {

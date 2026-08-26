@@ -61,7 +61,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **202 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **207 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 21 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -157,7 +157,7 @@ electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
 | 設計來源 | config | 適合誰 |
 |---|---|---|
 | **Figma**(主力) | `figmaFileKey` + `FIGMA_TOKEN` | 有 Figma 檔的正規流程 |
-| **快照**(`parity snapshot`) | `designFile` 指向產出的快照 JSON | **重構/改版守門**:現在的畫面是對的,存成基準,之後 check 保證不跑版(visual regression 的數值版)。配對走 selector 身分,100% 確定性——隨機 id(React `useId`、CSS-in-JS)在擷取時就被偵測、改走結構路徑,重新生成也不受影響。舊版拍的基準若把隨機 id 凍進了 selector,會列為未配對(理由 `randomized-id`)——重跑一次 `parity snapshot` 即完成遷移 |
+| **快照**(`parity snapshot`) | `designFile` 指向產出的快照 JSON | **重構/改版守門**:現在的畫面是對的,存成基準,之後 check 保證不跑版(visual regression 的數值版)。配對走 selector 身分,100% 確定性——隨機 id(React `useId`、CSS-in-JS)在擷取時就被偵測、改走結構路徑,重新生成也不受影響;純字母的隨機 id(字元上看不出來的那種)由**連拍實測**抓出:snapshot 載入頁面兩次,兩次不同的 id 不當錨點,實測穩定的 id 白名單存進快照供 check 沿用。舊版拍的基準若把隨機 id 凍進了 selector,會列為未配對(理由 `randomized-id`)——重跑一次 `parity snapshot` 即完成遷移 |
 | **一張圖 + 標註** | `designImage`(PNG/JPG)+ `designFile`(標註) | 只有圖的場景:外包 PNG、老專案只剩截圖。**XD / Sketch / PS 等其他工具匯出圖片就能走這條**(萬用轉接頭)。標註 = DesignNode JSON,`fill` 可省略——顏色由引擎從圖片對應區域取樣(TEXT 字色刻意不取樣:反鋸齒混色取不準,可手填) |
 | 手寫 JSON | `designFile` | 離線示範/測試 |
 

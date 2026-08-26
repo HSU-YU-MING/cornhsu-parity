@@ -51,6 +51,36 @@ public static class SnapshotBuilder
         };
     }
 
+    /// <summary>
+    /// 連拍實測隨機 id(F2 殘留的根治):同一個 URL 載入兩次,id 出現在兩邊的 = 穩定,
+    /// 只出現在單邊的 = 每次載入重新生成(隨機 id 第二次載入必是另一串,不可能重現)。
+    /// 純字元啟發法(looksRandom)分不出 rkxvdnnzty 與 navigation,實測分得出——零誤判:
+    /// 穩定 id 絕不會被誤標(它兩次都在)。代價的邊界誠實列:動態出現/消失的元素
+    /// (隨機顯示的公告)其穩定 id 會被漏收 → 該元素走結構路徑,錨點次穩但不誤配。
+    /// 回傳 (穩定 id 清單, 單邊 id 數);單邊數 0 = 此頁沒有隨機 id,不需要白名單。
+    /// </summary>
+    public static (IReadOnlyList<string> Stable, int UnstableCount) ProbeStableIds(
+        RenderedNode first, RenderedNode second)
+    {
+        var ids1 = CollectIds(first);
+        var ids2 = CollectIds(second);
+        var stable = ids1.Intersect(ids2, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        var unstable = ids1.Count + ids2.Count - stable.Count * 2;
+        return (stable, unstable);
+    }
+
+    /// <summary>
+    /// 擷取樹上所有節點的 DomId。這對「selector 錨點會用到的 id」是完備的:
+    /// 走訪由上而下、每個經過的元素都輸出節點,任何出現在 selector 裡的祖先 id
+    /// 必屬於某個被輸出的節點(display:none 子樹與 ignore 子樹整塊不走,其 id 也進不了 selector)。
+    /// </summary>
+    public static IReadOnlySet<string> CollectIds(RenderedNode tree)
+        => tree.DescendantsAndSelf()
+            .Select(n => n.DomId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Select(id => id!)
+            .ToHashSet(StringComparer.Ordinal);
+
     private static string? FirstClass(string? classes)
         => classes?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
 

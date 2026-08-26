@@ -16,7 +16,13 @@ internal static class CaptureScript
 {
     public const string Js = """
         (input) => {
-          const { mapSelectors, ignoreSelectors } = input || {};
+          const { mapSelectors, ignoreSelectors, allowedIdAnchors } = input || {};
+
+          // 穩定 id 白名單(snapshot 連拍實測的產物):有名單時,名單外的 id 不當錨點。
+          // 純字母隨機 id(rkxvdnnzty)looksRandom 的字元啟發法認不出來,只有實測認得出;
+          // null = 沒有名單 = 現行行為(只靠 looksRandom)。
+          const allowedIds = Array.isArray(allowedIdAnchors) ? new Set(allowedIdAnchors) : null;
+          const idAnchorOk = (id) => !looksRandom(id) && (!allowedIds || allowedIds.has(id));
 
           // map 檔:在頁面內解析 selector,把命中的元素標上圖層名(light DOM 限定)
           const mapped = new Map();
@@ -48,7 +54,7 @@ internal static class CaptureScript
           // el 在自己的 root(body / shadowRoot / iframe body)內的路徑;prefix 帶上外層脈絡
           const pathIn = (el, stopNode, prefix, rootLabel) => {
             if (el === stopNode) return prefix + rootLabel;
-            if (el.id && !looksRandom(el.id)) return prefix + '#' + CSS.escape(el.id);
+            if (el.id && idAnchorOk(el.id)) return prefix + '#' + CSS.escape(el.id);
             const parts = [];
             let cur = el;
             while (cur && cur.nodeType === 1 && cur !== stopNode) {
@@ -56,7 +62,7 @@ internal static class CaptureScript
               while ((sib = sib.previousElementSibling)) if (sib.tagName === cur.tagName) idx++;
               parts.unshift(cur.tagName.toLowerCase() + ':nth-of-type(' + idx + ')');
               const parent = cur.parentElement;
-              if (parent && parent !== stopNode && parent.id && !looksRandom(parent.id)) {
+              if (parent && parent !== stopNode && parent.id && idAnchorOk(parent.id)) {
                 parts.unshift('#' + CSS.escape(parent.id));
                 return prefix + parts.join(' > ');
               }

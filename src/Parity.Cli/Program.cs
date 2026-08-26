@@ -431,6 +431,8 @@ internal static class SnapshotCommand
         var shotPaths = new List<string>();
 
         var unstableBySelector = new List<string>(); // 建議 ignore 用(跨 target 彙整,保序去重)
+        var stableIdUnion = new HashSet<string>(StringComparer.Ordinal); // 全部 target 的穩定 id 聯集
+        var anyRandomIds = false; // 任一 target 測到隨機 id → 白名單才需要存進快照
         foreach (var (t, i) in targets.Select((t, i) => (t, i)))
         {
             var url = ScanSession.ResolveUrl(t.Url, config.BaseDirectory);
@@ -439,6 +441,23 @@ internal static class SnapshotCommand
                 IgnoreSelectors = config.Ignore,
             };
             var tree = await impl.CaptureAsync(implRef);
+
+            // 連拍實測隨機 id(F2 根治):第二次載入,只出現在單邊的 id = 每次載入重新生成。
+            // 字元啟發法(looksRandom)在擷取時已擋掉數字混雜型;純字母型(rkxvdnnzty)
+            // 只有實測分得出——測到就帶「穩定 id 白名單」重拍,錨點只用兩次都在的 id,
+            // 白名單存進快照,check 端用同一份名單擷取,兩邊 selector 生成規則才一致。
+            var reload = await impl.CaptureAsync(implRef);
+            var (stableIds, unstableIdCount) = SnapshotBuilder.ProbeStableIds(tree, reload);
+            stableIdUnion.UnionWith(stableIds);
+            if (unstableIdCount > 0)
+            {
+                anyRandomIds = true;
+                implRef = implRef with { AllowedIdAnchors = stableIds };
+                tree = await impl.CaptureAsync(implRef);
+                Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstableIdCount} id(s) regenerate on every load " +
+                    "(per-load random ids) — anchoring selectors on the measured stable-id allowlist instead; " +
+                    "the allowlist is stored in the snapshot so `parity check` anchors the same way.\x1b[0m");
+            }
 
             // --stabilize:連拍三次,列出「會動」的區域(廣告輪播/動畫/lazy 媒體),
             // 給可貼進 config 的 ignore 建議——與其之後 check 踩到落差才回頭猜,不如現在就講。
@@ -492,7 +511,9 @@ internal static class SnapshotCommand
             File.Copy(outPath, bak, overwrite: true);
             Console.WriteLine($"previous baseline backed up: {bak} (use it to recover from a bad snapshot)");
         }
-        await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(root));
+        // 白名單只在真的測到隨機 id 時才存(anyRandomIds):沒有隨機 id 的站,快照與 1.0 逐位元同形
+        await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(
+            root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null));
 
         Console.WriteLine($"\nwritten: {outPath}");
         foreach (var s in shotPaths) Console.WriteLine($"reference screenshot: {s}");
