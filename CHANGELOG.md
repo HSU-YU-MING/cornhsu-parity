@@ -13,6 +13,20 @@
   試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
   commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`/`GITHUB_REF_NAME`)。
   送出前在本機先驗報告信封,壞檔案不浪費往返。
+- **新增:網頁外殼 M4.5——工作流的結締組織(產品視角盤點出的六件必補)**。
+  骨架(收報告/看落差/趨勢/帳號)之間的接線:
+  1. **分支語意**:總覽與趨勢預設看 main/master、分支可篩——PR 分支的 push 不再污染
+     主線的分數與趨勢(污染案例有測試釘住)。
+  2. **gate 口徑統一**:`parity push` 把 CLI 的真實 gate 結果帶上去(依 config 的 failOn
+     重算;CI 可用 `--gate-exit` 傳 check 的原始 exit code,含 --baseline 語意),伺服器
+     不再自行重判——「CI 綠燈、儀表板紅字」的口徑分裂根治。
+  3. **「跟上次比變了什麼」**:run 詳情頁頂部的變更摘要條(🔴 新增 / 🟠 惡化 / 🟢 修好 /
+     不變),比對同專案**同分支**的前一筆,語意直接用引擎的 BaselineComparer(與 CI 的
+     baseline 模式同一套身分鍵),不另發明。
+  4. **PR ↔ 儀表板接通**:push 在 GitHub Actions 內自動把儀表板連結寫進 job summary;
+     run 的 commit 連回 GitHub(repo 網址由 CI 環境自動帶)。
+  5. **Figma 深連結**:落差節點可一鍵跳回 Figma 圖層(與 CLI Markdown 報告同能力)。
+  6. **`/healthz`**:uptime 監測要 ping 的是「資料庫活著」,不是「首頁回 200」。
 - **新增:網頁外殼 M3——帳號、角色與邀請制(讀取端點自此一律要登入)**。
   認證裁決:email+密碼(ASP.NET Core Identity,只用使用者半邊、無 AspNetRoles)——
   magic link 需要寄信基礎設施,v1 沒有;邀請連結即身分驗證,無開放註冊、不寄信。

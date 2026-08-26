@@ -70,6 +70,21 @@ using (var scope = app.Services.CreateScope())
 app.UseAuthentication();
 app.UseAuthorization();
 
+// 健康檢查(匿名):uptime 監測要 ping 的是「資料庫還活著」,不是「首頁回得了 200」。
+// 不洩漏任何內容,只回 ok / 503。
+app.MapGet("/healthz", async (ServerDbContext db) =>
+{
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("SELECT 1");
+        return Results.Text("ok");
+    }
+    catch
+    {
+        return Results.Text("db unreachable", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+
 // ── 認證 ───────────────────────────────────────────────────────
 app.MapPost("/api/auth/login", async (
     LoginRequest req, SignInManager<AppUser> signIn, UserManager<AppUser> users, ServerDbContext db) =>
@@ -203,7 +218,15 @@ app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
     var meta = new RunMetadata(
         CommitSha: Header(request, "X-Parity-Commit"),
         Branch: Header(request, "X-Parity-Branch"),
-        TriggeredBy: Header(request, "X-Parity-Triggered-By"));
+        TriggeredBy: Header(request, "X-Parity-Triggered-By"),
+        // push 端算好的真實 gate 結果(pass/fail);缺頭 → null → 伺服器退回預設口徑
+        GateFailed: Header(request, "X-Parity-Gate") switch
+        {
+            "fail" => true,
+            "pass" => false,
+            _ => null,
+        },
+        RepoUrl: Header(request, "X-Parity-Repo-Url"));
 
     Run run;
     try
@@ -253,6 +276,7 @@ app.MapGet("/api/runs", async (ClaimsPrincipal principal, ServerDbContext db, [F
             r.CommitSha,
             r.Branch,
             r.TriggeredBy,
+            r.RepoUrl,
             Project = r.Project!.Name,
             Pages = r.Pages.Count,
         })
@@ -260,11 +284,22 @@ app.MapGet("/api/runs", async (ClaimsPrincipal principal, ServerDbContext db, [F
     return Results.Json(runs);
 }).RequireAuthorization();
 
-app.MapGet("/api/overview", async (ClaimsPrincipal principal, ServerDbContext db) =>
-    Results.Json(await Queries.OverviewAsync(db, UserId(principal)))).RequireAuthorization();
+app.MapGet("/api/branches", async (ClaimsPrincipal principal, ServerDbContext db) =>
+    Results.Json(await Queries.BranchesAsync(db, UserId(principal)))).RequireAuthorization();
 
-app.MapGet("/api/trend", async (Guid project, string route, ClaimsPrincipal principal, ServerDbContext db) =>
-    Results.Json(await Queries.TrendAsync(db, UserId(principal), project, route))).RequireAuthorization();
+app.MapGet("/api/overview", async (ClaimsPrincipal principal, ServerDbContext db, [FromQuery] string? branch) =>
+    Results.Json(await Queries.OverviewAsync(db, UserId(principal), branch))).RequireAuthorization();
+
+app.MapGet("/api/trend", async (
+    Guid project, string route, ClaimsPrincipal principal, ServerDbContext db, [FromQuery] string? branch) =>
+    Results.Json(await Queries.TrendAsync(db, UserId(principal), project, route, branch))).RequireAuthorization();
+
+// 「跟上次比變了什麼」——同專案、同分支的前一筆(引擎 BaselineComparer 同語意)
+app.MapGet("/api/runs/{id:guid}/changes", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
+{
+    var changes = await RunCompare.ChangesAsync(db, UserId(principal), id);
+    return changes is null ? Results.NotFound() : Results.Json(changes);
+}).RequireAuthorization();
 
 app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
 {
@@ -279,6 +314,7 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, Ser
             r.CommitSha,
             r.Branch,
             r.TriggeredBy,
+            r.RepoUrl,
             Project = r.Project!.Name,
             r.RawReportGzip,
         })
@@ -297,6 +333,7 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, Ser
         commitSha = run.CommitSha,
         branch = run.Branch,
         triggeredBy = run.TriggeredBy,
+        repoUrl = run.RepoUrl,
         project = run.Project,
         pages = doc.Reports.Select(rep => new
         {

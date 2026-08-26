@@ -43,7 +43,7 @@ public class ServerQueriesTests : IAsyncLifetime
             CreatedAt = DateTimeOffset.UnixEpoch,
         });
 
-        // 三次 run:route "/" 分數 60 → 75 → 70;route "/about" 只在最後一次出現(90)
+        // 三次 main run:route "/" 分數 60 → 75 → 70;route "/about" 只在最後一次出現(90)
         var t0 = DateTimeOffset.UnixEpoch;
         for (var (i, scores) = (0, new[] { 60, 75, 70 }); i < scores.Length; i++)
         {
@@ -55,12 +55,27 @@ public class ServerQueriesTests : IAsyncLifetime
                 Score = scores[i],
                 GateFailed = scores[i] < 75,
                 CommitSha = $"sha{i}",
+                Branch = "main",
                 RawReportGzip = ReportBlob.Compress("{}"),
             };
             run.Pages.Add(Page("/", scores[i]));
             if (i == 2) run.Pages.Add(Page("/about", 90));
             _db.Runs.Add(run);
         }
+        // 一筆更晚的 PR 分支 run(分數 5)——分支過濾要把它隔離在 main 的視圖之外
+        var pr = new Run
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            CreatedAt = t0.AddHours(9),
+            Score = 5,
+            GateFailed = true,
+            CommitSha = "prsha",
+            Branch = "pr-1",
+            RawReportGzip = ReportBlob.Compress("{}"),
+        };
+        pr.Pages.Add(Page("/", 5));
+        _db.Runs.Add(pr);
         await _db.SaveChangesAsync();
     }
 
@@ -82,7 +97,7 @@ public class ServerQueriesTests : IAsyncLifetime
     [Fact]
     public async Task Overview_gives_last_and_prev_per_route()
     {
-        var cards = await Queries.OverviewAsync(_db, _memberId);
+        var cards = await Queries.OverviewAsync(_db, _memberId, branch: "main");
 
         Assert.Equal(2, cards.Count); // 專案×route 各一張
         var home = cards.Single(c => c.Route == "/");
@@ -100,11 +115,32 @@ public class ServerQueriesTests : IAsyncLifetime
     [Fact]
     public async Task Trend_is_oldest_to_newest()
     {
-        var points = await Queries.TrendAsync(_db, _memberId, _projectId, "/");
+        var points = await Queries.TrendAsync(_db, _memberId, _projectId, "/", branch: "main");
 
         Assert.Equal([60, 75, 70], points.Select(p => p.Score)); // 舊 → 新,畫圖的方向
         Assert.Equal("sha0", points[0].CommitSha);
         Assert.True(points[0].At < points[2].At);
+    }
+
+    [Fact]
+    public async Task Branch_filter_keeps_pr_runs_out_of_main_views()
+    {
+        // 不過濾 → PR 那筆最晚,把 "/" 的最新分數拉成 5(這正是 M4.5 要修的污染)
+        var unfiltered = await Queries.OverviewAsync(_db, _memberId);
+        Assert.Equal(5, unfiltered.Single(c => c.Route == "/").LastScore);
+
+        // 過濾 main → 污染消失
+        var main = await Queries.OverviewAsync(_db, _memberId, branch: "main");
+        Assert.Equal(70, main.Single(c => c.Route == "/").LastScore);
+
+        // 趨勢同語意
+        Assert.Equal(4, (await Queries.TrendAsync(_db, _memberId, _projectId, "/")).Count);
+        Assert.Equal(3, (await Queries.TrendAsync(_db, _memberId, _projectId, "/", branch: "main")).Count);
+        Assert.Single(await Queries.TrendAsync(_db, _memberId, _projectId, "/", branch: "pr-1"));
+
+        // 分支清單:近 → 遠
+        var branches = await Queries.BranchesAsync(_db, _memberId);
+        Assert.Equal(["pr-1", "main"], branches.Select(b => b.Branch));
     }
 
     [Fact]

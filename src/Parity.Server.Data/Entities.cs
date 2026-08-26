@@ -26,6 +26,8 @@ public class Run
     public string? CommitSha { get; set; }
     public string? Branch { get; set; }
     public string? TriggeredBy { get; set; }
+    /// <summary>repo 首頁網址(如 https://github.com/owner/repo,CI 環境自動帶)——UI 把 commit 連回去。</summary>
+    public string? RepoUrl { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>整體還原度分數(FidelityScore.Compute,與 CLI 印的同一個數字)。</summary>

@@ -3,8 +3,15 @@ using Parity.Engine;
 
 namespace Parity.Server.Data;
 
-/// <summary>push 上來的一次執行的中繼資料(commit/branch/觸發者,由 CI 環境提供)。</summary>
-public sealed record RunMetadata(string? CommitSha, string? Branch, string? TriggeredBy);
+/// <summary>
+/// push 上來的一次執行的中繼資料(由 CI 環境/push 端提供)。
+/// GateFailed:**CLI 端算好的真實 gate 結果**(含使用者自訂 failOn)——伺服器不重判,
+/// 免得出現「CI 綠燈、儀表板紅字」的口徑分裂;null(舊版 CLI / 裸 API)才退回
+/// 伺服器端的預設口徑(critical/serious)。
+/// </summary>
+public sealed record RunMetadata(
+    string? CommitSha, string? Branch, string? TriggeredBy,
+    bool? GateFailed = null, string? RepoUrl = null);
 
 /// <summary>
 /// report.json 原文 → Run 實體圖。純函式、可單元測試;唯一的解析點,
@@ -39,11 +46,12 @@ public static class RunIngest
             CommitSha = meta.CommitSha,
             Branch = meta.Branch,
             TriggeredBy = meta.TriggeredBy,
+            RepoUrl = meta.RepoUrl,
             CreatedAt = receivedAt,
             Score = FidelityScore.Compute(doc.Reports),
-            // gate 判定屬於 config(failOn 可自訂),伺服器只看報告——
-            // 有任何 critical/serious 即視為紅,與預設 gate 同口徑;M2 若要精確可隨 push 傳 gate 結果
-            GateFailed = doc.Reports.Any(r => r.Summary.Critical > 0 || r.Summary.Serious > 0),
+            // gate:優先用 push 端帶來的真實結果(見 RunMetadata);沒有才退回預設口徑
+            GateFailed = meta.GateFailed
+                ?? doc.Reports.Any(r => r.Summary.Critical > 0 || r.Summary.Serious > 0),
             RawReportGzip = ReportBlob.Compress(rawReportJson),
         };
 

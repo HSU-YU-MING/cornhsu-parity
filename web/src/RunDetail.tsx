@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchRunMeta, fetchRunReport } from './api'
-import type { FidelityReport, NodeResult, ReportDocument, RunMeta, Severity } from './types'
+import { fetchChanges, fetchRunMeta, fetchRunReport } from './api'
+import type { FidelityReport, NodeResult, ReportDocument, RunChanges, RunMeta, Severity } from './types'
 import Blueprint from './Blueprint'
+
+/* Figma 深連結:designReference 是 Figma file key 時(不含路徑分隔符的一串英數),
+   圖層名可以直接跳回 Figma 的那個節點——CLI 的 Markdown 報告本來就會這樣連,儀表板跟上。 */
+function figmaUrl(designReference: string, designId: string): string | null {
+  if (!/^[A-Za-z0-9]{15,}$/.test(designReference)) return null // 路徑/快照檔 → 不是 Figma
+  return `https://www.figma.com/design/${designReference}?node-id=${encodeURIComponent(designId)}`
+}
 
 /* 落差詳情——取代 PPT 那一頁的畫面(網頁外殼規畫書 6)。
    左:藍圖(在哪裡);右:數值清單(差多少)。點任一邊,另一邊跟著亮。 */
@@ -12,6 +19,7 @@ const SEVERITIES: HardSeverity[] = ['critical', 'serious', 'medium', 'minor']
 export default function RunDetail({ id }: { id: string }) {
   const [meta, setMeta] = useState<RunMeta | null>(null)
   const [doc, setDoc] = useState<ReportDocument | null>(null)
+  const [changes, setChanges] = useState<RunChanges | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pageIdx, setPageIdx] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
@@ -22,6 +30,7 @@ export default function RunDetail({ id }: { id: string }) {
   useEffect(() => {
     Promise.all([fetchRunMeta(id), fetchRunReport(id)])
       .then(([m, d]) => { setMeta(m); setDoc(d) }, e => setError(String(e)))
+    fetchChanges(id).then(setChanges, () => setChanges(null)) // 比較失敗不擋主畫面
   }, [id])
 
   if (error) return <div className="error">Could not load this run ({error}).</div>
@@ -42,8 +51,19 @@ export default function RunDetail({ id }: { id: string }) {
         <div className="cell"><span className="tag">received</span>
           <span className="v">{meta.createdAt.replace('T', ' ').slice(0, 19)} UTC</span></div>
         {meta.branch && <div className="cell"><span className="tag">branch</span><span className="v">{meta.branch}</span></div>}
-        {meta.commitSha && <div className="cell"><span className="tag">commit</span><span className="v">{meta.commitSha.slice(0, 7)}</span></div>}
+        {meta.commitSha && (
+          <div className="cell"><span className="tag">commit</span>
+            <span className="v">
+              {meta.repoUrl
+                ? <a href={`${meta.repoUrl}/commit/${meta.commitSha}`} target="_blank" rel="noreferrer">
+                    {meta.commitSha.slice(0, 7)}</a>
+                : meta.commitSha.slice(0, 7)}
+            </span>
+          </div>
+        )}
       </div>
+
+      {changes && <ChangesStrip changes={changes} />}
 
       {doc.reports.length > 1 && (
         <div className="pagetabs">
@@ -62,6 +82,45 @@ export default function RunDetail({ id }: { id: string }) {
         softOn={softOn} setSoftOn={setSoftOn}
         cleanOn={cleanOn} setCleanOn={setCleanOn} />
     </>
+  )
+}
+
+/* 「跟上次比變了什麼」——PM 每天真正的問題(M4.5 必補 #3)。
+   同專案同分支的前一筆;第一筆就誠實說是第一筆。 */
+function ChangesStrip({ changes }: { changes: RunChanges }) {
+  const [open, setOpen] = useState(false)
+
+  if (changes.prevRunId === null)
+    return <p className="changes-strip m dim">first run on this branch — nothing to compare against yet</p>
+
+  const total = changes.regressions.length + changes.worsened.length + changes.fixed.length
+  return (
+    <div className="changes-strip">
+      <button className="changes-summary m" onClick={() => setOpen(!open)}
+        aria-expanded={open} disabled={total === 0}>
+        vs previous run ({changes.prevCreatedAt!.replace('T', ' ').slice(5, 16)}):{' '}
+        <span className={changes.regressions.length ? 'chg-new' : 'dim'}>🔴 new {changes.regressions.length}</span> ·{' '}
+        <span className={changes.worsened.length ? 'chg-worse' : 'dim'}>🟠 worsened {changes.worsened.length}</span> ·{' '}
+        <span className={changes.fixed.length ? 'chg-fixed' : 'dim'}>🟢 fixed {changes.fixed.length}</span> ·{' '}
+        <span className="dim">unchanged {changes.unchanged}</span>
+        {total > 0 && <span className="dim"> {open ? '▾' : '▸'}</span>}
+      </button>
+      {open && (
+        <table className="diffs changes-table"><tbody>
+          {([['new', changes.regressions], ['worsened', changes.worsened], ['fixed', changes.fixed]] as const)
+            .flatMap(([kind, list]) => list.map((d, i) => (
+              <tr key={`${kind}${i}`}>
+                <td className={`m chg-${kind === 'new' ? 'new' : kind === 'worsened' ? 'worse' : 'fixed'}`}>{kind}</td>
+                <td>{d.designLayer}<span className="dim m"> {d.route}</span></td>
+                <td className="d-prop">{d.prop}</td>
+                <td className="d-vals"><span className="exp">{d.expected}</span>
+                  <span className="d-arrow"> → </span><span className="act">{d.actual}</span></td>
+                <td className={`sev ${d.severity}`}>{d.severity}</td>
+              </tr>
+            )))}
+        </tbody></table>
+      )}
+    </div>
   )
 }
 
@@ -148,7 +207,14 @@ function PageView({ report, selected, setSelected, sevOn, setSevOn, softOn, setS
             <div key={n.designId} data-node={n.designId}
               className={`node-card ${selected === n.designId ? 'sel' : ''}`}
               onClick={() => select(selected === n.designId ? null : n.designId)}>
-              <div className="layer">{n.designLayer}</div>
+              <div className="layer">
+                {n.designLayer}
+                {figmaUrl(report.designReference, n.designId) && (
+                  <a className="figma-link" href={figmaUrl(report.designReference, n.designId)!}
+                    target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                    title="open this layer in Figma">↗ figma</a>
+                )}
+              </div>
               <div className="sel-path">{n.selector}</div>
               <table className="diffs"><tbody>
                 {n.diffs
