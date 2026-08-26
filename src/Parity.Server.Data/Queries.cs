@@ -18,14 +18,17 @@ public sealed record TrendPoint(
 /// </summary>
 public static class Queries
 {
-    /// <summary>近 recentRuns 次執行內,每個 專案×route 的最新/上次分數。</summary>
+    /// <summary>近 recentRuns 次執行內,每個 專案×route 的最新/上次分數。**只含 userId 是成員的專案**。</summary>
     public static async Task<List<OverviewCard>> OverviewAsync(
-        ServerDbContext db, int recentRuns = 500, CancellationToken ct = default)
+        ServerDbContext db, Guid userId, int recentRuns = 500, CancellationToken ct = default)
     {
+        var visible = Membership.ProjectIdsFor(db, userId);
         // 先取近 N 次 run 的頁面結果(含 run 中繼資料),分組在記憶體做——
         // 個人/小團隊的量級(數百 run)這樣最簡單;真的長大再下推到 SQL。
         var recent = await db.PageResults
-            .Where(p => db.Runs.OrderByDescending(r => r.CreatedAt).Take(recentRuns)
+            .Where(p => visible.Contains(p.Run!.ProjectId))
+            .Where(p => db.Runs.Where(r => visible.Contains(r.ProjectId))
+                .OrderByDescending(r => r.CreatedAt).Take(recentRuns)
                 .Select(r => r.Id).Contains(p.RunId))
             .Select(p => new
             {
@@ -55,12 +58,14 @@ public static class Queries
             .ToList();
     }
 
-    /// <summary>單一 專案×route 的分數時間序(舊 → 新,最多 limit 點)。</summary>
+    /// <summary>單一 專案×route 的分數時間序(舊 → 新,最多 limit 點)。**非成員回空**。</summary>
     public static async Task<List<TrendPoint>> TrendAsync(
-        ServerDbContext db, Guid projectId, string route, int limit = 100, CancellationToken ct = default)
+        ServerDbContext db, Guid userId, Guid projectId, string route, int limit = 100, CancellationToken ct = default)
     {
+        var visible = Membership.ProjectIdsFor(db, userId);
         var points = await db.PageResults
-            .Where(p => p.Route == route && p.Run!.ProjectId == projectId)
+            .Where(p => p.Route == route && p.Run!.ProjectId == projectId
+                && visible.Contains(p.Run.ProjectId))
             .OrderByDescending(p => p.Run!.CreatedAt)
             .Take(limit)
             .Select(p => new TrendPoint(

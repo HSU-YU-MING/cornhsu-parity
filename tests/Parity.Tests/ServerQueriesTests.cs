@@ -10,6 +10,8 @@ public class ServerQueriesTests : IAsyncLifetime
     private SqliteConnection _conn = null!;
     private ServerDbContext _db = null!;
     private Guid _projectId;
+    private readonly Guid _memberId = Guid.NewGuid();   // 專案成員(viewer)
+    private readonly Guid _strangerId = Guid.NewGuid(); // 非成員——什麼都不該看到
 
     public async Task InitializeAsync()
     {
@@ -28,6 +30,18 @@ public class ServerQueriesTests : IAsyncLifetime
         };
         _projectId = project.Id;
         _db.Projects.Add(project);
+
+        // M3:讀取一律走成員資格過濾——member 看得到,stranger 看不到
+        foreach (var uid in new[] { _memberId, _strangerId })
+            _db.Users.Add(new AppUser { Id = uid, UserName = $"{uid}@t", Email = $"{uid}@t" });
+        _db.Members.Add(new ProjectMember
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            UserId = _memberId,
+            Role = ProjectRole.Viewer,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+        });
 
         // 三次 run:route "/" 分數 60 → 75 → 70;route "/about" 只在最後一次出現(90)
         var t0 = DateTimeOffset.UnixEpoch;
@@ -68,7 +82,7 @@ public class ServerQueriesTests : IAsyncLifetime
     [Fact]
     public async Task Overview_gives_last_and_prev_per_route()
     {
-        var cards = await Queries.OverviewAsync(_db);
+        var cards = await Queries.OverviewAsync(_db, _memberId);
 
         Assert.Equal(2, cards.Count); // 專案×route 各一張
         var home = cards.Single(c => c.Route == "/");
@@ -86,10 +100,87 @@ public class ServerQueriesTests : IAsyncLifetime
     [Fact]
     public async Task Trend_is_oldest_to_newest()
     {
-        var points = await Queries.TrendAsync(_db, _projectId, "/");
+        var points = await Queries.TrendAsync(_db, _memberId, _projectId, "/");
 
         Assert.Equal([60, 75, 70], points.Select(p => p.Score)); // 舊 → 新,畫圖的方向
         Assert.Equal("sha0", points[0].CommitSha);
         Assert.True(points[0].At < points[2].At);
+    }
+
+    [Fact]
+    public async Task Non_members_see_nothing()
+    {
+        Assert.Empty(await Queries.OverviewAsync(_db, _strangerId));
+        Assert.Empty(await Queries.TrendAsync(_db, _strangerId, _projectId, "/")); // 連指名專案也擋
+    }
+
+    [Fact]
+    public async Task Last_owner_cannot_be_removed()
+    {
+        var ownerId = Guid.NewGuid();
+        _db.Users.Add(new AppUser { Id = ownerId, UserName = "o@t", Email = "o@t" });
+        _db.Members.Add(new ProjectMember
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = _projectId,
+            UserId = ownerId,
+            Role = ProjectRole.Owner,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+        });
+        await _db.SaveChangesAsync();
+
+        Assert.True(await Membership.WouldRemoveLastOwnerAsync(_db, _projectId, ownerId));  // 唯一 owner → 擋
+        Assert.False(await Membership.WouldRemoveLastOwnerAsync(_db, _projectId, _memberId)); // viewer 隨時可移
+        Assert.True(await Membership.IsOwnerAsync(_db, ownerId, _projectId));
+        Assert.False(await Membership.IsOwnerAsync(_db, _memberId, _projectId));
+    }
+}
+
+/// <summary>邀請生命週期:單次使用、過期、角色驗證、重邀覆寫角色。</summary>
+public class InviteLifecycleTests
+{
+    [Fact]
+    public async Task Invite_is_single_use_and_expires()
+    {
+        await using var conn = new SqliteConnection("Data Source=:memory:");
+        await conn.OpenAsync();
+        await using var db = new ServerDbContext(new DbContextOptionsBuilder<ServerDbContext>()
+            .UseSqlite(conn).Options);
+        await db.Database.MigrateAsync();
+
+        var project = new Project
+        {
+            Id = Guid.NewGuid(),
+            Name = "p",
+            TokenHash = ProjectToken.Hash(ProjectToken.Generate()),
+            CreatedAt = DateTimeOffset.UnixEpoch,
+        };
+        db.Projects.Add(project);
+        var user = new AppUser { Id = Guid.NewGuid(), UserName = "a@t", Email = "a@t" };
+        db.Users.Add(user);
+
+        var now = DateTimeOffset.UnixEpoch;
+        var (invite, token) = Invites.Create(project.Id, "a@t", ProjectRole.Viewer, now);
+        db.Invites.Add(invite);
+        await db.SaveChangesAsync();
+
+        Assert.NotNull(await Invites.FindUsableAsync(db, token, now));                       // 有效
+        Assert.Null(await Invites.FindUsableAsync(db, token, now + TimeSpan.FromDays(8)));   // 過期
+        Assert.Null(await Invites.FindUsableAsync(db, "not-a-real-token-aaaaaaaa", now));    // 假 token
+
+        await Invites.AcceptAsync(db, invite, user.Id, now);
+        Assert.Null(await Invites.FindUsableAsync(db, token, now)); // 單次使用:接受後即失效
+        Assert.Equal(ProjectRole.Viewer,
+            (await db.Members.SingleAsync(m => m.UserId == user.Id)).Role);
+
+        // 重邀同人 → 覆寫角色而不是撞 unique index
+        var (invite2, _) = Invites.Create(project.Id, "a@t", ProjectRole.Owner, now);
+        db.Invites.Add(invite2);
+        await db.SaveChangesAsync();
+        await Invites.AcceptAsync(db, invite2, user.Id, now);
+        Assert.Equal(ProjectRole.Owner,
+            (await db.Members.SingleAsync(m => m.UserId == user.Id)).Role);
+
+        Assert.Throws<ArgumentException>(() => Invites.Create(project.Id, "a@t", "admin", now)); // 未知角色
     }
 }
