@@ -20,8 +20,32 @@ var builder = WebApplication.CreateBuilder(args);
 
 // M1 預設只聽本機——報告含站點結構,跟 parity serve 同一個理由不讓區網掃到。
 // 部署(M5)時用 ASPNETCORE_URLS 覆蓋。
-if (builder.Configuration["urls"] is null && Environment.GetEnvironmentVariable("ASPNETCORE_URLS") is null)
+var configuredUrls = builder.Configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+if (configuredUrls is null)
+{
     builder.WebHost.UseUrls("http://127.0.0.1:4322");
+}
+else if (Environment.GetEnvironmentVariable("PARITY_SERVER_ALLOW_REMOTE") != "1")
+{
+    // 裸奔守門(M3 之前的保險絲):讀取端點目前沒有認證,唯一防線是只聽本機。
+    // 有人設了對外位址,大概率是還不知道這件事——拒絕啟動、講清楚,
+    // 而不是安靜地把整站結構暴露在區網上。真的要對外(自擔風險)才設
+    // PARITY_SERVER_ALLOW_REMOTE=1;帳號與權限是 M3,做完這道守門改成看認證設定。
+    var local = new[] { "127.0.0.1", "localhost", "[::1]" };
+    var exposed = configuredUrls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(u => Uri.TryCreate(u.Replace("+", "0.0.0.0").Replace("*", "0.0.0.0"), UriKind.Absolute, out var uri)
+            ? !local.Contains(uri.Host) : true)
+        .ToList();
+    if (exposed.Count > 0)
+    {
+        Console.Error.WriteLine(
+            $"refusing to start: {string.Join(", ", exposed)} is not a localhost address, and the read " +
+            "endpoints have no authentication yet (accounts arrive with milestone M3). Reports contain your " +
+            "site's structure — binding beyond 127.0.0.1 would expose them to the network.\n" +
+            "If you accept that risk, set PARITY_SERVER_ALLOW_REMOTE=1 and start again.");
+        return 3;
+    }
+}
 
 builder.Services.AddDbContext<ServerDbContext>(o => o.UseSqlite(
     builder.Configuration.GetConnectionString("parity")
@@ -118,44 +142,69 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ServerDbContext db) =>
             r.Branch,
             r.TriggeredBy,
             Project = r.Project!.Name,
-            Pages = r.Pages.Select(p => new
-            {
-                p.Route,
-                p.Url,
-                p.Score,
-                p.DesignNodes,
-                p.Matched,
-                p.Unmatched,
-                p.Critical,
-                p.Serious,
-                p.Medium,
-                p.Minor,
-                p.MaxSeverity,
-                Diffs = p.Diffs.Select(d => new
-                {
-                    d.DesignLayer,
-                    d.Selector,
-                    d.Prop,
-                    d.Expected,
-                    d.Actual,
-                    d.Unit,
-                    d.Delta,
-                    d.Severity,
-                    d.Status,
-                    d.Soft,
-                    d.MatchedBy,
-                }),
-            }),
+            r.RawReportGzip,
         })
         .FirstOrDefaultAsync();
-    return run is null ? Results.NotFound() : Results.Json(run);
+    if (run is null) return Results.NotFound();
+
+    // 逐條落差從原文 blob 重建(關聯表刻意不存 Diff,見 Entities.cs)
+    var doc = System.Text.Json.JsonSerializer.Deserialize<Parity.Engine.ReportDocument>(
+        ReportBlob.Decompress(run.RawReportGzip), Parity.Engine.ReportWire.Compact)!;
+    return Results.Json(new
+    {
+        id = run.Id,
+        createdAt = run.CreatedAt,
+        score = run.Score,
+        gateFailed = run.GateFailed,
+        commitSha = run.CommitSha,
+        branch = run.Branch,
+        triggeredBy = run.TriggeredBy,
+        project = run.Project,
+        pages = doc.Reports.Select(rep => new
+        {
+            route = rep.Route,
+            url = rep.Url,
+            score = Parity.Engine.FidelityScore.Compute([rep]),
+            designNodes = rep.Summary.DesignNodes,
+            matched = rep.Summary.Matched,
+            unmatched = rep.Summary.Unmatched,
+            critical = rep.Summary.Critical,
+            serious = rep.Summary.Serious,
+            medium = rep.Summary.Medium,
+            minor = rep.Summary.Minor,
+            maxSeverity = rep.Summary.MaxSeverity.ToString().ToLowerInvariant(),
+            diffs = rep.Nodes.SelectMany(n => n.Diffs.Select(d => new
+            {
+                designLayer = n.DesignLayer,
+                selector = n.Selector,
+                matchedBy = n.MatchedBy,
+                prop = d.Prop,
+                expected = d.Expected,
+                actual = d.Actual,
+                unit = d.Unit,
+                delta = d.Delta,
+                severity = d.Severity.ToString().ToLowerInvariant(),
+                status = d.Status.ToString().ToLowerInvariant(),
+                soft = d.Soft,
+            })),
+        }),
+    });
 });
+
+// 總覽與趨勢(M4):關聯表就是為這兩個查詢存在的
+app.MapGet("/api/overview", async (ServerDbContext db) =>
+    Results.Json(await Queries.OverviewAsync(db)));
+
+app.MapGet("/api/trend", async (Guid project, string route, ServerDbContext db) =>
+    Results.Json(await Queries.TrendAsync(db, project, route)));
 
 // 報告原文(M2 前端的資料來源):UI 直接吃 CLI 寫出的同一份契約,關聯表只服務列表/趨勢
 app.MapGet("/api/runs/{id:guid}/report", async (Guid id, ServerDbContext db) =>
 {
-    var raw = await db.Runs.Where(r => r.Id == id).Select(r => r.RawReportJson).FirstOrDefaultAsync();
-    return raw is null ? Results.NotFound() : Results.Content(raw, "application/json; charset=utf-8");
+    var blob = await db.Runs.Where(r => r.Id == id).Select(r => r.RawReportGzip).FirstOrDefaultAsync();
+    return blob is null
+        ? Results.NotFound()
+        : Results.Content(ReportBlob.Decompress(blob), "application/json; charset=utf-8");
 });
 
 // ── 前端:web/ 的建置產物(vite build → wwwroot)。沒建置時退回 M1 的陽春頁,

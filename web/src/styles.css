@@ -9,7 +9,8 @@
   --ink-2: #5a6069;        /* 次要文字 */
   --line: #e2e4de;         /* 卡片框線 */
   --hairline: #ecede8;     /* 表格細線 */
-  --steel: #58789b;        /* 藍圖線:設計意圖 */
+  --steel: #58789b;        /* 藍圖線:設計意圖(框線用;彩度刻意低) */
+  --chart: #3e6fae;        /* 資料序列線:validate_palette 六檢通過(chroma 夠,不讀成灰) */
   --steel-soft: #58789b33;
   --pass: #0e7c66;
   --sev-critical: #b3261e;
@@ -159,6 +160,40 @@ table.diffs td { padding: 0.18rem 0.4rem 0.18rem 0; vertical-align: baseline; fo
 
 .unmatched-note { padding: 0.55rem 0.75rem; color: var(--ink-2); font-size: 0.84rem;
   border-top: 1px solid var(--line); }
+
+/* ── 總覽卡(M4 stat tiles)── */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.6rem; }
+.card {
+  display: flex; flex-direction: column; gap: 0.15rem; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: 3px;
+  padding: 0.6rem 0.75rem; cursor: pointer;
+}
+.card:hover { border-color: var(--steel); }
+.card.on { border-color: var(--ink); box-shadow: inset 0 2px 0 var(--ink); }
+.card-route { font-size: 0.8rem; color: var(--ink-2); word-break: break-all; }
+.card-score { font-size: 1.45rem; font-weight: 700; line-height: 1.15; }
+.card-score .dim { font-size: 0.85rem; font-weight: 400; color: var(--ink-2); }
+.card-sub { font-size: 0.75rem; }
+.dir { font-size: 0.8rem; margin-left: 0.45rem; }
+.dir.up { color: var(--pass); }
+.dir.down { color: var(--sev-critical); }
+
+/* ── 趨勢圖(M4)── */
+.trend-pane { margin-top: 0.7rem; }
+.trend { position: relative; padding: 0.4rem 0.4rem 0.2rem; }
+.t-grid { stroke: var(--hairline); stroke-width: 1; }
+.t-axis { font-family: var(--mono); font-size: 9px; fill: var(--ink-2); }
+.t-line { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; }
+.t-dot { fill: var(--chart); stroke: var(--card); stroke-width: 2; pointer-events: none; }
+.t-dot.fail { fill: var(--sev-critical); }
+.t-crosshair { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.t-label { font-family: var(--mono); font-size: 11px; font-weight: 700; fill: var(--ink); }
+.t-tip {
+  position: absolute; top: 0; transform: translateX(-50%);
+  background: var(--ink); color: var(--paper); font-size: 0.75rem;
+  padding: 0.25rem 0.5rem; border-radius: 3px; pointer-events: none; white-space: nowrap;
+}
+.t-tip .dim { opacity: 0.7; }
 
 .loading, .error { padding: 2rem; text-align: center; color: var(--ink-2); }
 .error { color: var(--sev-critical); }

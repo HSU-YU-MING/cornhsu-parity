@@ -81,3 +81,24 @@ export interface RunMeta {
 export interface RunListItem extends RunMeta {
   pages: number
 }
+
+// M4:總覽卡與趨勢點
+export interface OverviewCard {
+  projectId: string
+  project: string
+  route: string
+  url: string
+  lastScore: number
+  lastGateFailed: boolean
+  lastAt: string
+  prevScore: number | null
+  runCount: number
+}
+
+export interface TrendPoint {
+  runId: string
+  at: string
+  score: number
+  gateFailed: boolean
+  commitSha: string | null
+}
