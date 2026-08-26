@@ -61,7 +61,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **197 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **202 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 21 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -167,6 +167,24 @@ parity snapshot            # 1. 凍結現在的畫面(產出 parity.snapshot.jso
 #    config 改 designFile 指向它、target.frame 填 route
 parity check               # 2. 大膽重構;3. check 保證與快照一致
 ```
+
+## Figma 檔怎麼挑 frame:野生實測的三個教訓
+
+以下每一條都是在公開設計系統檔上量出來的(IBM Carbon、Ant Design、Wikimedia Codex——
+方法與完整發現見 `docs/野生實查-2026-08-11-路線B-figma方言.md`):
+
+1. **挑「畫一個畫面」的 frame,不要挑元件總表。** 設計系統 kit 的元件頁是一張畫滿
+   所有變體的表,跟任何真實頁面在結構上不相交,配對率必然貼地(實測:Carbon 的
+   Button 總表 0.2%、Codex 5.8%)——這是配對器誠實拒絕硬湊,不是工具壞掉。
+   要驗單一元件,拿**單一變體節點**對 Storybook 的單一 story 或 demo 頁上的單一元件。
+2. **kit 的文字是佔位字時,直接寫 map 檔。** 自動配對的主力是文字錨定(兩邊文字相同
+   才配),但元件庫的文字常是「Button text」這種佔位字,真實頁面上不會出現——
+   不用先試自動配對,直接寫 `parity.map.json`(實測 Codex:129 個 Button 變體全是
+   佔位字,map 一行就完成配對)。
+3. **免費方案的 API 額度是「天」級的,只花在沒抓過的 frame 上。** Figma 免費方案的
+   額度是方案級的:對大檔查一兩次就可能見底,`Retry-After` 以天計(實測兩度撞上:
+   4.3 天、3.7 天)。抓過的 frame 存在 `.parity/cache`,重跑與離線比對不花額度——
+   額度只該花在沒抓過的 frame。
 
 ## 比什麼、不比什麼
 

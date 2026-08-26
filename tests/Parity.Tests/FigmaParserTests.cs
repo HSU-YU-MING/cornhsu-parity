@@ -108,4 +108,30 @@ public class FigmaParserTests
     public void Retry_after_speaks_the_right_unit(int? seconds, string expected)
         => Assert.Equal(expected, FigmaDesignSource.DescribeRetryAfter(
             seconds is { } s ? TimeSpan.FromSeconds(s) : null));
+
+    [Fact] // Codex 補測實踩:token 過期回 403,樣子跟 scope 不足一模一樣——提示要把過期列為候選
+    public void Forbidden_hint_mentions_token_expiry()
+    {
+        var hint = FigmaDesignSource.DescribeFailureHint(System.Net.HttpStatusCode.Forbidden, null);
+        Assert.Contains("expired", hint);
+        Assert.Contains("file_content:read", hint);
+    }
+
+    [Fact] // 429 走限流提示(含 cache 逃生口),不是設定檢查
+    public void Rate_limit_hint_points_at_cache_not_config()
+    {
+        var hint = FigmaDesignSource.DescribeFailureHint(
+            System.Net.HttpStatusCode.TooManyRequests, TimeSpan.FromSeconds(367422));
+        Assert.Contains("4.3 day(s)", hint);
+        Assert.Contains(".parity/cache", hint);
+        Assert.DoesNotContain("fileKey", hint);
+    }
+
+    [Fact] // 其他錯誤(404 等)維持一般設定檢查,不提過期——不確定的原因不亂列
+    public void Other_errors_keep_the_generic_hint()
+    {
+        var hint = FigmaDesignSource.DescribeFailureHint(System.Net.HttpStatusCode.NotFound, null);
+        Assert.DoesNotContain("expired", hint);
+        Assert.Contains("fileKey/nodeId", hint);
+    }
 }
