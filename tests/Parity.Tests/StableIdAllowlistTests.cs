@@ -169,3 +169,59 @@ public class StableIdAllowlistCaptureTests : IDisposable
         || ex.Message.Contains("install-browser", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("playwright install", StringComparison.OrdinalIgnoreCase);
 }
+
+/// <summary>
+/// 參考截圖屬於「被凍結的那一拍」:截圖字典以 URL 為鍵、後拍覆寫先拍,
+/// snapshot 的探測/連拍擷取若照拍截圖,凍結的樹與截圖就來自不同次載入
+/// (疊框視圖對不齊)。ImplRef.CaptureScreenshot = false 讓探測擷取不動截圖。
+/// </summary>
+public class ScreenshotSourceTests : IDisposable
+{
+    // 每次載入畫面都不同(隨機文字)→ 兩次載入的截圖必然不同,能分辨截圖來自哪一拍
+    private const string Html = """
+        <!doctype html>
+        <html><head><meta charset="utf-8"><style>body { margin: 0; font-size: 40px; }</style></head>
+        <body><div id="app">x</div>
+        <script>document.querySelector('#app').textContent = Math.random().toString(36);</script>
+        </body></html>
+        """;
+
+    private readonly string _htmlPath;
+
+    public ScreenshotSourceTests()
+    {
+        _htmlPath = Path.Combine(Path.GetTempPath(), $"parity-shot-{Guid.NewGuid():N}.html");
+        File.WriteAllText(_htmlPath, Html);
+    }
+
+    public void Dispose()
+    {
+        if (File.Exists(_htmlPath)) File.Delete(_htmlPath);
+    }
+
+    [Fact]
+    public async Task 探測擷取不覆寫截圖_凍結那拍的截圖保留()
+    {
+        await using var source = new WebImplementationSource(
+            new WebCaptureOptions(Headless: true, CaptureScreenshot: true));
+        var implRef = new ImplRef(Url: new Uri(_htmlPath).AbsoluteUri, ViewportWidth: 400, ViewportHeight: 200);
+
+        try
+        {
+            await source.CaptureAsync(implRef); // 第 1 拍:有截圖
+            var frozen = source.Screenshots[implRef.Url];
+
+            await source.CaptureAsync(implRef with { CaptureScreenshot = false }); // 探測:不動截圖
+            Assert.Equal(frozen, source.Screenshots[implRef.Url]); // 位元組一致 = 沒被覆寫
+
+            await source.CaptureAsync(implRef); // 再一次正式拍 → 才覆寫
+            Assert.NotEqual(frozen, source.Screenshots[implRef.Url]); // 畫面隨機,新截圖必不同
+        }
+        catch (Exception ex) when (
+            ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("install-browser", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("略過:未安裝 Chromium(parity install-browser);此測試需要真實瀏覽器");
+        }
+    }
+}

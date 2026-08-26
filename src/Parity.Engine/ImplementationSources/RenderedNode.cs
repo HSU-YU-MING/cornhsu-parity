@@ -52,6 +52,14 @@ public sealed record ImplRef(
     /// ——純字母隨機 id(rkxvdnnzty)字元啟發法認不出,實測名單認得出。
     /// </summary>
     public IReadOnlyList<string>? AllowedIdAnchors { get; init; }
+
+    /// <summary>
+    /// 這一次擷取要不要拍參考截圖(還需要來源本身開 CaptureScreenshot 才生效)。
+    /// 截圖字典以 URL 為鍵、後拍覆寫先拍——snapshot 的探測/連拍擷取若照拍,
+    /// 「凍結的樹」與「參考截圖」就會來自不同次載入,疊框視圖對不齊。
+    /// 探測性擷取設 false,截圖永遠屬於被凍結的那一拍。
+    /// </summary>
+    public bool CaptureScreenshot { get; init; } = true;
 }
 
 /// <summary>實作來源抽象——留給 WPF/桌面的門(規畫書 4.5)。</summary>
