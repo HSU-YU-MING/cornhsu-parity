@@ -1,6 +1,6 @@
 import type {
-  InvitePreview, Me, MembersResponse, OverviewCard, ReportDocument,
-  RunListItem, RunMeta, TrendPoint,
+  BranchInfo, InvitePreview, Me, MembersResponse, OverviewCard, ReportDocument,
+  RunChanges, RunListItem, RunMeta, TrendPoint,
 } from './types'
 
 /* 同源 SPA + cookie 認證:fetch 預設帶 cookie。401 丟 Unauthorized,App 層導去登入。 */
@@ -33,9 +33,13 @@ const del = (url: string) => fetch(url, { method: 'DELETE' }).then(res => handle
 export const fetchRuns = () => get<RunListItem[]>('/api/runs')
 export const fetchRunMeta = (id: string) => get<RunMeta>(`/api/runs/${id}`)
 export const fetchRunReport = (id: string) => get<ReportDocument>(`/api/runs/${id}/report`)
-export const fetchOverview = () => get<OverviewCard[]>('/api/overview')
-export const fetchTrend = (projectId: string, route: string) =>
-  get<TrendPoint[]>(`/api/trend?project=${projectId}&route=${encodeURIComponent(route)}`)
+export const fetchBranches = () => get<BranchInfo[]>('/api/branches')
+export const fetchOverview = (branch: string | null) =>
+  get<OverviewCard[]>(`/api/overview${branch === null ? '' : `?branch=${encodeURIComponent(branch)}`}`)
+export const fetchTrend = (projectId: string, route: string, branch: string | null) =>
+  get<TrendPoint[]>(`/api/trend?project=${projectId}&route=${encodeURIComponent(route)}`
+    + (branch === null ? '' : `&branch=${encodeURIComponent(branch)}`))
+export const fetchChanges = (id: string) => get<RunChanges>(`/api/runs/${id}/changes`)
 
 // 認證
 export const fetchMe = () => get<Me>('/api/auth/me')

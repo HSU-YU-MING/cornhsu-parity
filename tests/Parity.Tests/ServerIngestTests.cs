@@ -72,6 +72,24 @@ public class ServerIngestTests
         Assert.Contains("report", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(false, false)] // push 端說 pass → 伺服器不重判(即使報告裡有 serious)
+    [InlineData(true, true)]
+    public void Gate_verdict_from_push_wins_over_server_heuristic(bool pushed, bool expected)
+    {
+        var run = RunIngest.Parse(SampleReportJson(),
+            new RunMetadata(null, null, null, GateFailed: pushed), DateTimeOffset.UnixEpoch);
+        Assert.Equal(expected, run.GateFailed);
+    }
+
+    [Fact]
+    public void Missing_gate_header_falls_back_to_default_severity_rule()
+    {
+        var run = RunIngest.Parse(SampleReportJson(),
+            new RunMetadata(null, null, null, GateFailed: null), DateTimeOffset.UnixEpoch);
+        Assert.True(run.GateFailed); // sample 有 serious → 預設口徑紅
+    }
+
     [Fact]
     public void Clean_report_gate_passes_and_score_is_computed()
     {

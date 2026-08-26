@@ -644,12 +644,15 @@ internal static class Usage
         """;
 
     public const string Push = """
-          parity push --server <url> [--config <path>] [--in <report.json>] [--commit <sha>] [--branch <name>]
+          parity push --server <url> [--config <path>] [--in <report.json>] [--commit <sha>] [--branch <name>] [--gate-exit <code>]
               Send an existing report.json to a Parity.Server dashboard (no re-scan; the server never
               runs a browser — scanning always happens where `parity check` ran).
               Token comes from the PARITY_TOKEN environment variable (a project token from the server);
               --server may also come from PARITY_SERVER. Commit/branch default to the GitHub Actions
               environment (GITHUB_SHA / GITHUB_REF_NAME) when present.
+              --gate-exit <code>  Pass `parity check`'s real exit code so the dashboard shows the same
+                                  verdict as CI (covers custom failOn and --baseline semantics);
+                                  omitted → recomputed from the config's gate settings.
         """;
 
     public const string Snapshot = """

@@ -1,18 +1,39 @@
 import { useEffect, useState } from 'react'
-import { fetchOverview, fetchRuns, fetchTrend } from './api'
-import type { OverviewCard, RunListItem, TrendPoint } from './types'
+import { fetchBranches, fetchOverview, fetchRuns, fetchTrend } from './api'
+import type { BranchInfo, OverviewCard, RunListItem, TrendPoint } from './types'
 import { navigate } from './App'
 import TrendChart from './TrendChart'
+
+/* 分支預設值:main/master 優先,否則取最近有 push 的那條——
+   PR 分支的 push 不該污染 main 的總覽與趨勢(M4.5 必補 #1)。 */
+function defaultBranch(branches: BranchInfo[]): string | null {
+  if (branches.length === 0) return null
+  return branches.find(b => b.branch === 'main')?.branch
+    ?? branches.find(b => b.branch === 'master')?.branch
+    ?? branches[0].branch
+}
 
 export default function RunsList() {
   const [runs, setRuns] = useState<RunListItem[] | null>(null)
   const [cards, setCards] = useState<OverviewCard[] | null>(null)
+  const [branches, setBranches] = useState<BranchInfo[]>([])
+  const [branch, setBranch] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchRuns().then(setRuns, e => setError(String(e)))
-    fetchOverview().then(setCards, () => setCards([]))
+    fetchBranches().then(bs => {
+      setBranches(bs)
+      const def = defaultBranch(bs)
+      setBranch(def)
+      fetchOverview(def).then(setCards, () => setCards([]))
+    }, () => setCards([]))
   }, [])
+
+  const pickBranch = (b: string) => {
+    setBranch(b); setCards(null)
+    fetchOverview(b).then(setCards, () => setCards([]))
+  }
 
   if (error) return <div className="error">Could not load runs ({error}). Is the server running?</div>
   if (!runs) return <div className="loading">Loading…</div>
@@ -26,8 +47,23 @@ export default function RunsList() {
 
   return (
     <>
-      {cards && cards.length > 0 && <Overview cards={cards} />}
-      <h2 className="tag" style={{ margin: '1.4rem 0 0.5rem' }}>received runs</h2>
+      {branches.length > 1 && (
+        <div className="filters" style={{ marginBottom: '0.6rem' }}>
+          <span className="tag">branch</span>
+          {branches.map(b => (
+            <button key={b.branch} className={`chip ${branch === b.branch ? 'on' : ''}`}
+              onClick={() => pickBranch(b.branch)}>
+              {b.branch === '' ? '(no branch)' : b.branch}
+            </button>
+          ))}
+        </div>
+      )}
+      {cards === null && <div className="loading">Loading…</div>}
+      {cards && cards.length > 0 && <Overview cards={cards} branch={branch} />}
+      {cards && cards.length === 0 && branch !== null && (
+        <div className="empty">No runs on this branch yet.</div>
+      )}
+      <h2 className="tag" style={{ margin: '1.4rem 0 0.5rem' }}>received runs — all branches</h2>
       <RunsTable runs={runs} />
     </>
   )
@@ -35,7 +71,7 @@ export default function RunsList() {
 
 /* 總覽(M4):每個 專案×route 一張 stat tile——現在幾分、比上次如何、多久前查的。
    點卡片展開該頁的趨勢折線(單開)。 */
-function Overview({ cards }: { cards: OverviewCard[] }) {
+function Overview({ cards, branch }: { cards: OverviewCard[]; branch: string | null }) {
   const [open, setOpen] = useState<string | null>(null)
   const [trend, setTrend] = useState<TrendPoint[] | null>(null)
 
@@ -43,7 +79,7 @@ function Overview({ cards }: { cards: OverviewCard[] }) {
     const key = `${c.projectId}|${c.route}`
     if (open === key) { setOpen(null); return }
     setOpen(key); setTrend(null)
-    fetchTrend(c.projectId, c.route).then(setTrend, () => setTrend([]))
+    fetchTrend(c.projectId, c.route, branch).then(setTrend, () => setTrend([]))
   }
 
   const openCard = cards.find(c => `${c.projectId}|${c.route}` === open)
@@ -110,7 +146,14 @@ function RunsTable({ runs }: { runs: RunListItem[] }) {
             <td><span className={`gate ${r.gateFailed ? 'fail' : 'pass'}`}>{r.gateFailed ? 'FAIL' : 'PASS'}</span></td>
             <td className="m">{r.pages}</td>
             <td className="m">{r.branch ?? '—'}</td>
-            <td className="m">{r.commitSha ? r.commitSha.slice(0, 7) : '—'}</td>
+            <td className="m">
+              {r.commitSha
+                ? r.repoUrl
+                  ? <a href={`${r.repoUrl}/commit/${r.commitSha}`} target="_blank" rel="noreferrer"
+                      onClick={e => e.stopPropagation()}>{r.commitSha.slice(0, 7)}</a>
+                  : r.commitSha.slice(0, 7)
+                : '—'}
+            </td>
           </tr>
         ))}
       </tbody>

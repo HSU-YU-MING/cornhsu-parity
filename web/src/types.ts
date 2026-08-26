@@ -75,7 +75,33 @@ export interface RunMeta {
   commitSha: string | null
   branch: string | null
   triggeredBy: string | null
+  repoUrl: string | null
   project: string
+}
+
+// M4.5:分支與「變了什麼」
+export interface BranchInfo {
+  branch: string // 空字串 = 無分支的 push
+  lastAt: string
+}
+
+export interface ChangedDiff {
+  route: string
+  designLayer: string
+  selector: string
+  prop: string
+  severity: Severity
+  expected: string
+  actual: string
+}
+
+export interface RunChanges {
+  prevRunId: string | null
+  prevCreatedAt: string | null
+  regressions: ChangedDiff[]
+  worsened: ChangedDiff[]
+  fixed: ChangedDiff[]
+  unchanged: number
 }
 
 export interface RunListItem extends RunMeta {

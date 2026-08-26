@@ -227,6 +227,24 @@ table.diffs td { padding: 0.18rem 0.4rem 0.18rem 0; vertical-align: baseline; fo
 }
 .reveal-once code { word-break: break-all; }
 
+/* ── 「變了什麼」摘要條(M4.5)── */
+.changes-strip { margin: -0.4rem 0 1rem; }
+.changes-summary {
+  font-size: 0.85rem; background: var(--card); border: 1px solid var(--line);
+  border-radius: 3px; padding: 0.4rem 0.7rem; cursor: pointer; text-align: left;
+}
+.changes-summary:disabled { cursor: default; }
+.chg-new { color: var(--sev-critical); font-weight: 600; }
+.chg-worse { color: var(--sev-serious); font-weight: 600; }
+.chg-fixed { color: var(--pass); font-weight: 600; }
+.changes-table { background: var(--card); border: 1px solid var(--line); border-top: 0;
+  padding: 0.3rem; width: 100%; }
+.changes-table td { padding: 0.25rem 0.6rem; }
+
+.figma-link { font-size: 0.72rem; margin-left: 0.5rem; color: var(--steel);
+  text-decoration: none; font-weight: 400; }
+.figma-link:hover { text-decoration: underline; }
+
 .loading, .error { padding: 2rem; text-align: center; color: var(--ink-2); }
 .error { color: var(--sev-critical); }
 
