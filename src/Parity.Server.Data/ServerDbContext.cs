@@ -42,6 +42,11 @@ public class ServerDbContext(DbContextOptions<ServerDbContext> options)
         b.Entity<Invite>().Property(i => i.ExpiresAt).HasConversion(ticks);
         b.Entity<Invite>().Property(i => i.AcceptedAt).HasConversion(ticks);
 
+        b.Entity<AuditEntry>().HasIndex(a => new { a.ProjectId, a.At });
+        b.Entity<AuditEntry>().HasOne(a => a.Project).WithMany()
+            .HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<AuditEntry>().Property(a => a.At).HasConversion(ticks);
+
         // SQLite 不支援 DateTimeOffset 進 ORDER BY——存 UTC ticks(INTEGER):
         // 排序嚴格按時間(不像內建 ToBinary 轉換在不同時區偏移下排不準),換供應商也通用。
         b.Entity<Project>().Property(p => p.CreatedAt).HasConversion(

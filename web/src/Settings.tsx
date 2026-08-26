@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { createInvite, fetchMembers, removeMember, rotateToken } from './api'
-import type { Me, MembersResponse, Role } from './types'
+import { createInvite, fetchAudit, fetchMembers, removeMember, rotateToken } from './api'
+import type { AuditEntry, Me, MembersResponse, Role } from './types'
 
 /* 專案設定(M3,Owner 限定):成員清單、發邀請連結、CI token 換發。
    邀請連結與新 token 都只顯示一次——這頁的工作是把它交到你手上,不是替你保管。 */
@@ -133,6 +133,36 @@ function ProjectSettings({ projectId, projectName, myEmail }: {
         )}
         {error && data && <p className="form-error">{error}</p>}
       </section>
+
+      <AuditSection projectId={projectId} />
     </div>
+  )
+}
+
+/* 稽核紀錄(M4.6):誰在什麼時候動了什麼——邀請、成員異動、token 換發、刪 run。 */
+function AuditSection({ projectId }: { projectId: string }) {
+  const [entries, setEntries] = useState<AuditEntry[] | null>(null)
+  useEffect(() => { fetchAudit(projectId).then(setEntries, () => setEntries([])) }, [projectId])
+
+  return (
+    <section className="pane">
+      <div className="pane-h"><span className="tag">activity — who did what</span></div>
+      {entries === null && <div className="loading">Loading…</div>}
+      {entries && entries.length === 0 && (
+        <div className="unmatched-note">No activity recorded yet.</div>
+      )}
+      {entries && entries.length > 0 && (
+        <table className="runs"><tbody>
+          {entries.map((a, i) => (
+            <tr key={i}>
+              <td className="m dim">{a.at.replace('T', ' ').slice(0, 16)}</td>
+              <td>{a.actorEmail}</td>
+              <td className="m">{a.action}</td>
+              <td className="m dim">{a.detail ?? ''}</td>
+            </tr>
+          ))}
+        </tbody></table>
+      )}
+    </section>
   )
 }

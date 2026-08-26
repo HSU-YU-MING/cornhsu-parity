@@ -144,7 +144,8 @@ app.MapPost("/api/invites/{token}/accept", async (
             return Results.Json(new { error = "an account with this email already exists — enter its password to accept." }, statusCode: 401);
     }
 
-    await Invites.AcceptAsync(db, invite, user.Id, DateTimeOffset.UtcNow);
+    Audit.Log(db, invite.ProjectId, user.Id, invite.Email, "invite-accepted", $"as {invite.Role}");
+    await Invites.AcceptAsync(db, invite, user.Id, DateTimeOffset.UtcNow); // Accept 內含 SaveChanges,稽核同交易
     await signIn.SignInAsync(user, isPersistent: true);
     return Results.Json(await MeAsync(user, db));
 });
@@ -176,9 +177,17 @@ app.MapPost("/api/projects/{id:guid}/invites", async (
 
     var (invite, token) = Invites.Create(id, req.Email, req.Role, DateTimeOffset.UtcNow);
     db.Invites.Add(invite);
+    Audit.Log(db, id, userId, await EmailOf(db, userId), "invite-created", $"{req.Email} as {req.Role}");
     await db.SaveChangesAsync();
     // 連結親手交給對方(v1 不寄信)——只回這一次
     return Results.Json(new { link = $"{http.Scheme}://{http.Host}/invite/{token}", expires = invite.ExpiresAt });
+}).RequireAuthorization();
+
+app.MapGet("/api/projects/{id:guid}/audit", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
+{
+    if (!await Membership.IsOwnerAsync(db, UserId(principal), id)) return Results.Forbid();
+    var entries = await Audit.RecentAsync(db, id);
+    return Results.Json(entries.Select(a => new { a.At, a.ActorEmail, a.Action, a.Detail }));
 }).RequireAuthorization();
 
 app.MapDelete("/api/projects/{id:guid}/members/{memberUserId:guid}", async (
@@ -188,7 +197,10 @@ app.MapDelete("/api/projects/{id:guid}/members/{memberUserId:guid}", async (
     if (!await Membership.IsOwnerAsync(db, userId, id)) return Results.Forbid();
     if (await Membership.WouldRemoveLastOwnerAsync(db, id, memberUserId))
         return Results.Json(new { error = "cannot remove the last owner — hand ownership to someone first." }, statusCode: 400);
+    var removedEmail = await db.Users.Where(u => u.Id == memberUserId).Select(u => u.Email).FirstOrDefaultAsync();
     await db.Members.Where(m => m.ProjectId == id && m.UserId == memberUserId).ExecuteDeleteAsync();
+    Audit.Log(db, id, userId, await EmailOf(db, userId), "member-removed", removedEmail);
+    await db.SaveChangesAsync();
     return Results.NoContent();
 }).RequireAuthorization();
 
@@ -200,8 +212,26 @@ app.MapPost("/api/projects/{id:guid}/token/rotate", async (Guid id, ClaimsPrinci
     if (project is null) return Results.NotFound();
     var token = ProjectToken.Generate();
     project.TokenHash = ProjectToken.Hash(token); // 舊 token 立即失效(撤銷 = 換掉)
+    Audit.Log(db, id, userId, await EmailOf(db, userId), "token-rotated");
     await db.SaveChangesAsync();
     return Results.Json(new { token }); // 只回這一次
+}).RequireAuthorization();
+
+// 刪除誤推的 run(Owner 限定)——資料出錯要有後悔藥,否則一次誤推永久污染趨勢
+app.MapDelete("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
+{
+    var userId = UserId(principal);
+    var run = await db.Runs.Where(r => r.Id == id)
+        .Select(r => new { r.Id, r.ProjectId, r.Branch, r.CommitSha, r.CreatedAt })
+        .FirstOrDefaultAsync();
+    if (run is null) return Results.NotFound();
+    if (!await Membership.IsOwnerAsync(db, userId, run.ProjectId)) return Results.Forbid();
+
+    await db.Runs.Where(r => r.Id == id).ExecuteDeleteAsync(); // cascade 帶走 PageResults
+    Audit.Log(db, run.ProjectId, userId, await EmailOf(db, userId), "run-deleted",
+        $"{run.CreatedAt:u} {run.Branch ?? "-"} {run.CommitSha?[..Math.Min(7, run.CommitSha.Length)] ?? "-"}");
+    await db.SaveChangesAsync();
+    return Results.NoContent();
 }).RequireAuthorization();
 
 // ── 報告接收(CI token,與人的登入無關)──────────────────────────
@@ -277,6 +307,7 @@ app.MapGet("/api/runs", async (ClaimsPrincipal principal, ServerDbContext db, [F
             r.Branch,
             r.TriggeredBy,
             r.RepoUrl,
+            r.ProjectId,
             Project = r.Project!.Name,
             Pages = r.Pages.Count,
         })
@@ -315,6 +346,7 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, Ser
             r.Branch,
             r.TriggeredBy,
             r.RepoUrl,
+            r.ProjectId,
             Project = r.Project!.Name,
             r.RawReportGzip,
         })
@@ -334,6 +366,7 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, Ser
         branch = run.Branch,
         triggeredBy = run.TriggeredBy,
         repoUrl = run.RepoUrl,
+        projectId = run.ProjectId,
         project = run.Project,
         pages = doc.Reports.Select(rep => new
         {
@@ -400,6 +433,9 @@ return 0;
 static Guid UserId(ClaimsPrincipal principal)
     => Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+static async Task<string> EmailOf(ServerDbContext db, Guid userId)
+    => (await db.Users.Where(u => u.Id == userId).Select(u => u.Email).FirstAsync())!;
+
 static async Task<object> MeAsync(AppUser user, ServerDbContext db)
 {
     var memberships = await db.Members.Where(m => m.UserId == user.Id)
@@ -407,6 +443,13 @@ static async Task<object> MeAsync(AppUser user, ServerDbContext db)
         .ToListAsync();
     return new { email = user.Email, memberships };
 }
+
+/// <summary>
+/// WebApplicationFactory(端點層整合測試)的進入點標記——16 關認證劇本要住在 CI 裡,
+/// 不是對話紀錄裡。不用 `partial class Program`:CLI 組件也有 top-level Program,
+/// 測試專案同時引用兩邊會撞名。
+/// </summary>
+public sealed class ParityServerEntryPoint;
 
 internal sealed record LoginRequest(string Email, string Password);
 internal sealed record AcceptRequest(string Password);

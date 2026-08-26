@@ -1,5 +1,5 @@
 import type {
-  BranchInfo, InvitePreview, Me, MembersResponse, OverviewCard, ReportDocument,
+  AuditEntry, BranchInfo, InvitePreview, Me, MembersResponse, OverviewCard, ReportDocument,
   RunChanges, RunListItem, RunMeta, TrendPoint,
 } from './types'
 
@@ -40,6 +40,8 @@ export const fetchTrend = (projectId: string, route: string, branch: string | nu
   get<TrendPoint[]>(`/api/trend?project=${projectId}&route=${encodeURIComponent(route)}`
     + (branch === null ? '' : `&branch=${encodeURIComponent(branch)}`))
 export const fetchChanges = (id: string) => get<RunChanges>(`/api/runs/${id}/changes`)
+export const deleteRun = (id: string) => del(`/api/runs/${id}`)
+export const fetchAudit = (projectId: string) => get<AuditEntry[]>(`/api/projects/${projectId}/audit`)
 
 // 認證
 export const fetchMe = () => get<Me>('/api/auth/me')

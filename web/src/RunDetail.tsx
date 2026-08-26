@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchChanges, fetchRunMeta, fetchRunReport } from './api'
-import type { FidelityReport, NodeResult, ReportDocument, RunChanges, RunMeta, Severity } from './types'
+import { deleteRun, fetchChanges, fetchRunMeta, fetchRunReport } from './api'
+import type { FidelityReport, Me, NodeResult, ReportDocument, RunChanges, RunMeta, Severity } from './types'
 import Blueprint from './Blueprint'
+import { navigate } from './App'
 
 /* Figma 深連結:designReference 是 Figma file key 時(不含路徑分隔符的一串英數),
    圖層名可以直接跳回 Figma 的那個節點——CLI 的 Markdown 報告本來就會這樣連,儀表板跟上。 */
@@ -16,7 +17,7 @@ function figmaUrl(designReference: string, designId: string): string | null {
 type HardSeverity = Exclude<Severity, 'none'>
 const SEVERITIES: HardSeverity[] = ['critical', 'serious', 'medium', 'minor']
 
-export default function RunDetail({ id }: { id: string }) {
+export default function RunDetail({ id, me }: { id: string; me: Me }) {
   const [meta, setMeta] = useState<RunMeta | null>(null)
   const [doc, setDoc] = useState<ReportDocument | null>(null)
   const [changes, setChanges] = useState<RunChanges | null>(null)
@@ -61,6 +62,13 @@ export default function RunDetail({ id }: { id: string }) {
             </span>
           </div>
         )}
+        {me.memberships.some(m => m.projectId === meta.projectId && m.role === 'owner') && (
+          <button className="btn-danger" onClick={async () => {
+            if (!confirm('Delete this run? Its data leaves the overview and trends permanently.')) return
+            await deleteRun(id)
+            navigate('/')
+          }}>Delete run</button>
+        )}
       </div>
 
       {changes && <ChangesStrip changes={changes} />}
@@ -82,6 +90,43 @@ export default function RunDetail({ id }: { id: string }) {
         softOn={softOn} setSoftOn={setSoftOn}
         cleanOn={cleanOn} setCleanOn={setCleanOn} />
     </>
+  )
+}
+
+/* 「畫了但沒做出來」——落差的第三類(M4.6 必補 #3)。設計稿有、頁面上配不到的節點,
+   對 PM 很可能就是漏做的功能,值得一個正式區塊而不是一行註腳。
+   點一列 → 藍圖上亮出該設計框(紅虛線加粗 + 標註)。 */
+const UNMATCHED_RENDER_CAP = 100 // 野生極端值:Codex 總表 406 個——上限保住渲染,其餘明講
+
+function UnmatchedSection({ report, selected, select }: {
+  report: FidelityReport
+  selected: string | null
+  select: (id: string | null) => void
+}) {
+  const [open, setOpen] = useState(report.unmatched.length <= 20) // 少量直接展開,海量預設收合
+  if (report.unmatched.length === 0) return null
+
+  return (
+    <div>
+      <div className="unmatched-note" style={{ cursor: 'pointer' }} onClick={() => setOpen(!open)}>
+        {open ? '▾' : '▸'} <strong>{report.unmatched.length}</strong> design node(s) were never
+        matched on the page — possibly not built yet
+      </div>
+      {open && report.unmatched.slice(0, UNMATCHED_RENDER_CAP).map(u => (
+        <div key={u.designId}
+          className={`unmatched-row ${selected === u.designId ? 'sel' : ''}`}
+          onClick={() => select(selected === u.designId ? null : u.designId)}>
+          <span>{u.designLayer}</span>
+          <span className="reason">{u.reason}</span>
+          <span className="m dim">{Math.round(u.designBox.width)}×{Math.round(u.designBox.height)}</span>
+        </div>
+      ))}
+      {open && report.unmatched.length > UNMATCHED_RENDER_CAP && (
+        <div className="unmatched-note">
+          …and {report.unmatched.length - UNMATCHED_RENDER_CAP} more (showing the first {UNMATCHED_RENDER_CAP})
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -245,13 +290,7 @@ function PageView({ report, selected, setSelected, sevOn, setSevOn, softOn, setS
             </div>
           )}
 
-          {report.unmatched.length > 0 && (
-            <div className="unmatched-note">
-              {report.unmatched.length} design node(s) never matched:{' '}
-              {report.unmatched.slice(0, 8).map(u => `${u.designLayer} (${u.reason})`).join(', ')}
-              {report.unmatched.length > 8 ? ` … +${report.unmatched.length - 8}` : ''}
-            </div>
-          )}
+          <UnmatchedSection report={report} selected={selected} select={select} />
         </section>
       </div>
     </>
