@@ -1,8 +1,40 @@
 # Changelog
 
-版本規則:0.x 期間,新功能升 minor(0.1→0.2),修正升 patch。
+版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 1.0.0
+
+**介面凍結宣告。** 本版不新增功能——它是一個承諾:**以下六個契約面自此凍結,
+破壞任何一面即升 major**。逐項審查與決定過程見
+`docs/Parity 1.0 介面凍結審查.md`(2026-07-22 盤點,2026-08-11 六面全數拍板)。
+
+1. **`parity.config.json` schema**——全部欄位與有效值凍結,**含容差預設值**
+   (sizePx 2 / spacingPx 2 / colorDeltaE 2.0 / fontSizePx 0.5 / positionPx 4)。
+2. **CLI 介面**——子指令、旗標(space-only 格式)、**exit code 契約**:
+   `0` 通過 / `1` 落差超 gate / `2` 執行錯誤 / `3` 配對可信度不足。
+3. **GitHub Action inputs**——kebab-case 名稱與預設值;**新增選填 input = minor,不算破壞**。
+4. **`report.json`**——`schemaVersion` 信封;`severity`(`none/minor/medium/serious/critical`)
+   與 `status`(`mismatch/missing`)為**封閉集**(新增成員或改拼寫 = major);
+   `unmatched[].reason` 與 `nodes[].matchedBy` 為**開放集合**(消費端必須容忍未知值、
+   已知值拼寫不變;當前字彙表由 README「報告字彙表」一節維護)。
+5. **baseline SQLite schema**——EF Core migrations 為正式演進路徑;
+   舊 db(含 `EnsureCreated` 時代)開啟時自動接管。
+6. **`parity.snapshot.json`**——`schemaVersion` 信封;**1.x 內新版永遠讀得動舊檔**;
+   量測/selector 語意演進使舊基準過時時,工具必須明確提示重拍(不得靜默誤報)。
+
+**演進條款**(量測演進的版本語意,自本版起為承諾):
+
+1. 上述六面的介面破壞 → **major**
+2. 量測語意演進(量得更準、配對規則變化,可能需重拍基準)→ **minor**,
+   CHANGELOG 開頭顯著標示「升級必做」(0.11.0 格式)
+3. 預設值調整(容差、gate 預設)→ **minor** + 顯著標示
+4. 行為完全不變的修正 → **patch**
+5. **minor 若需要重拍基準,工具必須大聲失敗並給指引**(如 `randomized-id` 提示、
+   配對可信度 exit 3)——不得靜默給錯誤結果
+
+**GitHub Action 自本版起提供移動式 `@v1` tag**(跟隨最新 1.x;之後每個 1.x 發版把 `v1` 前移)。
+
+### 隨版收錄(0.14.0 之後的變更)
 
 路線 B 補測(2026-08-26,Wikimedia Codex;完整發現見
 `docs/野生實查-2026-08-11-路線B-figma方言.md` 補測一節)的直接產物:
