@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Parity.Server.Data;
 
@@ -10,12 +11,78 @@ using Parity.Server.Data;
 namespace Parity.Server.Data.Migrations
 {
     [DbContext(typeof(ServerDbContext))]
-    partial class ServerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826064811_CompressRawReport")]
+    partial class CompressRawReport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
+
+            modelBuilder.Entity("Parity.Server.Data.Diff", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Actual")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Delta")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("DesignId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DesignLayer")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Expected")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MatchedBy")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PageResultId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Prop")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Selector")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Soft")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Tolerance")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Unit")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PageResultId");
+
+                    b.ToTable("Diffs");
+                });
 
             modelBuilder.Entity("Parity.Server.Data.PageResult", b =>
                 {
@@ -135,6 +202,17 @@ namespace Parity.Server.Data.Migrations
                     b.ToTable("Runs");
                 });
 
+            modelBuilder.Entity("Parity.Server.Data.Diff", b =>
+                {
+                    b.HasOne("Parity.Server.Data.PageResult", "PageResult")
+                        .WithMany("Diffs")
+                        .HasForeignKey("PageResultId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PageResult");
+                });
+
             modelBuilder.Entity("Parity.Server.Data.PageResult", b =>
                 {
                     b.HasOne("Parity.Server.Data.Run", "Run")
@@ -155,6 +233,11 @@ namespace Parity.Server.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Parity.Server.Data.PageResult", b =>
+                {
+                    b.Navigation("Diffs");
                 });
 
             modelBuilder.Entity("Parity.Server.Data.Project", b =>

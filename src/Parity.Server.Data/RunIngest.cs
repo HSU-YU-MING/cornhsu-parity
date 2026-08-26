@@ -44,7 +44,7 @@ public static class RunIngest
             // gate 判定屬於 config(failOn 可自訂),伺服器只看報告——
             // 有任何 critical/serious 即視為紅,與預設 gate 同口徑;M2 若要精確可隨 push 傳 gate 結果
             GateFailed = doc.Reports.Any(r => r.Summary.Critical > 0 || r.Summary.Serious > 0),
-            RawReportJson = rawReportJson,
+            RawReportGzip = ReportBlob.Compress(rawReportJson),
         };
 
         foreach (var report in doc.Reports)
@@ -66,26 +66,7 @@ public static class RunIngest
                 MaxSeverity = report.Summary.MaxSeverity.ToString().ToLowerInvariant(),
             };
 
-            foreach (var node in report.Nodes)
-                foreach (var diff in node.Diffs)
-                    page.Diffs.Add(new Diff
-                    {
-                        Id = Guid.NewGuid(),
-                        DesignLayer = node.DesignLayer,
-                        DesignId = node.DesignId,
-                        Selector = node.Selector,
-                        MatchedBy = node.MatchedBy,
-                        Prop = diff.Prop,
-                        Expected = diff.Expected,
-                        Actual = diff.Actual,
-                        Unit = diff.Unit,
-                        Delta = diff.Delta,
-                        Tolerance = diff.Tolerance,
-                        Severity = diff.Severity.ToString().ToLowerInvariant(),
-                        Status = diff.Status.ToString().ToLowerInvariant(),
-                        Soft = diff.Soft,
-                    });
-
+            // 逐條落差刻意不進關聯表(見 Entities.cs 的說明)——原文 blob 就是落差的真相源
             run.Pages.Add(page);
         }
         return run;

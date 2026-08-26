@@ -12,7 +12,6 @@ public class ServerDbContext(DbContextOptions<ServerDbContext> options) : DbCont
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<Run> Runs => Set<Run>();
     public DbSet<PageResult> PageResults => Set<PageResult>();
-    public DbSet<Diff> Diffs => Set<Diff>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -26,13 +25,10 @@ public class ServerDbContext(DbContextOptions<ServerDbContext> options) : DbCont
         b.Entity<Project>().HasIndex(p => p.TokenHash).IsUnique(); // token 驗證走索引查找
         b.Entity<Run>().HasIndex(r => new { r.ProjectId, r.CreatedAt });
         b.Entity<PageResult>().HasIndex(p => p.RunId);
-        b.Entity<Diff>().HasIndex(d => d.PageResultId);
 
         b.Entity<Project>().HasMany(p => p.Runs).WithOne(r => r.Project!)
             .HasForeignKey(r => r.ProjectId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Run>().HasMany(r => r.Pages).WithOne(p => p.Run!)
             .HasForeignKey(p => p.RunId).OnDelete(DeleteBehavior.Cascade);
-        b.Entity<PageResult>().HasMany(p => p.Diffs).WithOne(d => d.PageResult!)
-            .HasForeignKey(d => d.PageResultId).OnDelete(DeleteBehavior.Cascade);
     }
 }

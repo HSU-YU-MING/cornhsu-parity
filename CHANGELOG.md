@@ -13,6 +13,17 @@
   試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
   commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`/`GITHUB_REF_NAME`)。
   送出前在本機先驗報告信封,壞檔案不浪費往返。
+- **新增:網頁外殼 M4——總覽卡與趨勢圖(刻意提前到 M3 之前:分數沒有趨勢就沒有語境)**。
+  `/api/overview`(專案×route:最新分、上次分、方向)+ `/api/trend`(單頁時間序);
+  首頁總覽 stat tiles,點卡展開趨勢折線(單序列免圖例、y 固定 0–100、FAIL 點狀態色
+  + tooltip 文字併述、末點直標;色盤過 dataviz 六檢)。
+- **修正:報告儲存的真實帳(M4 實測改寫規畫前提)**。21 頁站一次 push 的 report.json
+  = 10.3MB,不是「很小」——(1) 原文 gzip 入庫(~16:1);(2) 逐條落差**不再進關聯表**
+  (實測 36,058 列/9.95MB 且零讀者;詳情端點改從原文 blob 重建,總覽/趨勢只讀
+  PageResult)。一次 push 的儲存增量 9.87MB → **0.65MB**。伺服器未發佈,dev 資料庫
+  重推即遷移。
+- **新增:非 localhost 裸奔守門**。讀取端點在 M3 之前沒有認證,唯一防線是只聽本機——
+  綁了對外位址就拒絕啟動並講清楚(自擔風險的明示出口:`PARITY_SERVER_ALLOW_REMOTE=1`)。
 - **新增:網頁外殼 M2——落差詳情頁(取代 PPT 那一頁的核心畫面)**。`web/`(React +
   Vite + TS,建置產物落 `wwwroot`,伺服器偵測到就改served、沒建置退回 M1 陽春頁)。
   **「在哪裡」不靠截圖**:report.json 本來就含每個節點的量測座標,詳情頁直接把座標

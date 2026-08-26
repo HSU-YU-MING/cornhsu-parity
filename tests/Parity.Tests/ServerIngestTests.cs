@@ -40,7 +40,7 @@ public class ServerIngestTests
         Assert.Equal("abc123", run.CommitSha);
         Assert.Equal("main", run.Branch);
         Assert.True(run.GateFailed); // summary 有 serious → 紅
-        Assert.Equal(raw, run.RawReportJson); // 原文逐位元保留
+        Assert.Equal(raw, ReportBlob.Decompress(run.RawReportGzip)); // 原文壓縮入庫,解壓後逐位元不變
 
         var page = Assert.Single(run.Pages);
         Assert.Equal("/", page.Route);
@@ -48,13 +48,9 @@ public class ServerIngestTests
         Assert.Equal(2, page.Matched);
         Assert.Equal("serious", page.MaxSeverity); // 開放字彙存字串、小寫對齊 wire 格式
 
-        Assert.Equal(2, page.Diffs.Count);
-        var hard = page.Diffs.Single(d => d.Prop == "paddingTop");
-        Assert.Equal("12", hard.Expected);
-        Assert.Equal("8", hard.Actual);
-        Assert.Equal("serious", hard.Severity);
-        Assert.False(hard.Soft);
-        Assert.True(page.Diffs.Single(d => d.Prop == "fontFamily").Soft);
+        // 逐條落差刻意不進關聯表(零讀者、36k 列/9.95MB 的實測教訓)——
+        // 落差的真相源是原文 blob,解壓回來逐位元等於送進去的
+        Assert.Contains("paddingTop", ReportBlob.Decompress(run.RawReportGzip));
     }
 
     [Fact]

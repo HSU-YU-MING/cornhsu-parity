@@ -33,10 +33,12 @@ public class Run
     public bool GateFailed { get; set; }
 
     /// <summary>
-    /// 收到的 report.json 原文(逐位元)。詳情頁(M2)直接從這裡重繪,
-    /// 不受關聯表映射的取捨影響;數值報告很小,永久保留無妨(規畫書 5.4)。
+    /// 收到的 report.json 原文,gzip 壓縮(ReportBlob;解壓即逐位元原文)。
+    /// 詳情頁(M2)直接從這裡重繪,不受關聯表映射的取捨影響。
+    /// 壓縮的理由:規畫書 5.4 原推定「數值報告很小」,實測 21 頁站一次 10.3MB——
+    /// gzip 約 10:1,先省回一個數量級;保留策略等真實使用量再定。
     /// </summary>
-    public required string RawReportJson { get; set; }
+    public required byte[] RawReportGzip { get; set; }
 
     public List<PageResult> Pages { get; set; } = [];
 }
@@ -61,27 +63,8 @@ public class PageResult
     public int Medium { get; set; }
     public int Minor { get; set; }
     public required string MaxSeverity { get; set; }
-
-    public List<Diff> Diffs { get; set; } = [];
 }
 
-public class Diff
-{
-    public Guid Id { get; set; }
-    public Guid PageResultId { get; set; }
-    public PageResult? PageResult { get; set; }
-
-    public required string DesignLayer { get; set; }
-    public required string DesignId { get; set; }
-    public required string Selector { get; set; }
-    public required string MatchedBy { get; set; }
-    public required string Prop { get; set; }
-    public required string Expected { get; set; }
-    public required string Actual { get; set; }
-    public string? Unit { get; set; }
-    public double? Delta { get; set; }
-    public double Tolerance { get; set; }
-    public required string Severity { get; set; }
-    public required string Status { get; set; }
-    public bool Soft { get; set; }
-}
+// 刻意沒有 Diff 表(M4 實測後拿掉):36,058 列 / 9.95MB——把報告原文 gzip 省下的
+// 原樣吃回來,而且**零讀者**(總覽/趨勢讀 PageResult,詳情頁讀原文 blob)。
+// 未來要做「跨 run 追一條 selector 的歷史」時再加表——原文都在,migration + 回填即可。
