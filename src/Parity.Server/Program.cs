@@ -91,7 +91,13 @@ app.MapGet("/api/runs", async (ServerDbContext db, [FromQuery] int limit = 50) =
         .Take(Math.Clamp(limit, 1, 200))
         .Select(r => new
         {
-            r.Id, r.CreatedAt, r.Score, r.GateFailed, r.CommitSha, r.Branch, r.TriggeredBy,
+            r.Id,
+            r.CreatedAt,
+            r.Score,
+            r.GateFailed,
+            r.CommitSha,
+            r.Branch,
+            r.TriggeredBy,
             Project = r.Project!.Name,
             Pages = r.Pages.Count,
         })
@@ -104,16 +110,40 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ServerDbContext db) =>
     var run = await db.Runs.Where(r => r.Id == id)
         .Select(r => new
         {
-            r.Id, r.CreatedAt, r.Score, r.GateFailed, r.CommitSha, r.Branch, r.TriggeredBy,
+            r.Id,
+            r.CreatedAt,
+            r.Score,
+            r.GateFailed,
+            r.CommitSha,
+            r.Branch,
+            r.TriggeredBy,
             Project = r.Project!.Name,
             Pages = r.Pages.Select(p => new
             {
-                p.Route, p.Url, p.Score, p.DesignNodes, p.Matched, p.Unmatched,
-                p.Critical, p.Serious, p.Medium, p.Minor, p.MaxSeverity,
+                p.Route,
+                p.Url,
+                p.Score,
+                p.DesignNodes,
+                p.Matched,
+                p.Unmatched,
+                p.Critical,
+                p.Serious,
+                p.Medium,
+                p.Minor,
+                p.MaxSeverity,
                 Diffs = p.Diffs.Select(d => new
                 {
-                    d.DesignLayer, d.Selector, d.Prop, d.Expected, d.Actual,
-                    d.Unit, d.Delta, d.Severity, d.Status, d.Soft, d.MatchedBy,
+                    d.DesignLayer,
+                    d.Selector,
+                    d.Prop,
+                    d.Expected,
+                    d.Actual,
+                    d.Unit,
+                    d.Delta,
+                    d.Severity,
+                    d.Status,
+                    d.Soft,
+                    d.MatchedBy,
                 }),
             }),
         })
