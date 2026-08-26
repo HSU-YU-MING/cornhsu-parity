@@ -38,6 +38,26 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         return FigmaNodeParser.Parse(doc);
     }
 
+    /// <summary>
+    /// 非 2xx 的提示。每一句都是野外真的把人帶錯方向之後修的:
+    ///   - 429 是流量限制不是設定錯,且方案級額度(免費方案)一撞就是「幾天」——把
+    ///     Retry-After 換算成人話講(2026-08-11 路線 B:367422 秒 ≈ 4.3 天)。
+    ///   - 403 要把「token 過期」列為候選:Figma 個人 token 建立時就選定效期,過期後
+    ///     回的是 403,樣子跟 scope 不足/檔案指錯一模一樣(2026-08-26 Codex 補測實踩:
+    ///     token 過期,原訊息只指向 scope/key,查了半天)。
+    /// </summary>
+    internal static string DescribeFailureHint(System.Net.HttpStatusCode status, TimeSpan? retryAfter) => status switch
+    {
+        System.Net.HttpStatusCode.TooManyRequests =>
+            $"Figma is rate-limiting this token{DescribeRetryAfter(retryAfter)}. " +
+            "Plan-tier quotas (free plans) can span days — already-fetched frames keep working from .parity/cache.",
+        System.Net.HttpStatusCode.Forbidden =>
+            "Check that FIGMA_TOKEN has the file_content:read scope, that the token has not expired " +
+            "(personal access tokens expire after the lifetime picked at creation), " +
+            "and that fileKey/nodeId are correct.",
+        _ => "Check that FIGMA_TOKEN has the file_content:read scope and that fileKey/nodeId are correct.",
+    };
+
     /// <summary>Retry-After 的人話:秒數在「分/小時/天」間挑合適的單位;沒有 header 就只說被限流。</summary>
     internal static string DescribeRetryAfter(TimeSpan? retryAfter) => retryAfter switch
     {
@@ -64,13 +84,7 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
         {
-            // 429 是流量限制,不是設定錯——照舊訊息提示查 scope/key 會把人帶去錯的方向。
-            // 而且要把 Retry-After 讀出來講:Figma 的方案級額度(免費方案)一撞就是「幾天」,
-            // 不是「等一分鐘」(2026-08-11 路線 B 實查:Retry-After 367422 秒 ≈ 4.3 天)。
-            var hint = response.StatusCode == System.Net.HttpStatusCode.TooManyRequests
-                ? $"Figma is rate-limiting this token{DescribeRetryAfter(response.Headers.RetryAfter?.Delta)}. " +
-                  "Plan-tier quotas (free plans) can span days — already-fetched frames keep working from .parity/cache."
-                : "Check that FIGMA_TOKEN has the file_content:read scope and that fileKey/nodeId are correct.";
+            var hint = DescribeFailureHint(response.StatusCode, response.Headers.RetryAfter?.Delta);
             throw new HttpRequestException(
                 $"Figma API returned {(int)response.StatusCode} {response.StatusCode} " +
                 $"(file {reference.Source}, node {reference.NodeId}). {hint}");

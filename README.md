@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **197**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **202**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 21 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -183,6 +183,14 @@ parity snapshot            # 1. Freeze the current rendering (writes parity.snap
 #    Point designFile at it in the config, and set each target.frame to its route
 parity check               # 2. Refactor fearlessly; 3. check proves it still matches the snapshot
 ```
+
+## Picking a Figma frame: three lessons from wild testing
+
+Everything below was measured on public design-system files (IBM Carbon, Ant Design, Wikimedia Codex — method and full findings in `docs/野生實查-2026-08-11-路線B-figma方言.md`):
+
+1. **Pick a frame that draws *one screen*, not the component master sheet.** Design-system kits lay every variant out on a single sheet; that sheet shares no structure with any real page, so the match rate will hug the floor (measured: 0.2% on Carbon's Button sheet, 5.8% on Codex's) — that is the matcher being honest, not broken. To check a single component, pair a **single variant node** against a single Storybook story or one component on a demo page.
+2. **If the kit's text is placeholder text, go straight to the map file.** Auto-matching leans on text anchoring (same text on both sides), but library components often say "Button text" — which no real page ever does. Skip auto-matching and write `parity.map.json` directly (measured on Codex: all 129 Button variants use placeholder text; one map line completed the pairing).
+3. **Free-plan API quota is measured in *days* — spend it on new frames only.** Figma's free-plan quota is plan-level: one or two queries against a large file can drain it, and `Retry-After` comes back counted in days (hit twice during testing: 4.3 and 3.7 days). Frames you have fetched live on in `.parity/cache`, so reruns and offline compares cost nothing — the quota only goes to frames you have never fetched.
 
 ## What gets compared, and what does not
 

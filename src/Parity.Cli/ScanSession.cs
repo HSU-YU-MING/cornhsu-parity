@@ -101,11 +101,25 @@ public sealed class ScanSession : IAsyncDisposable
             new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
     }
 
-    private Dictionary<string, string>? LoadMapFile()
+    private Dictionary<string, string>? LoadMapFile() => LoadMapFile(MapFilePath);
+
+    /// <summary>
+    /// map 檔解析。與 parity.config.json 同一套寬鬆規則(// 註解、尾逗號)——兩個檔並排放,
+    /// 只有一邊吃註解是暗雷:照 config 的習慣在 map 檔寫註解會直接炸 JSON 解析錯
+    /// (2026-08-26 Codex 補測實踩,見路線 B 文件 B9)。
+    /// 注意:`parity map` 儲存時整檔重寫,手寫的註解會消失——註解適合純手寫維護的 map 檔。
+    /// </summary>
+    internal static Dictionary<string, string>? LoadMapFile(string path)
     {
-        if (!File.Exists(MapFilePath)) return null; // map 檔是「補漏」,沒有就全靠自動配對
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(MapFilePath));
+        if (!File.Exists(path)) return null; // map 檔是「補漏」,沒有就全靠自動配對
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path), MapFileOptions);
     }
+
+    private static readonly JsonSerializerOptions MapFileOptions = new()
+    {
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
 
     internal static IDesignSource CreateDesignSource(ParityConfig config, bool refresh)
     {
