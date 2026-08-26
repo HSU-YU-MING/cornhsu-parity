@@ -43,6 +43,14 @@
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。
 - ~~**CI 裡的 `--baseline` 沒實跑**~~ **已實證**(2026-07-18,parity-action-test):main 留一條既有落差 + commit `parity.baseline.db` + `baseline: true` → ✓ CI 綠(舊債不擋)✓ PR 新增一條落差 → 精確只擋那條(留言列「相對基準:新增 1、不變 1」)。
+- ~~**release 觸發被移動式 `v1` tag 誤觸**(1.0 才長出來的坑)~~ **已補(2026-08-26,PR #42)**:
+  release.yml 原觸發條件 `v*`,`v1` 移動式 major tag(每個 1.x 發版後前移)也命中——
+  每次前移都誤跑一次注定失敗的 release(1.0.0/1.1.0 各踩一次,run #27/#29)。
+  **無害但吵**:0.14.0 加的「tag 必須等於 CHANGELOG 頂端版號」守門 3 秒內擋下,
+  零發佈,代價只有紅 X + 失敗通知——守門第一次在真實情況立功。
+  觸發改認三段式 `v[0-9]*.[0-9]*.[0-9]*`,RELEASING.md 註明「前移 v1 不觸發 release
+  是刻意的」。教訓:**0.x 時代的觸發條件沒被「非版號的 tag」考驗過**,新種類的 tag
+  (移動式別名)進場時要回頭檢查所有吃 tag 的自動化。
 
 ## 檢視留下的整潔項(非 bug)
 
