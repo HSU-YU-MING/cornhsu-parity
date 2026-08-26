@@ -78,8 +78,31 @@ public sealed class JsonDesignSource : IDesignSource
         => node with { Children = (node.Children ?? []).Select(FillDefaults).ToList() };
 
     /// <summary>
-    /// 頂層形狀嗅探用:裸 DesignNode 也能安全反序列化進來(兩欄皆 null),
+    /// 讀 snapshot 信封裡的穩定 id 白名單(SnapshotDocument.StableIdAnchors)。
+    /// check 擷取現場頁面前呼叫:有名單 → 擷取端只拿名單內的 id 當錨點,兩邊 selector
+    /// 生成規則才一致(只在拍照端避開隨機 id 是不夠的——現場的新隨機 id 快照端沒見過)。
+    /// 檔案不存在 / 裸樹舊檔 / 無此欄 / 解析失敗 → null(不限制,現行行為)——
+    /// 這裡只是「提前偷看一個選填欄位」,正式的錯誤處理在 GetFrameAsync,不在此重複。
+    /// </summary>
+    public static IReadOnlyList<string>? TryReadStableIdAnchors(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var probe = JsonSerializer.Deserialize<SnapshotEnvelopeProbe>(
+                File.ReadAllText(path), SerializerOptions);
+            return probe?.SchemaVersion is not null ? probe.StableIdAnchors : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 頂層形狀嗅探用:裸 DesignNode 也能安全反序列化進來(欄位皆 null),
     /// 有 SchemaVersion 才走信封路徑。
     /// </summary>
-    private sealed record SnapshotEnvelopeProbe(int? SchemaVersion, DesignNode? Root);
+    private sealed record SnapshotEnvelopeProbe(
+        int? SchemaVersion, DesignNode? Root, IReadOnlyList<string>? StableIdAnchors);
 }
