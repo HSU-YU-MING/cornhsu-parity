@@ -63,7 +63,7 @@ PR comment, updating the same comment rather than adding new ones.
 
 | | |
 |---|---|
-| Releases | 26 on NuGet (v0.1.0 → v1.0.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
+| Releases | 27 on NuGet (v0.1.0 → v1.1.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
