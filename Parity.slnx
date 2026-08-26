@@ -2,6 +2,8 @@
   <Folder Name="/src/">
     <Project Path="src/Parity.Cli/Parity.Cli.csproj" />
     <Project Path="src/Parity.Engine/Parity.Engine.csproj" />
+    <Project Path="src/Parity.Server.Data/Parity.Server.Data.csproj" />
+    <Project Path="src/Parity.Server/Parity.Server.csproj" />
     <Project Path="src/Parity.Storage/Parity.Storage.csproj" />
   </Folder>
   <Folder Name="/tests/">

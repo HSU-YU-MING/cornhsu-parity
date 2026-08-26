@@ -20,6 +20,7 @@ try
     {
         "check" => await CheckCommand.RunAsync(rest),
         "report" => ReportCommand.Run(rest),
+        "push" => await PushCommand.RunAsync(rest),
         "snapshot" => await SnapshotCommand.RunAsync(rest),
         "lint" => await LintCommand.RunAsync(rest),
         "serve" => await ServeCommand.RunAsync(rest),
@@ -642,6 +643,15 @@ internal static class Usage
               (defaults to .parity/report.json; prints to stdout when --md is omitted).
         """;
 
+    public const string Push = """
+          parity push --server <url> [--config <path>] [--in <report.json>] [--commit <sha>] [--branch <name>]
+              Send an existing report.json to a Parity.Server dashboard (no re-scan; the server never
+              runs a browser — scanning always happens where `parity check` ran).
+              Token comes from the PARITY_TOKEN environment variable (a project token from the server);
+              --server may also come from PARITY_SERVER. Commit/branch default to the GitHub Actions
+              environment (GITHUB_SHA / GITHUB_REF_NAME) when present.
+        """;
+
     public const string Snapshot = """
           parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>] [--headed] [--stabilize]
               Freeze the currently running implementation into a design baseline (JSON + reference screenshot)
@@ -702,7 +712,7 @@ internal static class HelpCommand
         Console.WriteLine("Usage:");
         foreach (var usage in new[]
         {
-            Usage.Check, Usage.Report, Usage.Snapshot, Usage.Serve, Usage.Map,
+            Usage.Check, Usage.Report, Usage.Push, Usage.Snapshot, Usage.Serve, Usage.Map,
             Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser,
         })
             Console.WriteLine(usage);
