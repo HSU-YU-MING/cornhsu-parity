@@ -102,3 +102,35 @@ export interface TrendPoint {
   gateFailed: boolean
   commitSha: string | null
 }
+
+// M3:登入身分與成員管理
+export type Role = 'owner' | 'member' | 'viewer'
+
+export interface MembershipInfo {
+  projectId: string
+  project: string
+  role: Role
+}
+
+export interface Me {
+  email: string
+  memberships: MembershipInfo[]
+}
+
+export interface InvitePreview {
+  project: string
+  email: string
+  role: Role
+}
+
+export interface MemberRow {
+  userId: string
+  email: string
+  role: Role
+  joined: string
+}
+
+export interface MembersResponse {
+  members: MemberRow[]
+  pendingInvites: { email: string; role: Role; expires: string }[]
+}

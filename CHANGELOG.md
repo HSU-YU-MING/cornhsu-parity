@@ -13,6 +13,18 @@
   試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
   commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`/`GITHUB_REF_NAME`)。
   送出前在本機先驗報告信封,壞檔案不浪費往返。
+- **新增:網頁外殼 M3——帳號、角色與邀請制(讀取端點自此一律要登入)**。
+  認證裁決:email+密碼(ASP.NET Core Identity,只用使用者半邊、無 AspNetRoles)——
+  magic link 需要寄信基礎設施,v1 沒有;邀請連結即身分驗證,無開放註冊、不寄信。
+  - 角色 = 專案級成員資格(owner/member/viewer;**Project 即租戶**,組織層已裁):
+    讀取全部走成員過濾(非成員連指名專案也拿不到);管理端點(成員/邀請/CI token 換發)
+    Owner 限定;**唯一 Owner 不可自移**。
+  - 邀請:連結 7 天過期、單次使用、token 只存 SHA-256、重邀同人覆寫角色;
+    bootstrap 走 `create-invite` 指令。CI token 可換發(舊 token 立即失效)。
+  - 密碼政策:長度重於字元雜技(10+ 字元);內建 lockout 節流;cookie SameSite=Strict。
+  - 前端:登入/接受邀請/專案設定(成員、發邀請連結、token 換發——秘密都只顯示一次)。
+  - M1 的「非 localhost 拒啟」保險絲已拆(讀取有認證了;TLS 與網域是 M5)。
+  - E2E 劇本 16 關全過(401/403/404/400 各就各位);測試 217 → 220。
 - **新增:網頁外殼 M4——總覽卡與趨勢圖(刻意提前到 M3 之前:分數沒有趨勢就沒有語境)**。
   `/api/overview`(專案×route:最新分、上次分、方向)+ `/api/trend`(單頁時間序);
   首頁總覽 stat tiles,點卡展開趨勢折線(單序列免圖例、y 固定 0–100、FAIL 點狀態色

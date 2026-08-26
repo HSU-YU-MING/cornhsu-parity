@@ -1,66 +1,195 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Parity.Server.Data;
 
 // ─────────────────────────────────────────────────────────────
-// Parity.Server — 網頁外殼 M1(網頁外殼規畫書 5.1)。
-// 鐵則:雲端不跑瀏覽器。唯一會寫入資料的入口是 POST /api/runs,
-// 它接受「已完成的報告」,不存在任何「給我 URL 我去掃」的入口——
-// 這個 API 面本身就是鐵則的執行機制(規畫書 5.1)。
-// M1 綁 127.0.0.1(同 parity serve 的原則);對外部署是 M5,帳號權限是 M3。
+// Parity.Server — 網頁外殼(網頁外殼規畫書 5.1)。
+// 鐵則:雲端不跑瀏覽器。唯一會寫入報告的入口是 POST /api/runs,
+// 它接受「已完成的報告」,不存在任何「給我 URL 我去掃」的入口。
+// M3 起:讀取端點一律要登入(cookie),寫入維持 CI token;邀請制、無開放註冊。
 // ─────────────────────────────────────────────────────────────
 
-// create-project 模式:dotnet run -- create-project "名字" → 印一次 token(只印這次)
-if (args.Length >= 1 && args[0] == "create-project")
+// 管理指令模式(不起 web host):
+//   create-project <name>            → 建專案 + 印一次 CI token
+//   create-invite <project> <email> [role] → 印一次邀請連結(bootstrap 第一個 Owner 也走這裡)
+if (args.Length >= 1 && args[0] is "create-project" or "create-invite")
 {
-    return await AdminCommands.CreateProjectAsync(args.Skip(1).ToArray());
+    return await AdminCommands.RunAsync(args);
 }
 
 var builder = WebApplication.CreateBuilder(args);
 
-// M1 預設只聽本機——報告含站點結構,跟 parity serve 同一個理由不讓區網掃到。
-// 部署(M5)時用 ASPNETCORE_URLS 覆蓋。
-var configuredUrls = builder.Configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
-if (configuredUrls is null)
-{
+// 預設只聽本機;部署(M5)用 ASPNETCORE_URLS 覆蓋。
+// M1 時代的「非 localhost 拒啟」保險絲已拆——讀取端點自 M3 起一律要登入,
+// 對外綁定不再等於裸奔(TLS 與網域是 M5 的事)。
+if (builder.Configuration["urls"] is null && Environment.GetEnvironmentVariable("ASPNETCORE_URLS") is null)
     builder.WebHost.UseUrls("http://127.0.0.1:4322");
-}
-else if (Environment.GetEnvironmentVariable("PARITY_SERVER_ALLOW_REMOTE") != "1")
-{
-    // 裸奔守門(M3 之前的保險絲):讀取端點目前沒有認證,唯一防線是只聽本機。
-    // 有人設了對外位址,大概率是還不知道這件事——拒絕啟動、講清楚,
-    // 而不是安靜地把整站結構暴露在區網上。真的要對外(自擔風險)才設
-    // PARITY_SERVER_ALLOW_REMOTE=1;帳號與權限是 M3,做完這道守門改成看認證設定。
-    var local = new[] { "127.0.0.1", "localhost", "[::1]" };
-    var exposed = configuredUrls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .Where(u => Uri.TryCreate(u.Replace("+", "0.0.0.0").Replace("*", "0.0.0.0"), UriKind.Absolute, out var uri)
-            ? !local.Contains(uri.Host) : true)
-        .ToList();
-    if (exposed.Count > 0)
-    {
-        Console.Error.WriteLine(
-            $"refusing to start: {string.Join(", ", exposed)} is not a localhost address, and the read " +
-            "endpoints have no authentication yet (accounts arrive with milestone M3). Reports contain your " +
-            "site's structure — binding beyond 127.0.0.1 would expose them to the network.\n" +
-            "If you accept that risk, set PARITY_SERVER_ALLOW_REMOTE=1 and start again.");
-        return 3;
-    }
-}
 
 builder.Services.AddDbContext<ServerDbContext>(o => o.UseSqlite(
     builder.Configuration.GetConnectionString("parity")
     ?? $"Data Source={Path.Combine(builder.Environment.ContentRootPath, "parity-server.db")}"));
 
-// 報告是純數值 JSON,實測 21 頁的 dogfooding 報告 ~200KB;20MB 是護欄不是目標
+builder.Services.AddIdentityCore<AppUser>(o =>
+    {
+        // 邀請制小工具的務實密碼政策:長度重於字元雜技(好記的長句 > 難記的短亂碼)
+        o.Password.RequiredLength = 10;
+        o.Password.RequireNonAlphanumeric = false;
+        o.Password.RequireUppercase = false;
+        o.Password.RequireLowercase = false;
+        o.Password.RequireDigit = false;
+        o.User.RequireUniqueEmail = true;
+        o.Lockout.MaxFailedAccessAttempts = 5; // 內建暴力破解節流
+    })
+    .AddEntityFrameworkStores<ServerDbContext>()
+    .AddSignInManager();
+
+builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
+    .AddCookie(IdentityConstants.ApplicationScheme, o =>
+    {
+        o.Cookie.Name = "parity.session";
+        o.Cookie.HttpOnly = true;
+        o.Cookie.SameSite = SameSiteMode.Strict; // 同源 SPA;Strict 順便當 CSRF 防線
+        o.ExpireTimeSpan = TimeSpan.FromDays(30);
+        o.SlidingExpiration = true;
+        // API 伺服器:未登入回 401/403,不做 302 導頁(前端自己導向 /login)
+        o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
+        o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+    });
+builder.Services.AddAuthorization();
+
+// 報告是純數值 JSON;20MB 是護欄不是目標(50+ 頁的大站接近時,413 要給出路)
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 20 * 1024 * 1024);
 
 var app = builder.Build();
 
-// 從第一天就走 migrations(Parity.Storage 的 EnsureCreated 接管成本,這裡不再付一次)
 using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.Migrate();
 
-// ── 報告接收(唯一的寫入口;Bearer token = 專案身分)─────────────
+app.UseAuthentication();
+app.UseAuthorization();
+
+// ── 認證 ───────────────────────────────────────────────────────
+app.MapPost("/api/auth/login", async (
+    LoginRequest req, SignInManager<AppUser> signIn, UserManager<AppUser> users, ServerDbContext db) =>
+{
+    var user = await users.FindByEmailAsync(req.Email.Trim());
+    if (user is null)
+        return Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
+    var result = await signIn.PasswordSignInAsync(user, req.Password, isPersistent: true, lockoutOnFailure: true);
+    if (result.IsLockedOut)
+        return Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
+    if (!result.Succeeded)
+        return Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
+    return Results.Json(await MeAsync(user, db));
+});
+
+app.MapPost("/api/auth/logout", async (SignInManager<AppUser> signIn) =>
+{
+    await signIn.SignOutAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapGet("/api/auth/me", async (ClaimsPrincipal principal, UserManager<AppUser> users, ServerDbContext db) =>
+{
+    var user = await users.GetUserAsync(principal);
+    return user is null ? Results.Unauthorized() : Results.Json(await MeAsync(user, db));
+}).RequireAuthorization();
+
+// ── 邀請(接受端不需登入——連結本身就是憑證)───────────────────
+app.MapGet("/api/invites/{token}", async (string token, ServerDbContext db) =>
+{
+    var invite = await Invites.FindUsableAsync(db, token, DateTimeOffset.UtcNow);
+    return invite is null
+        ? Results.Json(new { error = "this invite link is invalid, expired, or already used — ask the project owner for a new one." }, statusCode: 404)
+        : Results.Json(new { project = invite.Project!.Name, email = invite.Email, role = invite.Role });
+});
+
+app.MapPost("/api/invites/{token}/accept", async (
+    string token, AcceptRequest req, ServerDbContext db,
+    UserManager<AppUser> users, SignInManager<AppUser> signIn) =>
+{
+    var invite = await Invites.FindUsableAsync(db, token, DateTimeOffset.UtcNow);
+    if (invite is null)
+        return Results.Json(new { error = "this invite link is invalid, expired, or already used — ask the project owner for a new one." }, statusCode: 404);
+
+    var user = await users.FindByEmailAsync(invite.Email);
+    if (user is null)
+    {
+        user = new AppUser { Id = Guid.NewGuid(), UserName = invite.Email, Email = invite.Email };
+        var created = await users.CreateAsync(user, req.Password);
+        if (!created.Succeeded)
+            return Results.Json(new { error = string.Join(" ", created.Errors.Select(e => e.Description)) }, statusCode: 400);
+    }
+    else
+    {
+        // 既有使用者被重邀(換角色/回鍋):要證明是本人——密碼對得上才接受
+        if (!await users.CheckPasswordAsync(user, req.Password))
+            return Results.Json(new { error = "an account with this email already exists — enter its password to accept." }, statusCode: 401);
+    }
+
+    await Invites.AcceptAsync(db, invite, user.Id, DateTimeOffset.UtcNow);
+    await signIn.SignInAsync(user, isPersistent: true);
+    return Results.Json(await MeAsync(user, db));
+});
+
+// ── 專案管理(Owner 限定)────────────────────────────────────────
+app.MapGet("/api/projects/{id:guid}/members", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
+{
+    var userId = UserId(principal);
+    if (!await Membership.IsOwnerAsync(db, userId, id)) return Results.Forbid();
+    var members = await db.Members.Where(m => m.ProjectId == id)
+        .OrderBy(m => m.CreatedAt)
+        .Select(m => new { userId = m.UserId, email = m.User!.Email, role = m.Role, joined = m.CreatedAt })
+        .ToListAsync();
+    var now = DateTimeOffset.UtcNow;
+    var invites = await db.Invites
+        .Where(i => i.ProjectId == id && i.AcceptedAt == null && i.ExpiresAt > now)
+        .Select(i => new { email = i.Email, role = i.Role, expires = i.ExpiresAt })
+        .ToListAsync();
+    return Results.Json(new { members, pendingInvites = invites });
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{id:guid}/invites", async (
+    Guid id, InviteRequest req, ClaimsPrincipal principal, HttpRequest http, ServerDbContext db) =>
+{
+    var userId = UserId(principal);
+    if (!await Membership.IsOwnerAsync(db, userId, id)) return Results.Forbid();
+    if (!ProjectRole.IsValid(req.Role))
+        return Results.Json(new { error = "role must be owner, member or viewer." }, statusCode: 400);
+
+    var (invite, token) = Invites.Create(id, req.Email, req.Role, DateTimeOffset.UtcNow);
+    db.Invites.Add(invite);
+    await db.SaveChangesAsync();
+    // 連結親手交給對方(v1 不寄信)——只回這一次
+    return Results.Json(new { link = $"{http.Scheme}://{http.Host}/invite/{token}", expires = invite.ExpiresAt });
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{id:guid}/members/{memberUserId:guid}", async (
+    Guid id, Guid memberUserId, ClaimsPrincipal principal, ServerDbContext db) =>
+{
+    var userId = UserId(principal);
+    if (!await Membership.IsOwnerAsync(db, userId, id)) return Results.Forbid();
+    if (await Membership.WouldRemoveLastOwnerAsync(db, id, memberUserId))
+        return Results.Json(new { error = "cannot remove the last owner — hand ownership to someone first." }, statusCode: 400);
+    await db.Members.Where(m => m.ProjectId == id && m.UserId == memberUserId).ExecuteDeleteAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{id:guid}/token/rotate", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
+{
+    var userId = UserId(principal);
+    if (!await Membership.IsOwnerAsync(db, userId, id)) return Results.Forbid();
+    var project = await db.Projects.FindAsync(id);
+    if (project is null) return Results.NotFound();
+    var token = ProjectToken.Generate();
+    project.TokenHash = ProjectToken.Hash(token); // 舊 token 立即失效(撤銷 = 換掉)
+    await db.SaveChangesAsync();
+    return Results.Json(new { token }); // 只回這一次
+}).RequireAuthorization();
+
+// ── 報告接收(CI token,與人的登入無關)──────────────────────────
 app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
 {
     var project = await Auth.ResolveProjectAsync(request, db);
@@ -108,10 +237,12 @@ app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
         => r.Headers.TryGetValue(name, out var v) && !string.IsNullOrWhiteSpace(v) ? v.ToString() : null;
 });
 
-// ── 讀取(M1:本機瀏覽,無帳號;M3 加 Identity 後上鎖)────────────
-app.MapGet("/api/runs", async (ServerDbContext db, [FromQuery] int limit = 50) =>
+// ── 讀取(登入 + 成員資格過濾)──────────────────────────────────
+app.MapGet("/api/runs", async (ClaimsPrincipal principal, ServerDbContext db, [FromQuery] int limit = 50) =>
 {
-    var runs = await db.Runs.OrderByDescending(r => r.CreatedAt)
+    var visible = Membership.ProjectIdsFor(db, UserId(principal));
+    var runs = await db.Runs.Where(r => visible.Contains(r.ProjectId))
+        .OrderByDescending(r => r.CreatedAt)
         .Take(Math.Clamp(limit, 1, 200))
         .Select(r => new
         {
@@ -127,11 +258,18 @@ app.MapGet("/api/runs", async (ServerDbContext db, [FromQuery] int limit = 50) =
         })
         .ToListAsync();
     return Results.Json(runs);
-});
+}).RequireAuthorization();
 
-app.MapGet("/api/runs/{id:guid}", async (Guid id, ServerDbContext db) =>
+app.MapGet("/api/overview", async (ClaimsPrincipal principal, ServerDbContext db) =>
+    Results.Json(await Queries.OverviewAsync(db, UserId(principal)))).RequireAuthorization();
+
+app.MapGet("/api/trend", async (Guid project, string route, ClaimsPrincipal principal, ServerDbContext db) =>
+    Results.Json(await Queries.TrendAsync(db, UserId(principal), project, route))).RequireAuthorization();
+
+app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
 {
-    var run = await db.Runs.Where(r => r.Id == id)
+    var visible = Membership.ProjectIdsFor(db, UserId(principal));
+    var run = await db.Runs.Where(r => r.Id == id && visible.Contains(r.ProjectId))
         .Select(r => new
         {
             r.Id,
@@ -189,42 +327,53 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ServerDbContext db) =>
             })),
         }),
     });
-});
+}).RequireAuthorization();
 
-// 總覽與趨勢(M4):關聯表就是為這兩個查詢存在的
-app.MapGet("/api/overview", async (ServerDbContext db) =>
-    Results.Json(await Queries.OverviewAsync(db)));
-
-app.MapGet("/api/trend", async (Guid project, string route, ServerDbContext db) =>
-    Results.Json(await Queries.TrendAsync(db, project, route)));
-
-// 報告原文(M2 前端的資料來源):UI 直接吃 CLI 寫出的同一份契約,關聯表只服務列表/趨勢
-app.MapGet("/api/runs/{id:guid}/report", async (Guid id, ServerDbContext db) =>
+app.MapGet("/api/runs/{id:guid}/report", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
 {
-    var blob = await db.Runs.Where(r => r.Id == id).Select(r => r.RawReportGzip).FirstOrDefaultAsync();
+    var visible = Membership.ProjectIdsFor(db, UserId(principal));
+    var blob = await db.Runs.Where(r => r.Id == id && visible.Contains(r.ProjectId))
+        .Select(r => r.RawReportGzip).FirstOrDefaultAsync();
     return blob is null
         ? Results.NotFound()
         : Results.Content(ReportBlob.Decompress(blob), "application/json; charset=utf-8");
-});
+}).RequireAuthorization();
 
-// ── 前端:web/ 的建置產物(vite build → wwwroot)。沒建置時退回 M1 的陽春頁,
-//    伺服器本身不依賴 node 工具鏈(同 parity serve 的零建置原則)。──────────
+// ── 前端:web/ 的建置產物(vite build → wwwroot)──────────────────
 if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "", "index.html")))
 {
     app.UseDefaultFiles();
     app.UseStaticFiles();
-    app.MapFallbackToFile("index.html"); // /runs/{id} 深連結由前端路由接手
+    app.MapFallbackToFile("index.html"); // /runs/{id}、/login、/invite/{token} 深連結由前端路由接手
 }
 else
 {
-    app.MapGet("/", () => Results.Content(M1Page.Html, "text/html; charset=utf-8"));
-    app.MapGet("/runs/{id:guid}", (Guid id) => Results.Content(M1Page.RunHtml(id), "text/html; charset=utf-8"));
+    app.MapGet("/", () => Results.Content(
+        "<!doctype html><meta charset=\"utf-8\"><title>Parity</title>" +
+        "<p style=\"font-family:system-ui;margin:3rem\">The web UI has not been built. " +
+        "Run <code>npm run build</code> in <code>web/</code>, then restart the server.</p>",
+        "text/html; charset=utf-8"));
 }
 
 app.Run();
 return 0;
 
 // ─────────────────────────────────────────────────────────────
+
+static Guid UserId(ClaimsPrincipal principal)
+    => Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+static async Task<object> MeAsync(AppUser user, ServerDbContext db)
+{
+    var memberships = await db.Members.Where(m => m.UserId == user.Id)
+        .Select(m => new { projectId = m.ProjectId, project = m.Project!.Name, role = m.Role })
+        .ToListAsync();
+    return new { email = user.Email, memberships };
+}
+
+internal sealed record LoginRequest(string Email, string Password);
+internal sealed record AcceptRequest(string Password);
+internal sealed record InviteRequest(string Email, string Role);
 
 internal static class Auth
 {
@@ -242,15 +391,8 @@ internal static class Auth
 
 internal static class AdminCommands
 {
-    /// <summary>建專案 + 發 token。token 只印這一次,庫裡只有 hash。</summary>
-    public static async Task<int> CreateProjectAsync(string[] args)
+    public static async Task<int> RunAsync(string[] args)
     {
-        if (args.Length < 1 || string.IsNullOrWhiteSpace(args[0]))
-        {
-            Console.Error.WriteLine("usage: dotnet run --project src/Parity.Server -- create-project <name>");
-            return 2;
-        }
-
         var dbPath = Environment.GetEnvironmentVariable("PARITY_SERVER_DB")
             ?? Path.Combine(Directory.GetCurrentDirectory(), "parity-server.db");
         var options = new DbContextOptionsBuilder<ServerDbContext>()
@@ -258,91 +400,54 @@ internal static class AdminCommands
         await using var db = new ServerDbContext(options);
         await db.Database.MigrateAsync();
 
-        var token = ProjectToken.Generate();
-        db.Projects.Add(new Project
+        switch (args[0])
         {
-            Id = Guid.NewGuid(),
-            Name = args[0],
-            TokenHash = ProjectToken.Hash(token),
-            CreatedAt = DateTimeOffset.UtcNow,
-        });
-        await db.SaveChangesAsync();
-
-        Console.WriteLine($"project created: {args[0]}");
-        Console.WriteLine($"db: {dbPath}");
-        Console.WriteLine();
-        Console.WriteLine("API token (shown once — store it in your CI secrets now):");
-        Console.WriteLine($"  {token}");
-        Console.WriteLine();
-        Console.WriteLine("CI usage:  parity push --server <url>   (token via PARITY_TOKEN env var)");
-        return 0;
+            case "create-project" when args.Length >= 2 && !string.IsNullOrWhiteSpace(args[1]):
+                {
+                    var token = ProjectToken.Generate();
+                    db.Projects.Add(new Project
+                    {
+                        Id = Guid.NewGuid(),
+                        Name = args[1],
+                        TokenHash = ProjectToken.Hash(token),
+                        CreatedAt = DateTimeOffset.UtcNow,
+                    });
+                    await db.SaveChangesAsync();
+                    Console.WriteLine($"project created: {args[1]}   (db: {dbPath})");
+                    Console.WriteLine("\nCI token (shown once — store it in your CI secrets now):");
+                    Console.WriteLine($"  {token}");
+                    Console.WriteLine("\nnext: create the first owner with  create-invite <project> <email> owner");
+                    return 0;
+                }
+            case "create-invite" when args.Length >= 3:
+                {
+                    var project = await db.Projects.FirstOrDefaultAsync(p => p.Name == args[1]);
+                    if (project is null)
+                    {
+                        Console.Error.WriteLine($"no project named \"{args[1]}\" (create it with create-project first).");
+                        return 2;
+                    }
+                    var role = args.Length >= 4 ? args[3] : ProjectRole.Owner;
+                    if (!ProjectRole.IsValid(role))
+                    {
+                        Console.Error.WriteLine($"unknown role: {role} (use owner/member/viewer)");
+                        return 2;
+                    }
+                    var (invite, token) = Invites.Create(project.Id, args[2], role, DateTimeOffset.UtcNow);
+                    db.Invites.Add(invite);
+                    await db.SaveChangesAsync();
+                    Console.WriteLine($"invite created: {args[2]} → {project.Name} as {role} (expires in {Invites.Lifetime.TotalDays:0} days)");
+                    Console.WriteLine("\nhand this link to them (shown once):");
+                    Console.WriteLine($"  http://127.0.0.1:4322/invite/{token}");
+                    return 0;
+                }
+            default:
+                Console.Error.WriteLine("""
+                    usage:
+                      create-project <name>
+                      create-invite <project> <email> [owner|member|viewer]
+                    """);
+                return 2;
+        }
     }
-}
-
-/// <summary>M1 的靜態頁:零建置、fetch API 渲染。M2 由 web/(React + Vite)取代。</summary>
-internal static class M1Page
-{
-    public const string Html = """
-        <!doctype html><html lang="en"><head><meta charset="utf-8">
-        <title>Parity — runs</title>
-        <style>
-          body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 60rem; padding: 0 1rem; }
-          table { border-collapse: collapse; width: 100%; }
-          th, td { text-align: left; padding: .45rem .7rem; border-bottom: 1px solid #ddd; }
-          .fail { color: #b91c1c; font-weight: 600; } .pass { color: #15803d; font-weight: 600; }
-          a { color: inherit; }
-        </style></head><body>
-        <h1>Parity — received runs</h1>
-        <table id="t"><thead><tr>
-          <th>time (UTC)</th><th>project</th><th>score</th><th>gate</th><th>pages</th><th>branch</th><th>commit</th>
-        </tr></thead><tbody></tbody></table>
-        <script>
-          fetch('/api/runs').then(r => r.json()).then(runs => {
-            const tb = document.querySelector('#t tbody');
-            for (const r of runs) {
-              const tr = document.createElement('tr');
-              const cells = [
-                `<a href="/runs/${r.id}">${r.createdAt.replace('T',' ').slice(0,19)}</a>`,
-                r.project, `${r.score}/100`,
-                r.gateFailed ? '<span class="fail">FAIL</span>' : '<span class="pass">PASS</span>',
-                r.pages, r.branch ?? '—', r.commitSha ? r.commitSha.slice(0,7) : '—',
-              ];
-              tr.innerHTML = cells.map(c => `<td>${c}</td>`).join('');
-              tb.appendChild(tr);
-            }
-            if (!runs.length) tb.innerHTML = '<tr><td colspan="7">no runs yet — `parity push` one</td></tr>';
-          });
-        </script></body></html>
-        """;
-
-    public static string RunHtml(Guid id) => $$"""
-        <!doctype html><html lang="en"><head><meta charset="utf-8">
-        <title>Parity — run</title>
-        <style>
-          body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 70rem; padding: 0 1rem; }
-          table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
-          th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid #eee; font-size: .92rem; }
-          h2 { margin-top: 2rem; }
-          .sev-critical { color: #b91c1c; font-weight: 600; } .sev-serious { color: #c2410c; font-weight: 600; }
-          .sev-medium { color: #a16207; } .sev-minor { color: #64748b; }
-          code { background: #f3f4f6; padding: 0 .3em; }
-        </style></head><body>
-        <p><a href="/">← runs</a></p><div id="out">loading…</div>
-        <script>
-          fetch('/api/runs/{{id}}').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(run => {
-            let h = `<h1>${run.project} — ${run.score}/100 ${run.gateFailed ? '❌' : '✅'}</h1>
-              <p>${run.createdAt.replace('T',' ').slice(0,19)} UTC · ${run.branch ?? ''} ${run.commitSha ? run.commitSha.slice(0,7) : ''}</p>`;
-            for (const p of run.pages) {
-              h += `<h2>${p.route} — ${p.score}/100 (matched ${p.matched}/${p.designNodes})</h2>`;
-              if (!p.diffs.length) { h += '<p>no diffs 🎉</p>'; continue; }
-              h += '<table><thead><tr><th>layer</th><th>prop</th><th>expected → actual</th><th>severity</th></tr></thead><tbody>'
-                + p.diffs.map(d => `<tr><td>${d.designLayer}<br><code>${d.selector}</code></td><td>${d.prop}</td>
-                    <td>${d.expected} → ${d.actual}${d.unit ?? ''}</td>
-                    <td class="sev-${d.severity}">${d.severity}${d.soft ? ' (soft)' : ''}</td></tr>`).join('')
-                + '</tbody></table>';
-            }
-            document.querySelector('#out').innerHTML = h;
-          }).catch(() => document.querySelector('#out').textContent = 'run not found');
-        </script></body></html>
-        """;
 }

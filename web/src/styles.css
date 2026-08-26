@@ -195,6 +195,38 @@ table.diffs td { padding: 0.18rem 0.4rem 0.18rem 0; vertical-align: baseline; fo
 }
 .t-tip .dim { opacity: 0.7; }
 
+/* ── 登入/邀請/設定(M3)── */
+.session { margin-left: auto; display: flex; align-items: center; gap: 0.7rem; font-size: 0.82rem; }
+.session a { color: var(--ink-2); }
+.dim { color: var(--ink-2); }
+
+.authbox {
+  max-width: 22rem; margin: 4rem auto; display: flex; flex-direction: column; gap: 0.45rem;
+  background: var(--card); border: 1px solid var(--line); padding: 1.4rem 1.5rem 1.2rem;
+}
+.authbox input, .invite-form input, .invite-form select {
+  font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--paper);
+}
+.authbox input:disabled { color: var(--ink-2); }
+.btn {
+  font: inherit; font-weight: 600; padding: 0.5rem 0.9rem; margin-top: 0.5rem;
+  background: var(--ink); color: var(--paper); border: 0; border-radius: 3px; cursor: pointer;
+}
+.btn:disabled { opacity: 0.55; cursor: default; }
+.form-error { color: var(--sev-critical); font-size: 0.85rem; margin: 0.2rem 0 0; }
+.form-hint { color: var(--ink-2); font-size: 0.78rem; margin: 0.6rem 0 0; }
+
+.settings { display: flex; flex-direction: column; gap: 1rem; }
+.invite-form { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem; align-items: center; }
+.invite-form .btn { margin-top: 0; }
+.reveal-once {
+  margin: 0 0.75rem 0.75rem; padding: 0.6rem 0.75rem;
+  border: 1px dashed var(--steel); background: #f1f4f8;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+}
+.reveal-once code { word-break: break-all; }
+
 .loading, .error { padding: 2rem; text-align: center; color: var(--ink-2); }
 .error { color: var(--sev-critical); }
 
