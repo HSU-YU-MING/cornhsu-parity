@@ -79,6 +79,8 @@ git tag v1 v1.0.0 && git push origin v1
 - [ ] README 兩份共四處 `uses: …@v0.x.y` → **`@v1`**（0.x 期間刻意 pin 版本,1.0 起才切移動式）；
       同時把 `scripts/verify-readme-facts.ps1` 的 pin 檢查改成認 `@v1`，否則它會擋下這次變更
 - [ ] 之後**每發一個 1.x**,把 `v1` 前移到最新:`git tag -f v1 v1.x.y && git push -f origin v1`
+      （`v1` 的推送**不會**觸發 release——workflow 只認三段式 `v*.*.*` tag,這是刻意的：
+      `v1` 若觸發,守門會因 tag ≠ CHANGELOG 版號而必紅一次,徒增失敗通知）
 
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
 
