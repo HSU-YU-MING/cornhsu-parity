@@ -1,7 +1,9 @@
 # Parity 1.0 — 介面凍結前審查表
 
 > **用途**:1.0.0 = 對外承諾「以下介面凍結,破壞它就升 major」。這份表把**當前所有公開契約面**攤開,讓你在 dogfooding 這 2–4 週(2026-07-18 起)逐項決定「凍結 / 趁現在改 / 待議」。
-> **狀態**:**審查完成(2026-08-11)——六面全數拍板,唯餘發版當下的機械動作(CHANGELOG 凍結清單、`v1` tag)**。動工前 = 0.x,改介面免費;發 1.0 後 = 改介面要 major。
+> **狀態**:**已發版(2026-08-26,v1.0.0)——本表歷史任務完成**,動作清單全數打勾;
+> 之後的介面變更依 CHANGELOG 1.0.0 的凍結清單與演進條款辦理。
+> (審查完成於 2026-08-11,六面全數拍板。)
 > **產生**:2026-07-22,盤點自當時原始碼(`ParityConfig.cs` / `Program.cs` / `Report.cs` / `action.yml` / `BaselineDbContext.cs`)。
 > **進度更新**:2026-08-01——**0.10.0 已把面 4、面 5 的高風險待決項全部做掉**(見下方各項的 `已於 0.10.0 處理`)。剩餘待決集中在「字面拼寫凍結」與「發 1.0 時的 `v1` tag」,見文末動作清單。
 > **進度更新**:2026-08-11(野生實查輪,PR #26 + onboarding 分支)——面 2 新增 `snapshot --stabilize` 旗標(加法,不破壞);面 4 **發現一個先前漏盤的契約面**:`unmatched[].reason` 字彙(本輪就長出 `randomized-id` 與 `size-implausible` 兩個新值),見面 4 新增待決項;面 1 的「init 範本最小子集」決定被 DX 實查 D1 推翻(改為註解並列 Figma/snapshot 兩條路——範本不是 schema,不影響凍結)。動作清單的「npx 端到端」已實測打勾。
@@ -204,10 +206,11 @@ breaking,但把每次量測修正都升 major 等於凍結工具的核心價值�
 - [x] dogfooding 滿 2–4 週,且期間對上面各面**沒有再想改的**
   ——2026-08-11 檢核:07-18 起算已滿 3.5 週;野生實查 + 三通路驗證期間,
   六面均無破壞性變更需求(--stabilize 為加法、reason 字彙走開放集合)
-- [ ] 上面每個 ⚠️ 都已拍板:schema 遷移策略 ✅(0.10.0 選 EF migrations)、report `schemaVersion` ✅(0.10.0 已加)、action `v1` tag ⬜(**唯一未解**,是發 1.0 當下的動作,見下方最後一項)
+- [x] 上面每個 ⚠️ 都已拍板:schema 遷移策略 ✅(0.10.0 選 EF migrations)、report `schemaVersion` ✅(0.10.0 已加)、action `v1` tag ✅(2026-08-26 發版時建立)
 - [x] `npx cornhsu-parity` 端到端實裝跑過一次(通路才 0.9.5 生,1.0 等於承諾它也穩)
   ——**已實測**(2026-08-11,DX 實查):Windows x64 上 `npx -y cornhsu-parity` 首跑 12 秒
   (含平台包下載),snapshot + check 全程正常,exit code 正確。
-- [ ] CHANGELOG 寫 1.0.0:不列功能,**列「以下介面自此凍結」**
-- [ ] `git tag v1.0.0 && git push origin v1.0.0`(觸發 release.yml 發 NuGet + npm)
-- [ ] 建立 / 移動 `v1` major tag → v1.0.0(之後每個 1.x 都把 `v1` 前移)
+- [x] CHANGELOG 寫 1.0.0:不列功能,**列「以下介面自此凍結」**——已寫(PR #38,六面 + 演進條款五級)
+- [x] `git tag v1.0.0 && git push origin v1.0.0`——**2026-08-26 已發**,release.yml 兩通路綠,
+      npx 端到端驗證 `parity 1.0.0+918057c`
+- [x] 建立 / 移動 `v1` major tag → v1.0.0(之後每個 1.x 都把 `v1` 前移)——已建立並推送
