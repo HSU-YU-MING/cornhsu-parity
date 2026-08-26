@@ -13,6 +13,14 @@
   試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
   commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`/`GITHUB_REF_NAME`)。
   送出前在本機先驗報告信封,壞檔案不浪費往返。
+- **新增:網頁外殼 M2——落差詳情頁(取代 PPT 那一頁的核心畫面)**。`web/`(React +
+  Vite + TS,建置產物落 `wwwroot`,伺服器偵測到就改served、沒建置退回 M1 陽春頁)。
+  **「在哪裡」不靠截圖**:report.json 本來就含每個節點的量測座標,詳情頁直接把座標
+  畫成工程藍圖(SVG 線框,實線 = 實作量到的框、顏色 = 嚴重度),點一條落差就拉出
+  **尺寸標註線**(`paddingRight 20 → 8px` 這種工程圖講尺寸的方式)並虛線疊出設計期望的框
+  ——零截圖上傳、零儲存成本,「純數值版先行」的拍板就這樣兌現。
+  嚴重度過濾、soft 開關、多頁籤(21 頁的 dogfooding 報告實測:328 張落差卡順跑);
+  新端點 `GET /api/runs/{id}/report` 回報告原文,UI 吃 CLI 寫出的同一份契約。
 - **新增:`Parity.Server` + `Parity.Server.Data`**(不上 NuGet,部署用)。
   `POST /api/runs`(Bearer 專案 token,只存 SHA-256)收報告落庫(SQLite + EF migrations
   從第一天),`GET /api/runs`、`/runs/{id}` 與最陽春的瀏覽頁;`create-project` 指令

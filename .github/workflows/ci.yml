@@ -66,6 +66,22 @@ jobs:
           name: nupkg
           path: nupkg/*.nupkg
 
+  # 網頁外殼前端(web/ → Parity.Server wwwroot)。tsc --noEmit 含在 build script 裡,
+  # 型別錯誤就紅——伺服器端 API 形狀改了而前端型別沒跟上時,這裡會先叫。
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+
   build-test:
     name: Build + Test + Parity 自我把關
     runs-on: ubuntu-latest

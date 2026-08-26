@@ -151,9 +151,26 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ServerDbContext db) =>
     return run is null ? Results.NotFound() : Results.Json(run);
 });
 
-// ── 最陽春頁面(M1 的「最醜能動版」;M2 換 React 投資 UI)──────────
-app.MapGet("/", () => Results.Content(M1Page.Html, "text/html; charset=utf-8"));
-app.MapGet("/runs/{id:guid}", (Guid id) => Results.Content(M1Page.RunHtml(id), "text/html; charset=utf-8"));
+// 報告原文(M2 前端的資料來源):UI 直接吃 CLI 寫出的同一份契約,關聯表只服務列表/趨勢
+app.MapGet("/api/runs/{id:guid}/report", async (Guid id, ServerDbContext db) =>
+{
+    var raw = await db.Runs.Where(r => r.Id == id).Select(r => r.RawReportJson).FirstOrDefaultAsync();
+    return raw is null ? Results.NotFound() : Results.Content(raw, "application/json; charset=utf-8");
+});
+
+// ── 前端:web/ 的建置產物(vite build → wwwroot)。沒建置時退回 M1 的陽春頁,
+//    伺服器本身不依賴 node 工具鏈(同 parity serve 的零建置原則)。──────────
+if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "", "index.html")))
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+    app.MapFallbackToFile("index.html"); // /runs/{id} 深連結由前端路由接手
+}
+else
+{
+    app.MapGet("/", () => Results.Content(M1Page.Html, "text/html; charset=utf-8"));
+    app.MapGet("/runs/{id:guid}", (Guid id) => Results.Content(M1Page.RunHtml(id), "text/html; charset=utf-8"));
+}
 
 app.Run();
 return 0;
