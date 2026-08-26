@@ -446,17 +446,20 @@ internal static class SnapshotCommand
             // 字元啟發法(looksRandom)在擷取時已擋掉數字混雜型;純字母型(rkxvdnnzty)
             // 只有實測分得出——測到就帶「穩定 id 白名單」重拍,錨點只用兩次都在的 id,
             // 白名單存進快照,check 端用同一份名單擷取,兩邊 selector 生成規則才一致。
-            var reload = await impl.CaptureAsync(implRef);
+            // 探測擷取不拍截圖(CaptureScreenshot = false):截圖字典後拍覆寫先拍,
+            // 探測照拍的話「凍結的樹」與「參考截圖」會來自不同次載入,疊框視圖對不齊。
+            var reload = await impl.CaptureAsync(implRef with { CaptureScreenshot = false });
             var (stableIds, unstableIdCount) = SnapshotBuilder.ProbeStableIds(tree, reload);
             stableIdUnion.UnionWith(stableIds);
             if (unstableIdCount > 0)
             {
                 anyRandomIds = true;
                 implRef = implRef with { AllowedIdAnchors = stableIds };
-                tree = await impl.CaptureAsync(implRef);
-                Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstableIdCount} id(s) regenerate on every load " +
-                    "(per-load random ids) — anchoring selectors on the measured stable-id allowlist instead; " +
-                    "the allowlist is stored in the snapshot so `parity check` anchors the same way.\x1b[0m");
+                tree = await impl.CaptureAsync(implRef); // 這拍會被凍結,照拍截圖(覆寫第 1 拍的)
+                Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstableIdCount} id string(s) appeared in only " +
+                    "one of two page loads (per-load random ids) — selectors anchor on the measured " +
+                    "stable-id allowlist instead; the allowlist is stored in the snapshot so " +
+                    "`parity check` anchors the same way.\x1b[0m");
             }
 
             // --stabilize:連拍三次,列出「會動」的區域(廣告輪播/動畫/lazy 媒體),
@@ -464,8 +467,8 @@ internal static class SnapshotCommand
             if (stabilize)
             {
                 var captures = new List<Parity.Engine.ImplementationSources.RenderedNode> { tree };
-                for (var probe = 1; probe < 3; probe++)
-                    captures.Add(await impl.CaptureAsync(implRef));
+                for (var probe = 1; probe < 3; probe++) // 連拍也是探測,不拍截圖(理由同上)
+                    captures.Add(await impl.CaptureAsync(implRef with { CaptureScreenshot = false }));
                 var unstable = SnapshotStabilizer.FindUnstable(captures);
                 if (unstable.Count > 0)
                 {

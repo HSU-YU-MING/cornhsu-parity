@@ -138,7 +138,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             if (json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
                 throw new InvalidOperationException($"page capture failed (is <body> invisible?): {reference.Url}");
 
-            if (_options.CaptureScreenshot)
+            if (_options.CaptureScreenshot && reference.CaptureScreenshot)
                 _screenshots[reference.Url] = await page.ScreenshotAsync(
                     new PageScreenshotOptions { FullPage = true });
 
