@@ -47,7 +47,7 @@ export default function App() {
     if (me === 'loading') return <div className="loading">Loading…</div>
     if (me === null) return <Login onSignedIn={signedIn} />
     switch (route.page) {
-      case 'run': return <RunDetail id={route.id} />
+      case 'run': return <RunDetail id={route.id} me={me} />
       case 'settings': return <Settings me={me} />
       default: return <RunsList />
     }

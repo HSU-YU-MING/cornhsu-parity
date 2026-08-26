@@ -76,7 +76,15 @@ export interface RunMeta {
   branch: string | null
   triggeredBy: string | null
   repoUrl: string | null
+  projectId: string
   project: string
+}
+
+export interface AuditEntry {
+  at: string
+  actorEmail: string
+  action: string // 開放字彙:invite-created / invite-accepted / member-removed / token-rotated / run-deleted…
+  detail: string | null
 }
 
 // M4.5:分支與「變了什麼」

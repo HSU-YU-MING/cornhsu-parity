@@ -131,8 +131,12 @@ table.runs tbody tr:hover { background: #f1f3ee; }
 .bp-sel-fill { pointer-events: none; }
 .bp-design { fill: none; stroke: var(--steel); stroke-dasharray: 5 4; stroke-width: 1.5;
   pointer-events: none; }
-.bp-unmatched { fill: none; stroke: var(--sev-critical); stroke-dasharray: 2 3; opacity: 0.6;
-  pointer-events: none; }
+.bp-unmatched { fill: transparent; stroke: var(--sev-critical); stroke-dasharray: 2 3; opacity: 0.6;
+  cursor: pointer; }
+.bp-unmatched:hover { opacity: 1; }
+.bp-unmatched.sel { opacity: 1; stroke-width: 2; }
+.bp-reset { position: absolute; top: 0.5rem; right: 0.5rem; z-index: 1; }
+.blueprint { position: relative; }
 .bp-callout-line { stroke: var(--ink); stroke-width: 1; }
 .bp-callout text { font-family: var(--mono); }
 
@@ -160,6 +164,16 @@ table.diffs td { padding: 0.18rem 0.4rem 0.18rem 0; vertical-align: baseline; fo
 
 .unmatched-note { padding: 0.55rem 0.75rem; color: var(--ink-2); font-size: 0.84rem;
   border-top: 1px solid var(--line); }
+.unmatched-row { display: flex; align-items: baseline; gap: 0.55rem; padding: 0.3rem 0.75rem;
+  cursor: pointer; border-top: 1px solid var(--hairline); font-size: 0.85rem; }
+.unmatched-row:hover { background: #f4f5f1; }
+.unmatched-row.sel { background: #eef0ea; box-shadow: inset 3px 0 0 var(--sev-critical); }
+.unmatched-row .reason { font-family: var(--mono); font-size: 0.72rem; color: var(--sev-critical);
+  border: 1px solid currentColor; border-radius: 999px; padding: 0 0.45rem; white-space: nowrap; }
+.btn-danger { font: inherit; font-size: 0.8rem; padding: 0.25rem 0.6rem; margin-left: auto;
+  background: transparent; color: var(--sev-critical); border: 1px solid var(--sev-critical);
+  border-radius: 3px; cursor: pointer; }
+.btn-danger:hover { background: var(--sev-critical); color: var(--paper); }
 
 /* ── 總覽卡(M4 stat tiles)── */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.6rem; }
