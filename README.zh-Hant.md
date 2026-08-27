@@ -197,8 +197,9 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 - **字體**:size / weight / line-height / letter-spacing 精確比;font-family 是**軟落差**(不擋 gate)
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 
-> 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
+
+> 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
 
 ## 給設計師的兩個方向
 
@@ -249,10 +250,35 @@ src/Parity.Engine/        引擎:唯一進入點 FidelityEngine
   DesignSources/          IDesignSource + Figma(REST + 本機快取)/ Json
   ImplementationSources/  IImplementationSource + Web(Playwright)
   Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta(CIEDE2000)
-src/Parity.Cli/           dotnet tool 外殼:parity check / init / install-browser
+src/Parity.Cli/           dotnet tool 外殼:parity check / init / install-browser、
+                          本機報告 UI(parity serve)與 parity push
+src/Parity.Storage/       baseline 歷史(EF Core + SQLite),parity baseline 背後的儲存層
+src/Parity.Server/        團隊儀表板外殼(ASP.NET Core)——不上 NuGet
+src/Parity.Server.Data/   它的資料庫(EF Core + SQLite,第一天就走 migrations)
+web/                      儀表板前端(React + Vite + TypeScript);建置產物落
+                          src/Parity.Server/wwwroot
 tests/Parity.Tests/       單元測試(含 CIEDE2000 標準測資)
 samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 ```
+
+外殼有三家,而**引擎不知道它們任何一個存在**:
+
+1. **CLI**(`Parity.Cli`)——在終端機或 CI 裡跑 `parity check`。三家裡只有這家有發成
+   套件(NuGet / npm / GitHub Action)。
+2. **本機報告 UI**(`parity serve`)——零建置的 SPA,只綁 127.0.0.1,給正在動手修落差的人看。
+3. **團隊儀表板**(`Parity.Server` + `web/`)——讓報告累積下來的地方,有累積才有趨勢,
+   也才讓「不碰工具的人」有地方可看。要自己部署,不上 NuGet,而且**還在開發中**
+   (見下面 M7)。
+
+### 鐵則:雲端不跑瀏覽器
+
+`Parity.Server` 唯一的寫入口是 `POST /api/runs`,它收的是**已經跑完的報告**。
+不存在任何「給我一個 URL、我去掃」的端點,將來也不會有:**掃描永遠發生在你自己的機器
+或你的 CI 上**——頁面、登入憑證、localhost 的埠本來就在那裡。
+
+這不是實作細節,而是整個設計的安全主張。它使得儀表板**完全沒有 SSRF 攻擊面**:
+沒有人交給它一個 URL 去抓。而且這條鐵則是靠結構、不是靠自律守住的——
+`Parity.Server.csproj` 永遠不引用 Playwright,伺服器手上根本沒有瀏覽器可以指向任何地方。
 
 ## 本機報告 UI(M3)
 
@@ -332,14 +358,24 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 - [x] **M3** 本機報告 UI(`parity serve --watch`,Kestrel 綁 127.0.0.1)+ `parity map` 互動配對
 - [x] **M4** GitHub Action:可重用 composite action(`action.yml`)+ 本 repo CI(build / test / 離線示範自我把關)
 - [x] **M5** EF Core + SQLite baseline / 歷史(回歸把關 + 分數走勢)+ `ImageDesignSource`(圖片+標註+像素取樣)+ `parity snapshot`(凍結現況當基準)
+- [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護——**明文不做**(2026-07-18 決定)。
+  這跟 M7 *不是*同一件事:M7 什麼都不掃。當年否決的理由保留在 [ROADMAP.md](ROADMAP.md)。
+- [ ] **M7** 團隊儀表板外殼(`Parity.Server` + `Parity.Server.Data` + `web/`)——**進行中,
+  尚未發佈。** `parity push` 把跑完的 `report.json` 送到你自己架的伺服器;儀表板把落差
+  用報告裡既有的量測座標畫成工程藍圖(零截圖上傳)、依專案與 route 給總覽與分數趨勢,
+  並有帳號 / 專案角色 / 邀請連結。它自己的內部 M1–M4.6 已完成,內部 M5(真的對外部署:
+  TLS、網域、託管資料庫)還沒。**它只收報告,永遠不掃描**——見上面的鐵則。
 
 > 未完成、已知盲點與下一步優先序見 [ROADMAP.md](ROADMAP.md);版本變更見 [CHANGELOG.md](CHANGELOG.md)。
-- [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護
 
 ## 安全
 
 - Figma token 走環境變數(`env:FIGMA_TOKEN`),不進 log、不進 URL(用 `X-Figma-Token` header)
 - 抓過的 frame 存 `.parity/cache`(已 gitignore),重跑不再打 Figma、可離線比對
+- 本機報告 UI 只綁 127.0.0.1,另外還擋非預期的 `Host` header(DNS rebinding)與跨來源
+  `POST`(CSRF)
+- **團隊儀表板永遠不掃描任何東西**——它只收已完成的報告,所以沒有 SSRF 攻擊面。
+  見[鐵則](#鐵則雲端不跑瀏覽器)
 
 ## 另見
 

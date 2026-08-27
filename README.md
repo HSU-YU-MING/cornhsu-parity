@@ -286,10 +286,38 @@ src/Parity.Engine/        The engine; FidelityEngine is the only entry point
   DesignSources/          IDesignSource + Figma (REST + local cache) / Json
   ImplementationSources/  IImplementationSource + Web (Playwright)
   Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta (CIEDE2000)
-src/Parity.Cli/           The dotnet tool shell: parity check / init / install-browser
+src/Parity.Cli/           The dotnet tool shell: parity check / init / install-browser,
+                          the local report UI (parity serve) and parity push
+src/Parity.Storage/       Baseline history (EF Core + SQLite), behind parity baseline
+src/Parity.Server/        Team dashboard shell (ASP.NET Core) — not published to NuGet
+src/Parity.Server.Data/   Its database (EF Core + SQLite, migrations from day one)
+web/                      The dashboard front end (React + Vite + TypeScript); the build
+                          output lands in src/Parity.Server/wwwroot
 tests/Parity.Tests/       Unit tests (including the CIEDE2000 reference data)
 samples/demo/             Offline demo: a deliberately broken page + a design JSON
 ```
+
+There are three shells, and **the engine does not know that any of them exist**:
+
+1. **CLI** (`Parity.Cli`) — `parity check` in a terminal or in CI. This is the only shell
+   published as a package (NuGet / npm / the GitHub Action).
+2. **Local report UI** (`parity serve`) — a zero-build SPA bound to 127.0.0.1, for the
+   person who is actually fixing the gaps.
+3. **Team dashboard** (`Parity.Server` + `web/`) — somewhere the reports can accumulate, so
+   that trends exist and so that people who never touch the tool have a place to look. You
+   deploy it yourself; it is not on NuGet, and it is **still in development** (see M7 below).
+
+### The iron rule: the cloud never runs a browser
+
+`Parity.Server`'s only write endpoint is `POST /api/runs`, and what it accepts is **a report
+that has already finished running**. There is no "give me a URL and I will go scan it"
+endpoint, and there will not be one: **scanning always happens on your own machine or in your
+CI**, where the page, the credentials and the localhost port already are.
+
+This is not an implementation detail — it is the security claim of the whole design. It is why
+the dashboard has **no SSRF surface at all**: it is never handed a URL to fetch. And it is
+enforced structurally rather than by policy — `Parity.Server.csproj` never references
+Playwright, so the server has no browser to point anywhere in the first place.
 
 ## Local report UI (M3)
 
@@ -387,7 +415,16 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
 - [x] **M3** Local report UI (`parity serve --watch`, Kestrel bound to 127.0.0.1) + `parity map` interactive matching
 - [x] **M4** GitHub Action: a reusable composite action (`action.yml`) + this repo's own CI (build / test / offline-demo self-check)
 - [x] **M5** EF Core + SQLite baselines and history (regression gating + score trend) + `ImageDesignSource` (image + annotations + pixel sampling) + `parity snapshot` (freeze the current state as the baseline)
-- [ ] **M6** (optional) Cloud shell: public-URL scanning + SSRF protection
+- [ ] **M6** (optional) Cloud shell: public-URL scanning + SSRF protection — **deliberately
+  declined** (2026-07-18). This is *not* what M7 is: M7 never scans anything. The reasoning is
+  kept in [ROADMAP.md](ROADMAP.md).
+- [ ] **M7** Team dashboard shell (`Parity.Server` + `Parity.Server.Data` + `web/`) — **in
+  progress, not yet released.** `parity push` sends a finished `report.json` to a server you
+  host yourself; the dashboard renders the gaps as an engineering blueprint drawn from the
+  measured coordinates (no screenshot upload), an overview and score trend per project and
+  route, and accounts / project roles / invite links. Its own internal M1–M4.6 are done; its
+  M5 (real external deployment: TLS, a domain, a hosted database) is not. **It receives
+  reports, it never scans** — see the iron rule above.
 
 > Open work, known blind spots and the next priorities are in [ROADMAP.md](ROADMAP.md);
 > version history is in [CHANGELOG.md](CHANGELOG.md).
@@ -398,6 +435,10 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
   and never goes in a URL (it is sent as the `X-Figma-Token` header).
 - Fetched frames are cached in `.parity/cache` (gitignored), so re-runs do not hit Figma and can
   compare offline.
+- The local report UI binds 127.0.0.1 only, and additionally rejects unexpected `Host` headers
+  (DNS rebinding) and cross-origin `POST`s (CSRF).
+- **The team dashboard never scans anything** — it only receives finished reports, so it has no
+  SSRF surface. See [the iron rule](#the-iron-rule-the-cloud-never-runs-a-browser).
 
 ## See also
 
