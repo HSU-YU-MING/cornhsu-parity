@@ -13,7 +13,7 @@
     <ProjectReference Include="..\Parity.Server.Data\Parity.Server.Data.csproj" />
     <!-- dotnet-ef 產 migration 用(migrations 放 Server.Data,startup 是本專案);
          PrivateAssets=all:設計期工具,不進發佈輸出 -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
