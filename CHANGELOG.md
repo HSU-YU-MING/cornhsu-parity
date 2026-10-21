@@ -61,6 +61,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `designReference` 是 `<fileKey>#<frame>`,前端卻拿整串比對 `^[A-Za-z0-9]{15,}$`,裡面有 `#` 所以永遠
   不成立。現在先取 `#` 之前的部分再驗證,node-id 照 CLI 的 Markdown 報告把 `:` 換成 `-`。解析抽成
   `web/src/figma.ts`,用 Node 內建 test runner 測(`npm test`,CI 的 web-build job 也跑)。
+- **修正:比自己新的報告 `schemaVersion`,`push` 在本機就擋、`report` 照讀但警告**。`push`(未發佈)
+  的本機信封檢查原本只驗 `reports` 欄位,`schemaVersion: 99` 一路送到伺服器才被 422 擋下;現在本機就
+  exit 2、不送出。`parity report`(已發佈)仍照讀、exit 0 不變(改成拒收是待決定的 semver 問題),但會在
+  stderr 警告新版加的欄位會被丟掉、Markdown 可能不完整(patch)。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

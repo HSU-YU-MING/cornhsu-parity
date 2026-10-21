@@ -186,10 +186,11 @@ public class ReportCommandTests
     }
 
     [Fact]
-    public async Task Newer_schema_version_is_currently_read_anyway()
+    public async Task Newer_schema_version_is_read_with_a_warning()
     {
-        // 固定現況(盤點 5.3):report 指令不檢查 schemaVersion 是否比自己新;Parity.Server 則回 422。
-        // 若產品決定拒收(patch,與 snapshot 讀端一致),把這條改成預期 exit 2
+        // 盤點 5.3:report 指令照讀比自己新的 schemaVersion(exit 0);Parity.Server 則回 422、push 在本機就擋。
+        // 改成拒收(exit 2)是待決定的 semver 問題——在那之前至少要說「這份報告可能讀不全」。
+        // 若決定拒收,把這條改成預期 exit 2
         using var dir = new TempDir();
         var config = Setup(dir);
         var path = dir.File(".parity", "report.json");
@@ -199,6 +200,21 @@ public class ReportCommandTests
 
         Assert.Equal(0, r.ExitCode);
         Assert.Contains("paddingTop", r.Out);
+        Assert.Contains("warning: ", r.Err);
+        Assert.Contains("schemaVersion 99", r.Err);
+        Assert.DoesNotContain("warning", r.Out); // stdout 是要接管線的 Markdown,警告不能混進去
+    }
+
+    [Fact]
+    public async Task A_current_schema_version_reads_without_warnings()
+    {
+        using var dir = new TempDir();
+        var config = Setup(dir);
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Equal("", r.Err);
     }
 
     [Fact]

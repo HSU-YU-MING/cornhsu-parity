@@ -345,6 +345,24 @@ public class PushCommandTests
         Assert.Empty(server.Requests);
     }
 
+    [Fact]
+    public async Task A_report_from_a_newer_parity_is_rejected_locally()
+    {
+        // 註解一直寫「版本不比 CLI 自己新」,實作卻只驗了 reports 欄位——v99 一路送到伺服器才被 422 擋下
+        using var dir = new TempDir();
+        var reportPath = WriteReport(dir, Report(Severity.None));
+        File.WriteAllText(reportPath, File.ReadAllText(reportPath).Replace("\"schemaVersion\": 1", "\"schemaVersion\": 99"));
+        await using var server = await FakeServer.StartAsync(201, "{}");
+        using var env = CleanEnv().Set("PARITY_TOKEN", "tok-0123456789abcdefghij");
+
+        var r = await Cli.RunAsync("push", "--server", server.Url, "--in", reportPath, "--gate-exit", "0");
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("schemaVersion 99", r.Err);
+        Assert.Contains("newer", r.Err);
+        Assert.Empty(server.Requests);
+    }
+
     /// <summary>只收不判的假 Parity.Server:記下每個請求,回固定的狀態碼與 body。</summary>
     private sealed class FakeServer : IAsyncDisposable
     {
