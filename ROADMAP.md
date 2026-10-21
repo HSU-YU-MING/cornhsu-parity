@@ -62,7 +62,8 @@
   路線 A(8 個野生網站)與路線 B(2 個公開設計系統 Figma 檔)的 11 個發現,沒有一個
   能在自家 dogfooding 樣本上量出來。方法與結果見 docs/野生實查-*.md。
 - **2026-10-21 補測試與 README 逐段核對留下的產品端落差**(那次只動測試與文件,刻意不改程式)。
-  README 已改成照實描述現況;每修好一條,記得回頭拿掉 README 對應的限定句:
+  README 已改成照實描述現況;每修好一條,記得回頭拿掉 README 對應的限定句。2026-10-22 修掉的已從這裡移除
+  (見 CHANGELOG 未發佈區),剩下的都是會改 gate 結果或要定 semver 的,等維護者決定:
   - **npm 的 Node 下限**:Playwright 1.63 的 driver 要 Node 20+,而 npm 通路正是拿使用者自己的 Node 跑 driver。
     2026-10-22 已把主包 `engines.node` 改成 `>=20`、CHANGELOG 未發佈區開頭寫了「升級必做」;
     剩下的是下一版的 semver(minor + 升級必做,或承認對 npm 通路是 major),發佈前由維護者決定
@@ -73,6 +74,14 @@
   - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現。
     (時序那一半 2026-10-22 已修:不存在的 email 也跑一次同成本的假密碼驗證。)鎖定訊息要不要統一
     由產品決定——`ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
+- **2026-10-22 修 bug 時刻意只做到「大聲講出來」、收緊與否待維護者決定的**(現在都印警告、exit code 與量測不變;
+  改了就是「原本接受的輸入變 exit 2」或量測語意演進,semver 要定案):
+  - `gate.failOn` 收緊成只收四個等級名(`none`、數字、逗號字串改報錯)。
+  - `snapshot --width/--height`、`serve/map --port` 非整數(與 ≤ 0)改成 exit 2。
+  - `parity report` 讀到比自己新的 `schemaVersion` 改成拒收(`push` 已在本機擋)。
+  - target 只給 `height` 時照用它(只補缺的那一軸)——量測會變,屬演進條款 ②。
+  - `check --reverse` 的 report.json 加方向標記(凍結面 4 加欄位),讓 `report`/`push` 分得出來。
+  - ImageSharp 解碼只註冊 PNG/JPEG(擋 BigTIFF 那條 DoS;原本能用的 WebP/TIFF `designImage` 會變錯誤)。
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。
@@ -120,5 +129,6 @@
 4. ~~接下來輪到整潔項、M5 下半 / M6。~~ 整潔項與 M5 下半已完成;M6 明文不做(理由見上)。
    **目前在做 M7 團隊儀表板外殼**(內部 M1–M4.6 完成,下一步是內部 M5:對外部署)。
    引擎面與外殼的已知盲點見上面「已知盲點 / 該補的」:auto-name 通用名假配對待更多野生樣本,
-   2026-10-21 那批(soft 落差擋 gate、`parity report` 少 Figma 連結、tokensFile 解析錯誤被吞…)
-   都還開著。
+   2026-10-21 那批產品端落差 2026-10-22 已修掉大半(`parity report` 少 Figma 連結、tokensFile 解析錯誤被吞、
+   action 漏傳 report.json、伺服器間接帶 Playwright…,見 CHANGELOG 未發佈區);還開著的是要改 gate 結果或
+   semver 的幾條(soft 落差擋 gate、Node 20 下限的 semver、登入鎖定訊息),等維護者決定。
