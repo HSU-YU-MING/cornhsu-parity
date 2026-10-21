@@ -12,8 +12,8 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
 `>=18` 改成 `>=20`,npm 安裝時會在 Node 18 上警告。(這一版的 semver 待維護者決定:npm 生態慣例把提高
 `engines` 下限視為 breaking;六面凍結本身沒有被破壞。)
 
-**產品 bug 修正(2026-10-22 稽核)**——每條標出 semver 判讀;會改變 exit code 或量測結果的修法
-不在這批,留待維護者決定。
+**產品 bug 修正(2026-10-22 稽核)**——每條標出 semver 判讀。會讓原本接受的輸入變成錯誤、或改變
+量測/gate 結果的修法不在這批(那幾條目前只印警告),留待維護者決定。
 
 - **修正:`gate.failOn` 裡讓 gate 靜默失效的值,載入時會印警告**(patch:只多一行 stderr,
   載入結果與 gate 判定都不變)。`none`、未定義的數字(`"9"`)、逗號字串(`"serious, critical"`
