@@ -337,11 +337,14 @@ internal static class LintCommand
             throw new InvalidOperationException(
                 "lint requires design tokens: set `tokensFile` in the config (a flat JSON object: {\"token name\": \"value\"}).");
 
-        var targets = opts.GetValueOrDefault("--target") is { } routeFilter
-            ? config.Targets.Where(t => t.Route == routeFilter).ToList()
-            : config.Targets;
-        if (targets.Count == 0)
+        if (config.Targets.Count == 0)
             throw new InvalidOperationException("the config file declares no targets.");
+        var routeFilter = opts.GetValueOrDefault("--target");
+        var targets = routeFilter is null
+            ? config.Targets
+            : config.Targets.Where(t => t.Route == routeFilter).ToList();
+        if (targets.Count == 0) // 與 check 同一句(ScanSession.RunAsync)
+            throw new InvalidOperationException($"no target with route {routeFilter}.");
 
         Console.WriteLine($"\x1b[1mParity lint\x1b[0m — design-token conformance of the design file (design only, no implementation)\n");
 

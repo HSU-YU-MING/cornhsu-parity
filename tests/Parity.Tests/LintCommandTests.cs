@@ -113,5 +113,20 @@ public class LintCommandTests
 
         Assert.Equal(2, r.ExitCode);
         Assert.DoesNotContain("violation", r.Out); // 沒有任何一頁被 lint
+        // 與 check 同一句;原本說的是「config 沒有任何 target」,但 config 明明有
+        Assert.Contains("no target with route /nope.", r.Err);
+        Assert.DoesNotContain("declares no targets", r.Err);
+    }
+
+    [Fact]
+    public async Task A_config_without_targets_still_says_so()
+    {
+        using var dir = new TempDir();
+        var config = DemoCopy(dir, targets: "[]");
+
+        var r = await Cli.RunAsync("lint", "--config", config);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("the config file declares no targets.", r.Err);
     }
 }
