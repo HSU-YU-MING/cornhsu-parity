@@ -127,7 +127,8 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "figmaFileKey": "abcd1234",
   "designToken": "env:FIGMA_TOKEN",
   "mapFile": "parity.map.json",              // manual fallback mapping (layer name → selector)
-  "tokensFile": "tokens.json",               // optional: design tokens (name → value);
+  "tokensFile": "tokens.json",               // optional: design tokens, a flat object of string values
+                                             //   ({"brand": "#2563EB", "space-4": "16px"}; // comments ok);
                                              //   suggested fixes will name the matching token
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }

@@ -174,6 +174,22 @@ public class ReportCommandTests
     }
 
     [Fact]
+    public async Task A_broken_tokens_file_is_warned_about_but_does_not_stop_the_report()
+    {
+        // token 提示只是加值:tokensFile 壞了照樣出報告(exit 0 不變),但原本是靜靜少掉提示——要講出來
+        using var dir = new TempDir();
+        var config = Setup(dir, """{ "tokensFile": "tokens.json", "targets": [] }""");
+        dir.Write("tokens.json", "{ not json");
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("paddingTop", r.Out);
+        Assert.Contains("warning: tokensFile", r.Err);
+        Assert.Contains("is not valid JSON", r.Err);
+    }
+
+    [Fact]
     public async Task Report_does_not_care_that_targets_or_tolerances_are_null()
     {
         // 指名欄位的 null 錯誤只在用到該區段時才丟——report 從沒碰過它們,行為(exit 0)不變

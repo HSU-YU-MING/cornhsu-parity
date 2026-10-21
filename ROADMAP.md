@@ -70,11 +70,6 @@
   - **soft 落差會擋 gate**:fontFamily 不扣分,但 `failOn` 含 `minor` 時照樣 GATE FAIL
     (`ParityConfig.GateFailReason` 沒排除 soft),`--baseline` 也把新的 soft 落差算「新增」
     (`DiffRecord.FromReports` 一起攤平)。修法二擇一:判定排除 soft,或正式把承諾改窄。
-  - **tokensFile 解析失敗被吞掉**:`DesignTokens.LoadJson` 用 `catch { return null; }` 把壞掉的 JSON、
-    有註解的檔、值是數字的檔都當成「沒有 token」,`lint` 接著回報
-    `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位。
-    `ReportingTests`/`LintCommandTests` 裡名稱帶 `currently` 的兩條把現況釘住;改成回報解析錯誤
-    (附檔名與位置)或放寬成允許註解時,換掉那兩條。盤點(`docs/公開介面盤點.md` §9)判讀屬 patch。
   - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現。
     (時序那一半 2026-10-22 已修:不存在的 email 也跑一次同成本的假密碼驗證。)鎖定訊息要不要統一
     由產品決定——`ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。

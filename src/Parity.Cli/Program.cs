@@ -142,9 +142,7 @@ internal static class CheckCommand
         int? baselineScore = null)
     {
         if (opts.GetValueOrDefault("--md") is not { } mdPath) return;
-        var tokens = config.TokensFile is { } tf
-            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
-            : null;
+        var tokens = TokensFile.LoadForHints(config);
         var full = Path.GetFullPath(mdPath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, MarkdownReport.Render(
@@ -295,9 +293,7 @@ internal static class ReportCommand
                 $"this Parity understands ({ReportDocument.CurrentSchemaVersion}); fields added by the newer version are " +
                 "ignored, so the Markdown may be incomplete. Upgrade Parity to render it faithfully.\x1b[0m");
 
-        var tokens = config.TokensFile is { } tf
-            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
-            : null;
+        var tokens = TokensFile.LoadForHints(config);
         var md = MarkdownReport.Render(
             reports,
             gateFail: config.GateFailReasons(reports).Count > 0,
@@ -320,6 +316,45 @@ internal static class ReportCommand
     }
 }
 
+/// <summary>
+/// config 的 tokensFile。「沒設定」「檔案不存在」「解析失敗」「沒有 token」各說各的——
+/// 原本全被吞成「沒有 token」,lint 接著叫人去設一個已經設了的 tokensFile。
+/// </summary>
+internal static class TokensFile
+{
+    /// <summary>lint:token 是必需的,任何問題都是錯(exit 2)。</summary>
+    public static DesignTokens LoadForLint(ParityConfig config)
+    {
+        if (config.TokensFile is not { } tf)
+            throw new InvalidOperationException(
+                "lint requires design tokens: set `tokensFile` in the config (a flat JSON object: {\"token name\": \"value\"}).");
+        var path = Path.Combine(config.BaseDirectory, tf);
+        var tokens = DesignTokens.Load(path);
+        if (tokens.IsEmpty)
+            throw new InvalidOperationException($"tokensFile {path} defines no tokens — lint needs at least one color or size token.");
+        return tokens;
+    }
+
+    /// <summary>
+    /// check --md / report:token 只是讓建議修法多一句「用哪個 token」,壞了不擋報告(exit code 不變),
+    /// 但要在 stderr 講出來,不再靜靜少掉提示。
+    /// </summary>
+    public static DesignTokens? LoadForHints(ParityConfig config)
+    {
+        if (config.TokensFile is not { } tf) return null;
+        try
+        {
+            var tokens = DesignTokens.Load(Path.Combine(config.BaseDirectory, tf));
+            return tokens.IsEmpty ? null : tokens;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Console.Error.WriteLine($"\x1b[33mwarning: {ex.Message} — suggested fixes will not name design tokens.\x1b[0m");
+            return null;
+        }
+    }
+}
+
 internal static class LintCommand
 {
     /// <summary>
@@ -336,12 +371,7 @@ internal static class LintCommand
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
         var config = ParityConfig.Load(configPath);
 
-        var tokens = config.TokensFile is { } tf
-            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
-            : null;
-        if (tokens is null)
-            throw new InvalidOperationException(
-                "lint requires design tokens: set `tokensFile` in the config (a flat JSON object: {\"token name\": \"value\"}).");
+        var tokens = TokensFile.LoadForLint(config);
 
         if (config.Targets.Count == 0)
             throw new InvalidOperationException("the config file declares no targets.");

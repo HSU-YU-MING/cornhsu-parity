@@ -291,27 +291,50 @@ public class ReportingTests
     }
 
     [Fact]
-    public void Tokens_file_loading_is_lenient_about_missing_or_empty_files()
+    public void Tokens_file_loads_colors_and_sizes_and_skips_other_values()
     {
         using var dir = new TempDir();
 
-        Assert.Null(DesignTokens.LoadJson(dir.File("nope.json")));
-        Assert.Null(DesignTokens.LoadJson(dir.Write("empty.json", "{}")));
-        var tokens = DesignTokens.LoadJson(dir.Write("ok.json", """{ "brand": "#2563EB", "space-2": "8px", "font": "Inter" }"""));
-        Assert.NotNull(tokens);
+        var tokens = DesignTokens.Load(dir.Write("ok.json", """{ "brand": "#2563EB", "space-2": "8px", "font": "Inter" }"""));
+
         Assert.Equal(["brand"], tokens.Colors.Select(c => c.Name));
         Assert.Equal(["space-2"], tokens.Sizes.Select(s => s.Name)); // 既不是顏色也不是 px 的值被略過
+        Assert.False(tokens.IsEmpty);
+        Assert.True(DesignTokens.Load(dir.Write("empty.json", "{}")).IsEmpty);
     }
 
     [Fact]
-    public void Tokens_file_that_fails_to_parse_is_currently_treated_as_missing()
+    public void Tokens_file_allows_comments_and_trailing_commas_like_the_config_and_map_files()
     {
-        // 固定現況,不是規格(ROADMAP「已知盲點」、盤點第 9 節):LoadJson 用 catch 把解析錯誤吞成 null,
-        // lint 接著叫使用者去「set `tokensFile` in the config」——但使用者明明設了。
-        // 改成回報解析錯誤時,把這條換成預期丟出帶檔名與錯誤位置的例外
+        // 三個檔並排放,只有 tokens 檔不吃註解是暗雷(1.0.0 修 map 檔時的同一個理由,B9)
         using var dir = new TempDir();
 
-        Assert.Null(DesignTokens.LoadJson(dir.Write("broken.json", "{ not json")));
-        Assert.Null(DesignTokens.LoadJson(dir.Write("number.json", """{ "space-2": 8 }""")));
+        var tokens = DesignTokens.Load(dir.Write("t.json", "{\n  // brand\n  \"brand\": \"#2563EB\",\n}"));
+
+        Assert.Equal(["brand"], tokens.Colors.Select(c => c.Name));
+    }
+
+    [Fact]
+    public void Tokens_file_problems_are_reported_with_the_file_and_the_location()
+    {
+        // 原本 LoadJson 用 catch 把這些全吞成 null,lint 接著叫使用者去「set tokensFile in the config」
+        // ——叫人去設一個已經設了的欄位
+        using var dir = new TempDir();
+
+        var missing = Assert.Throws<FileNotFoundException>(() => DesignTokens.Load(dir.File("nope.json")));
+        Assert.Contains($"tokensFile not found: {dir.File("nope.json")}", missing.Message);
+
+        var broken = Assert.Throws<InvalidOperationException>(
+            () => DesignTokens.Load(dir.Write("broken.json", "{\n  \"a\": \"1px\"\n  oops\n}")));
+        Assert.Contains($"tokensFile {dir.File("broken.json")} is not valid JSON", broken.Message);
+        Assert.Contains("LineNumber: 2", broken.Message);
+
+        var number = Assert.Throws<InvalidOperationException>(
+            () => DesignTokens.Load(dir.Write("number.json", """{ "space-2": 8 }""")));
+        Assert.Contains("\"space-2\" is a number", number.Message);
+        Assert.Contains("must be strings", number.Message);
+
+        var array = Assert.Throws<InvalidOperationException>(() => DesignTokens.Load(dir.Write("array.json", "[]")));
+        Assert.Contains("flat JSON object", array.Message);
     }
 }

@@ -72,16 +72,63 @@ public sealed class DesignTokens
         return null;
     }
 
-    /// <summary>從 JSON(平面的 {"name":"value"} 物件)載入;檔案不存在或解析失敗回 null。</summary>
-    public static DesignTokens? LoadJson(string path)
+    /// <summary>檔案裡一個 token 都沒有(<c>{}</c>)。</summary>
+    public bool IsEmpty { get; private init; }
+
+    private static readonly System.Text.Json.JsonDocumentOptions TokenFileOptions = new()
     {
+        // 與 parity.config.json、parity.map.json 同一套寬鬆規則——三個檔並排放,只有一個吃註解是暗雷
+        CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    /// <summary>
+    /// 從 JSON(平面的 {"name":"value"} 物件)載入。問題一律講清楚是哪個檔、哪裡:檔案不存在 →
+    /// FileNotFoundException;不是合法 JSON(附行號)、不是物件、值不是字串 → InvalidOperationException。
+    /// (原本的 LoadJson 用 catch 把這些全吞成「沒有 token」,lint 接著叫人去設一個已經設了的 tokensFile。)
+    /// 要不要因此擋下指令由呼叫端決定:lint 必需 token,check --md / report 只是少了提示。
+    /// </summary>
+    public static DesignTokens Load(string path)
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"tokensFile not found: {path}", path);
+
+        System.Text.Json.JsonDocument doc;
         try
         {
-            if (!File.Exists(path)) return null;
-            var map = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
-            return map is { Count: > 0 } ? new DesignTokens(map) : null;
+            doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path), TokenFileOptions);
         }
-        catch { return null; }
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new InvalidOperationException($"tokensFile {path} is not valid JSON: {ex.Message}", ex);
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                throw new InvalidOperationException(
+                    $"tokensFile {path} must be a flat JSON object ({{\"token name\": \"value\"}}), not {Kind(doc.RootElement.ValueKind)}.");
+            var map = new Dictionary<string, string>();
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                if (p.Value.ValueKind != System.Text.Json.JsonValueKind.String)
+                    throw new InvalidOperationException(
+                        $"tokensFile {path}: \"{p.Name}\" is {Kind(p.Value.ValueKind)}, but token values must be strings " +
+                        "(e.g. \"16px\", \"#2563EB\").");
+                map[p.Name] = p.Value.GetString()!;
+            }
+            return new DesignTokens(map) { IsEmpty = map.Count == 0 };
+        }
+
+        static string Kind(System.Text.Json.JsonValueKind k) => k switch
+        {
+            System.Text.Json.JsonValueKind.Number => "a number",
+            System.Text.Json.JsonValueKind.Array => "an array",
+            System.Text.Json.JsonValueKind.Object => "an object",
+            System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False => "a boolean",
+            System.Text.Json.JsonValueKind.Null => "null",
+            _ => k.ToString().ToLowerInvariant(),
+        };
     }
 }
 

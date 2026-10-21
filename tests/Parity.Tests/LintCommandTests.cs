@@ -78,29 +78,61 @@ public class LintCommandTests
         Assert.Contains("lint requires design tokens", ex.Message);
     }
 
+    // 下面三條原本都報同一句「lint requires design tokens: set `tokensFile` in the config」——
+    // 叫人去設一個已經設了的欄位。現在「沒設定」「檔案不存在」「解析失敗」「沒有 token」各說各的(exit 2 不變)
+
     [Fact]
-    public async Task Tokens_file_that_does_not_exist_is_the_same_error()
+    public async Task Tokens_file_that_does_not_exist_says_so()
     {
         using var dir = new TempDir();
         var config = DemoCopy(dir, tokensFile: "nope.json");
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => LintCommand.RunAsync(["--config", config]));
-        Assert.Contains("lint requires design tokens", ex.Message);
+        var r = await Cli.RunAsync("lint", "--config", config);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains($"tokensFile not found: {dir.File("nope.json")}", r.Err);
+        Assert.DoesNotContain("set `tokensFile`", r.Err);
     }
 
     [Fact]
-    public async Task Tokens_file_with_comments_is_currently_treated_as_missing()
+    public async Task Tokens_file_that_does_not_parse_says_where()
     {
-        // 固定現況,不是規格(ROADMAP「已知盲點」、盤點第 9 節):DesignTokens.LoadJson 不吃註解,
-        // 而且把解析失敗吞成「沒有 token」,錯誤訊息因此叫人去設一個已經設了的 tokensFile;
-        // 也與 parity.config.json / map 檔的寬鬆規則不一致。放寬(允許註解)屬 patch——改了請把這條
-        // 換成預期 exit 1 / 0
         using var dir = new TempDir();
         var config = DemoCopy(dir);
-        File.WriteAllText(dir.File("tokens.json"), "{\n  // brand\n  \"color-primary\": \"#2563EB\"\n}");
+        File.WriteAllText(dir.File("tokens.json"), """{ "space-2": 8 }""");
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => LintCommand.RunAsync(["--config", config]));
-        Assert.Contains("lint requires design tokens", ex.Message);
+        var r = await Cli.RunAsync("lint", "--config", config);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("\"space-2\" is a number", r.Err);
+        Assert.DoesNotContain("set `tokensFile`", r.Err);
+    }
+
+    [Fact]
+    public async Task Tokens_file_without_any_token_says_so()
+    {
+        using var dir = new TempDir();
+        var config = DemoCopy(dir);
+        File.WriteAllText(dir.File("tokens.json"), "{}");
+
+        var r = await Cli.RunAsync("lint", "--config", config);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("defines no tokens", r.Err);
+    }
+
+    [Fact]
+    public async Task Tokens_file_with_comments_is_read()
+    {
+        // 與 parity.config.json / map 檔同一套寬鬆規則(註解、尾逗號)
+        using var dir = new TempDir();
+        var config = DemoCopy(dir);
+        File.WriteAllText(dir.File("tokens.json"), "{\n  // brand\n  \"color-primary\": \"#2563EB\",\n}");
+
+        var r = await Cli.RunAsync("lint", "--config", config);
+
+        Assert.Equal(1, r.ExitCode); // 讀得到 token,demo 設計稿照樣有違規
+        Assert.Contains("violation(s)", r.Out);
     }
 
     [Fact]
