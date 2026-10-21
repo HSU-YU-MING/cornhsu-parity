@@ -403,6 +403,9 @@ internal static class SnapshotCommand
             "--config=", "--target=", "--out=", "--width=", "--height=", "--headed", "--stabilize");
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Snapshot);
         var stabilize = opts.ContainsKey("--stabilize");
+        // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
+        var width = CliOptions.IntOrDefault(opts, "--width", 1280);
+        var height = CliOptions.IntOrDefault(opts, "--height", 800);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
@@ -415,10 +418,6 @@ internal static class SnapshotCommand
             : config.Targets;
         if (targets.Count == 0)
             throw new InvalidOperationException("no target matches the requested route.");
-
-        // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
-        var width = int.TryParse(opts.GetValueOrDefault("--width"), out var w) ? w : 1280;
-        var height = int.TryParse(opts.GetValueOrDefault("--height"), out var h) ? h : 800;
 
         Console.WriteLine($"\x1b[1mParity snapshot\x1b[0m — freezing the current rendering as the design baseline ({width}×{height})\n");
 

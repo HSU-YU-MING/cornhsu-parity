@@ -25,10 +25,10 @@ internal static class ServeCommand
     {
         var opts = CliOptions.Parse(args, "--config=", "--port=", "--watch", "--open");
         if (opts.ContainsKey("--help")) return Usage.Print(mapMode ? Usage.Map : Usage.Serve);
+        var port = CliOptions.IntOrDefault(opts, "--port", 4321);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
-        var port = int.TryParse(opts.GetValueOrDefault("--port"), out var p) ? p : 4321;
         var watch = opts.ContainsKey("--watch");
 
         await using var session = new ScanSession(configPath, captureScreenshots: true);
@@ -348,6 +348,19 @@ internal static class CliOptions
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// 整數旗標(--width/--height/--port):沒給 → 預設值。給了卻不是整數時,1.x 一直是靜默退回預設值
+    /// (`snapshot --width 375px` 會以 1280 寬凍結手機基準);改成 exit 2 是待決定的 semver 問題,
+    /// 在那之前至少印警告,讓「用的不是你給的值」看得見。
+    /// </summary>
+    public static int IntOrDefault(Dictionary<string, string?> opts, string flag, int fallback)
+    {
+        if (opts.GetValueOrDefault(flag) is not { } raw) return fallback;
+        if (int.TryParse(raw, out var value)) return value;
+        Console.Error.WriteLine($"\x1b[33mwarning: {flag} expects an integer (got \"{raw}\"); using the default {fallback}.\x1b[0m");
+        return fallback;
     }
 }
 
