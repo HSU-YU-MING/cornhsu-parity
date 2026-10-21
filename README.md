@@ -67,13 +67,14 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **554**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **556**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
 ## Install
 
-Two channels — pick whichever runtime you already have. **They are functionally identical.**
+Two channels — pick whichever runtime you already have. **They are functionally identical** on the
+platforms both of them cover (see the note below for the two that npm does not run on yet).
 
 ```sh
 # If you have Node (common in front-end projects): no .NET install needed
@@ -84,15 +85,19 @@ dotnet tool install -g Cornhsu.Parity
 ```
 
 > The npm build is the same self-contained native executable; you only download the one for
-> your platform (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64).
+> your platform (win32-x64 / linux-x64 / darwin-x64 / darwin-arm64).
 > Playwright normally bundles its own copy of Node; the npm build strips that out and uses the
 > Node you already have, which saves at least 88 MB per platform package.
+> win32-arm64 and linux-arm64 platform packages are published as well, but the `npx` launcher
+> does not pick them up yet and exits with "no prebuilt version" — on those two platforms, use
+> the .NET tool for now.
 
 ## Quick start
 
 ```sh
 parity init                # Generate a parity.config.json template
-parity install-browser     # First run only: download Playwright Chromium
+parity install-browser     # Download Playwright Chromium: on first run, and again after an
+                           #   upgrade if check says Chromium is not installed
 export FIGMA_TOKEN=...     # Only the file_content:read scope is needed
 parity check               # Compare; writes a report and sets the exit code
 parity report              # Re-render the Markdown report from an existing report.json
@@ -135,7 +140,7 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],
-    "minMatchRate": 0                        // optional: FAIL outright below this match rate (0–1); 0 = no threshold
+    "minMatchRate": 0                        // optional: below this match rate (0–1) → exit 3, see below; 0 = no threshold
   }
 }
 ```
@@ -143,7 +148,8 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
 > Besides gaps, the gate also validates **match integrity**: zero matches (or zero design nodes)
 > always fails, with exit code 3 (`MATCH INTEGRITY TOO LOW`) rather than 1 — with nothing
 > matched there are no gaps to catch, so a silent PASS would be a false pass, usually caused by
-> a wrong url or frame. `--baseline` mode is not exempt.
+> a wrong url or frame. A match rate below `gate.minMatchRate` fails the same way, with exit
+> code 3. `--baseline` mode is not exempt; `--reverse` never gates and always exits 0.
 
 ## Targets: a web page or an Electron desktop app
 
@@ -210,15 +216,20 @@ Only the things that should hold no matter how the layout flows:
   as references (TEXT/HUG boxes are never references, TEXT is never a target, and Y is honestly
   skipped when everything above is text), so line-height drift in a flowing layout does not
   produce false positives. Turn it off with `compare.position: "none"`.
-- **Typography**: size, weight, line-height and letter-spacing are compared as numbers within the
-  tolerances; font-family is a **soft gap** and never gates.
+- **Typography**: size and letter-spacing are compared as numbers within `tolerances.fontSizePx`,
+  line-height within `tolerances.sizePx`; weight has no tolerance — any difference is a gap
+  (under 200 apart is medium, 200 or more is serious). font-family is a **soft gap**: it costs no
+  fidelity points and the default gate (`critical`/`serious`) ignores it, but its severity is
+  `minor` — so it does fail the gate when `failOn` includes `minor`, and in `--baseline` mode a
+  new font-family gap counts as new (exit 1).
 - **Color**: thresholded on CIEDE2000 (ΔE), not hex equality. Parsing covers modern syntax
   (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `color(display-p3 …)`).
 - **Absolute x/y is deliberately never compared**: it legitimately differs in a flexible layout,
   so comparing it means false positives, which means losing trust.
 
-> When the design source is Figma, layer names in the report (both the Markdown and the local UI)
-> **link back to that node in Figma** — a designer clicks once and lands on the layer.
+> When the design source is Figma, layer names in the report (the Markdown written by
+> `check --md` and the local UI) **link back to that node in Figma** — a designer clicks once and
+> lands on the layer. Markdown re-rendered by `parity report` does not carry these links yet.
 
 ## Two workflows for designers
 
@@ -319,7 +330,10 @@ CI**, where the page, the credentials and the localhost port already are.
 This is not an implementation detail — it is the security claim of the whole design. It is why
 the dashboard has **no SSRF surface at all**: it is never handed a URL to fetch. And it is
 enforced structurally rather than by policy — `Parity.Server.csproj` never references
-Playwright, so the server has no browser to point anywhere in the first place.
+Playwright, and a test turns CI red the moment any server code touches a Playwright type, so
+the server never drives a browser. One caveat for now: the server's database project shares
+`Parity.Engine`, so the Playwright assembly and its driver still ride along in the server's
+build output, unused; separating them is tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Local report UI (M3)
 
@@ -369,7 +383,11 @@ Behaviour:
   ever touching the tool.
 - **Blocks the PR**: gaps beyond `gate.failOn` → exit 1 → red PR. (**The comment is posted
   first, then the gate is enforced.**)
-- **Artifacts**: `report.json` plus the Markdown report are uploaded for download.
+- **Artifacts**: `report.json` plus the Markdown report are uploaded for download. The action
+  looks for `report.json` at `<working-directory>/.parity/report.json`, while `check` writes it
+  to `.parity/report.json` next to the config file — so if `config` points into a subdirectory,
+  the artifact silently carries only the Markdown. Point `working-directory` at the config's
+  directory instead (and give `config` relative to it).
 
 Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
 `baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report`.
@@ -456,7 +474,8 @@ same author, built on the same philosophy: numeric checks that gate CI. Parity a
 implementation match the design?**" (fidelity); XamlContrast answers "**can anyone actually see
 what we built?**" (WCAG contrast, scanned statically from XAML source). One guards fidelity, the
 other readability — and its static color resolution is also the groundwork for the expected values
-of this project's future `WpfImplementationSource` desktop adapter.
+of this project's future `WpfImplementationSource` desktop adapter (see §4.5 of the
+[project plan](docs/Parity專案規畫書.md), in Traditional Chinese).
 
 ## License
 

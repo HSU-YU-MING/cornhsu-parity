@@ -8,7 +8,8 @@
 
 **[作品介紹與開發故事](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · [English](README.md) · MIT**
 
-> **note** 工具本身的所有輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文。
+> **note** 工具本身的輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文;
+> 目前唯一的例外是 npm 啟動腳本自己的錯誤訊息(找不到平台包之類)仍是中文。
 > 這份中文說明維持與英文版同步。
 
 ## GitHub Action
@@ -61,13 +62,14 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **554 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **556 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
 ## 安裝
 
-兩條通路,選你手邊有的執行環境即可 —— **功能完全相同**。
+兩條通路,選你手邊有的執行環境即可 —— 在兩邊都支援的平台上**功能完全相同**
+(npm 目前還跑不了的兩個平台見下方說明)。
 
 ```sh
 # 有 Node(前端專案常見):不需要安裝 .NET
@@ -78,15 +80,17 @@ dotnet tool install -g Cornhsu.Parity
 ```
 
 > npm 版是同一份自帶執行環境的原生執行檔,只下載你這個平台的那一份
-> (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64)。
+> (win32-x64 / linux-x64 / darwin-x64 / darwin-arm64)。
 > Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
 > 每個平台包因此至少省下 88 MB。
+> win32-arm64 與 linux-arm64 的平台包也有發佈,但 `npx` 啟動腳本還不認得它們,
+> 會印「沒有預先建置版本」後結束——這兩個平台目前請改用 .NET 版。
 
 ## 快速開始
 
 ```sh
 parity init                # 產生 parity.config.json 範本
-parity install-browser     # 第一次:下載 Playwright Chromium
+parity install-browser     # 下載 Playwright Chromium:第一次使用時,以及升級後 check 說 Chromium 沒裝時
 export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
 parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
@@ -123,13 +127,14 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],
-    "minMatchRate": 0                        // 選配:配對率低於此值(0–1)直接 FAIL;0 = 不設門檻
+    "minMatchRate": 0                        // 選配:配對率低於此值(0–1)→ exit 3,見下方說明;0 = 不設門檻
   }
 }
 ```
 
 > gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律失敗,exit code 是 3(`MATCH INTEGRITY TOO LOW`)而不是 1——
-> 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。`--baseline` 模式也不豁免。
+> 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。配對率低於 `gate.minMatchRate`
+> 也是同樣的失敗、同樣 exit 3。`--baseline` 模式也不豁免;`--reverse` 不做把關,永遠 exit 0。
 
 ## 目標:網頁或 Electron 桌面 app
 
@@ -194,12 +199,12 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
   - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
 - **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
 - **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
-- **字體**:size / weight / line-height / letter-spacing 依容差做數值比對;font-family 是**軟落差**(不擋 gate)
+- **字體**:size 與 letter-spacing 依 `tolerances.fontSizePx`、line-height 依 `tolerances.sizePx` 做數值比對;weight 沒有容差,不一樣就算落差(相差不到 200 是 medium,200 以上是 serious)。font-family 是**軟落差**:不扣還原度分數,預設的 gate(`critical`/`serious`)也不看它;但它的嚴重度是 `minor`——`failOn` 含 `minor` 時照樣會擋,`--baseline` 模式下新出現的 font-family 落差也算「新增」(exit 1)
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
 
-> 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
+> 設計來源是 Figma 時,報告(`check --md` 寫出的 Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。`parity report` 重生的 Markdown 目前還沒有這些連結。
 
 ## 給設計師的兩個方向
 
@@ -278,7 +283,10 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 
 這不是實作細節,而是整個設計的安全主張。它使得儀表板**完全沒有 SSRF 攻擊面**:
 沒有人交給它一個 URL 去抓。而且這條鐵則是靠結構、不是靠自律守住的——
-`Parity.Server.csproj` 永遠不引用 Playwright,伺服器手上根本沒有瀏覽器可以指向任何地方。
+`Parity.Server.csproj` 永遠不引用 Playwright,伺服器端的程式只要碰了任何 Playwright 型別,
+測試就會讓 CI 打紅,所以伺服器從不驅動瀏覽器。目前有一個但書:伺服器的資料庫專案共用
+`Parity.Engine`,Playwright 組件與它的 driver 仍會被間接帶進伺服器的建置產物(沒有被呼叫);
+拆開的工作記在 [ROADMAP.md](ROADMAP.md)。
 
 ## 本機報告 UI(M3)
 
@@ -321,7 +329,7 @@ jobs:
 行為:
 - **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
 - **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
-- **artifact**:`report.json` + Markdown 報告上傳供下載。
+- **artifact**:`report.json` + Markdown 報告上傳供下載。action 到 `<working-directory>/.parity/report.json` 找 `report.json`,但 `check` 把它寫在設定檔旁邊的 `.parity/report.json`——`config` 指向子目錄時,artifact 會靜靜只剩 Markdown。請改把 `working-directory` 設成設定檔所在的目錄(`config` 也改成相對於它的路徑)。
 
 action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
 
@@ -389,7 +397,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 同一套哲學(數值檢查、CI 把關)。Parity 回答「**實作跟設計稿一不一樣**」(還原度);
 XamlContrast 回答「**做出來的東西看不看得見**」(WCAG 對比,靜態掃 XAML 原始碼)。
 一個守還原度、一個守可讀性;它的靜態顏色解析也是本專案未來
-`WpfImplementationSource`(桌面 adapter)的預期值地基——見規畫書 4.5 節補記。
+`WpfImplementationSource`(桌面 adapter)的預期值地基——見[專案規畫書](docs/Parity專案規畫書.md) 4.5 節補記。
 
 ## License
 

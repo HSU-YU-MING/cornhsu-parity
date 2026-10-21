@@ -12,7 +12,8 @@
 ## 指令
 
 - 建置:`dotnet build Parity.slnx -c Release`
-- 測試:`dotnet test Parity.slnx -c Release`(227 條)
+- 測試:`dotnet test Parity.slnx -c Release`(條數以 README「At a glance」為準——那格有
+  `verify-readme-facts.ps1` 守門;這裡不寫數字,寫了就會像以前停在 227 條那樣靜靜過期)
 - 排版守門:`dotnet format Parity.slnx --verify-no-changes`——CI 有獨立 job，不過就紅
 - README 數字守門:`.\scripts\verify-readme-facts.ps1`(`-Update` 一鍵重貼兩份 README，
   `-NoBuild` 沿用既有建置)。**本機沒有 pwsh，用 Windows PowerShell 5.1 跑**(腳本存成

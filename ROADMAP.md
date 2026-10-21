@@ -60,6 +60,26 @@
 - **取樣紀律**(對照 XamlContrast 憲法 8.3):實查樣本必須包含非作者的網站/設計檔——
   路線 A(8 個野生網站)與路線 B(2 個公開設計系統 Figma 檔)的 11 個發現,沒有一個
   能在自家 dogfooding 樣本上量出來。方法與結果見 docs/野生實查-*.md。
+- **2026-10-21 補測試與 README 逐段核對留下的產品端落差**(那次只動測試與文件,刻意不改程式)。
+  README 已改成照實描述現況;每修好一條,記得回頭拿掉 README 對應的限定句:
+  - **npm 啟動腳本缺兩個 arm64 平台**:`npm/cornhsu-parity/bin/parity.js` 的平台表沒有
+    `win32 arm64`/`linux arm64`,平台包有發佈、`npx` 卻印「沒有預先建置版本」exit 1(1.1.0 就是如此)。
+  - **npm 的 Node 下限**:主包 `engines.node` 仍是 `>=18`,但 Playwright 1.63 的 driver 要 Node 20+,
+    而 npm 通路正是拿使用者自己的 Node 跑 driver。下一版發佈前要決定 semver 與「升級必做」寫法
+    (見 `docs/公開介面盤點.md` §8.2、§10)。
+  - **soft 落差會擋 gate**:fontFamily 不扣分,但 `failOn` 含 `minor` 時照樣 GATE FAIL
+    (`ParityConfig.GateFailReason` 沒排除 soft),`--baseline` 也把新的 soft 落差算「新增」
+    (`DiffRecord.FromReports` 一起攤平)。修法二擇一:判定排除 soft,或正式把承諾改窄。
+  - **action 漏傳 report.json**:上傳路徑寫死 `<working-directory>/.parity/report.json`,`check` 卻寫在
+    設定檔目錄;config 在子目錄時 artifact 靜靜少一個檔。action 改傳 `--out` 即可(patch)。
+  - **`parity report` 重生的 Markdown 沒有 Figma 連結**:`MarkdownReport.Render` 沒收到 `figmaFileKey`
+    (`check --md` 那條路有傳)。
+  - **Parity.Server 間接帶著 Playwright**(未發佈):`Parity.Server.Data` → `Parity.Engine` 把 Playwright 組件與
+    driver 帶進伺服器的建置產物。鐵則測試只驗「伺服器程式沒用到 Playwright 型別」,沒驗產物——
+    要結構上乾淨,得把 Server 用到的報告型別從引擎拆出來,或讓 Server.Data 不引用引擎。
+  - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現;
+    不存在的 email 也不跑密碼雜湊、回得比較快。要不要統一訊息與時序由產品決定——
+    `ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。
