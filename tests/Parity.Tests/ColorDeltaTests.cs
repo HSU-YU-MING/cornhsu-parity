@@ -71,6 +71,9 @@ public class RgbaParseTests
     [InlineData("rgb(37 99 235 / 0.5)", 37, 99, 235, 0.5)]
     [InlineData("rgba(37 99 235 / 50%)", 37, 99, 235, 0.5)]
     [InlineData("color(srgb 0.145 0.388 0.922)", 37, 99, 235, 1.0)]
+    [InlineData("#2563EB80", 0x25, 0x63, 0xEB, 0.502)]  // 8 位 hex 的 alpha
+    [InlineData("rgb(100%, 0%, 50%)", 255, 0, 128, 1.0)] // 百分比分量
+    [InlineData("rgb(300, -5, 0)", 255, 0, 0, 1.0)]      // 超界夾回 0–255
     public void Parses_css_colors(string css, int r, int g, int b, double a)
     {
         Assert.True(Rgba.TryParseCss(css, out var c));
@@ -124,8 +127,26 @@ public class RgbaParseTests
     [InlineData("var(--color)")]
     [InlineData("color(rec2020 1 0 0)")]
     [InlineData("oklch(banana 0 0)")]
+    [InlineData("#12345")]                       // hex 長度不對
+    [InlineData("#ggg")]                         // 不是 hex
+    [InlineData("rgb(1, 2)")]                    // 分量不足
+    [InlineData("rgb(a, b, c)")]
+    [InlineData("rgba(1, 2, 3, x)")]             // alpha 壞掉
+    [InlineData("oklch(0.5 0.1)")]
+    [InlineData("color(display-p3 1 x 0)")]
+    [InlineData("color(display-p3 1 0 0 / x)")]
+    [InlineData("rgb 1 2 3")]                    // 沒有括號
     public void Rejects_unparsable_colors(string? css)
         => Assert.False(Rgba.TryParseCss(css, out _));
+
+    [Fact]
+    public void Hex_carries_alpha_only_when_translucent()
+    {
+        // 報告的 expected/actual 用 ToHex:不透明 6 位、半透明 8 位(README 的 #RRGGBB / #RRGGBBAA)
+        Assert.Equal("#2563EB", new Rgba(0x25, 0x63, 0xEB).ToHex());
+        Assert.Equal("#2563EB80", new Rgba(0x25, 0x63, 0xEB, 0.5).ToHex());
+        Assert.Equal("#2563EB80", new Rgba(0x25, 0x63, 0xEB, 0.5).ToString());
+    }
 
     [Fact]
     public void Fully_transparent_is_transparent()

@@ -278,4 +278,18 @@ public class MatcherTests
     [InlineData("html5-video-player", false)]                       // 短數字 token 不誤中
     public void Randomized_token_detection(string selector, bool expected)
         => Assert.Equal(expected, Matcher.ContainsRandomizedToken(selector));
+
+    [Fact]
+    public void Layer_name_without_letters_or_digits_is_never_name_matched()
+    {
+        // 「—」這種圖層名正規化後是空字串;沒有這道關,會跟 aria-label「×」(關閉鈕)這種
+        // 同樣正規化成空字串的元素配成一對
+        var design = Design("1", "frame", children: Design("2", "—", box: new Box(0, 0, 50, 50)));
+        var rendered = Rendered("body", children: Rendered("button", "button", ariaLabel: "×", box: new Box(0, 0, 50, 50)));
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Empty(result.Pairs);
+        Assert.Equal("no-anchor", Assert.Single(result.Unmatched).Reason);
+    }
 }

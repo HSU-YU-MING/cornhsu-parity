@@ -76,6 +76,22 @@ public class ReportingTests
     public void Fix_hint_maps_prop_to_css(string prop, string expected, string hint)
         => Assert.Equal(hint, FixHint.For(Diff(prop, expected, "x")));
 
+    [Theory]
+    [InlineData("width", "160", "width: 160px")]
+    [InlineData("height", "48", "height: 48px")]
+    [InlineData("paddingTop", "12", "padding-top: 12px")]
+    [InlineData("paddingRight", "20", "padding-right: 20px")]
+    [InlineData("paddingBottom", "12", "padding-bottom: 12px")]
+    [InlineData("fontWeight", "700", "font-weight: 700")]
+    [InlineData("lineHeight", "24", "line-height: 24px")]
+    [InlineData("letterSpacing", "0.5", "letter-spacing: 0.5px")]
+    [InlineData("color", "#111827", "color: #111827")]
+    [InlineData("fontFamily", "Inter", "font-family should include Inter")]
+    [InlineData("offsetX", "16", "horizontal offset from its sibling/parent should be 16px")]
+    [InlineData("offsetY", "8", "vertical offset from its sibling/parent should be 8px")]
+    public void Every_prop_the_diff_engine_emits_has_a_fix_hint(string prop, string expected, string hint)
+        => Assert.Equal(hint, FixHint.For(Diff(prop, expected, "x")));
+
     [Fact]
     public void Fix_hint_null_for_unknown_prop()
         => Assert.Null(FixHint.For(Diff("mysteryProp", "1", "2")));
@@ -192,5 +208,46 @@ public class ReportingTests
         var report = Report(1, [Node("x", Diff("fontFamily", "A|B", "C"))]);
         var md = MarkdownReport.Render([report], gateFail: false);
         Assert.Contains("A\\|B", md);
+    }
+
+    [Fact]
+    public void Markdown_for_several_routes_adds_a_route_column_and_prefixes_unmatched()
+    {
+        // 多頁的 PR 留言:同名圖層(Header/Footer)出現在每一頁,沒有 route 欄分不出是哪一頁
+        var home = Report(2, [Node("Header", Diff("height", "64", "80"))], [new UnmatchedNode("Badge", "b", "no-anchor")], route: "/");
+        var pricing = Report(1, [Node("Header", Diff("height", "64", "72"))], route: "/pricing");
+
+        var md = MarkdownReport.Render([home, pricing], gateFail: true);
+
+        Assert.Contains("| Route | Element | Property | Expected → Actual | Severity | Suggested fix |", md);
+        Assert.Contains("| / | `Header` | height |", md);
+        Assert.Contains("| /pricing | `Header` | height |", md);
+        Assert.Contains("- `/` `Badge` — no-anchor", md);
+
+        var single = MarkdownReport.Render([home], gateFail: true);
+        Assert.Contains("| Element | Property | Expected → Actual | Severity | Suggested fix |", single);
+        Assert.DoesNotContain("| Route |", single);
+    }
+
+    [Fact]
+    public void Markdown_soft_diffs_are_labelled_soft()
+    {
+        var report = Report(1, [Node("title", Diff("fontFamily", "Inter", "Arial", Severity.Minor, soft: true))]);
+
+        Assert.Contains("| minor(soft) |", MarkdownReport.Render([report], gateFail: false));
+    }
+
+    [Fact]
+    public void Tokens_file_loading_is_lenient_about_missing_or_empty_files()
+    {
+        using var dir = new TempDir();
+
+        Assert.Null(DesignTokens.LoadJson(dir.File("nope.json")));
+        Assert.Null(DesignTokens.LoadJson(dir.Write("empty.json", "{}")));
+        Assert.Null(DesignTokens.LoadJson(dir.Write("broken.json", "{ not json")));
+        var tokens = DesignTokens.LoadJson(dir.Write("ok.json", """{ "brand": "#2563EB", "space-2": "8px", "font": "Inter" }"""));
+        Assert.NotNull(tokens);
+        Assert.Equal(["brand"], tokens.Colors.Select(c => c.Name));
+        Assert.Equal(["space-2"], tokens.Sizes.Select(s => s.Name)); // 既不是顏色也不是 px 的值被略過
     }
 }

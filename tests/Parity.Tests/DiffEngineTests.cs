@@ -225,4 +225,85 @@ public class DiffEngineTests
         var width = result.Diffs.Single(d => d.Prop == "width");
         Assert.Equal(expected, width.Severity);
     }
+
+    [Fact]
+    public void Missing_background_is_reported_as_status_missing_without_a_delta()
+    {
+        // 設計有底色、頁面元素與祖先都沒有 → 不是「顏色不同」而是「整個沒做」:status missing,
+        // 沒有 ΔE 可算(delta 顯式 null),actual 寫成 (transparent)
+        var pair = new NodePair(
+            Design("d1", "banner", box: new Box(0, 0, 100, 40), fill: new Rgba(0x25, 0x63, 0xEB)),
+            Rendered("div.banner", box: new Box(0, 0, 100, 40), background: new Rgba(0, 0, 0, 0)),
+            "auto-name");
+
+        var bg = Assert.Single(Engine.Diff(pair).Diffs);
+
+        Assert.Equal(new PropDiff("background", "#2563EB", "(transparent)", null, null, 2.0, Severity.Medium, DiffStatus.Missing), bg);
+    }
+
+    [Fact]
+    public void Transparent_design_fill_is_not_compared()
+    {
+        var pair = new NodePair(
+            Design("d1", "overlay", box: new Box(0, 0, 100, 40), fill: new Rgba(255, 0, 0, 0)),
+            Rendered("div.overlay", box: new Box(0, 0, 100, 40), background: new Rgba(0, 0, 255)),
+            "auto-name");
+
+        Assert.Empty(Engine.Diff(pair).Diffs);
+    }
+
+    [Theory]
+    [InlineData(27.0, 0.0, "lineHeight")]   // 行高走尺寸容差(2px):差 3 → 報
+    [InlineData(25.5, 0.0, null)]           // 差 1.5 → 不報
+    [InlineData(24.0, 0.8, "letterSpacing")] // 字距走字級容差(0.5px):差 0.8 → 報
+    [InlineData(24.0, 0.4, null)]
+    public void Line_height_and_letter_spacing_use_their_own_tolerances(double lineHeight, double letterSpacing, string? reported)
+    {
+        var pair = new NodePair(
+            Design("d1", "body", DesignNodeType.Text, box: new Box(0, 0, 300, 24),
+                text: new Typography(LineHeight: 24, LetterSpacing: 0)),
+            Rendered("p", "p", text: "x", box: new Box(0, 0, 300, 24),
+                typography: new Typography(LineHeight: lineHeight, LetterSpacing: letterSpacing)),
+            "auto-text");
+
+        var props = Engine.Diff(pair).Diffs.Select(d => d.Prop);
+
+        string[] expected = reported is null ? [] : [reported];
+        Assert.Equal(expected, props);
+    }
+
+    [Fact]
+    public void Corner_radius_is_compared_only_when_the_page_reports_one()
+    {
+        var design = Design("d1", "card", box: new Box(0, 0, 100, 40)) with { CornerRadius = 12 };
+        var rounded = Rendered("div.card", box: new Box(0, 0, 100, 40)) with { CornerRadius = 4 };
+        var unknown = Rendered("div.card", box: new Box(0, 0, 100, 40));
+
+        var radius = Assert.Single(Engine.Diff(new NodePair(design, rounded, "auto-name")).Diffs);
+        Assert.Equal(("cornerRadius", "12", "4", 8.0), (radius.Prop, radius.Expected, radius.Actual, radius.Delta!.Value));
+        Assert.Empty(Engine.Diff(new NodePair(design, unknown, "auto-name")).Diffs);
+    }
+
+    [Fact]
+    public void Child_gap_axis_is_guessed_from_the_layout_when_layout_mode_is_unknown()
+    {
+        // 手寫 JSON 常沒有 layoutMode:子元素垂直排 → 量 Y 方向的間距;零尺寸的子元素不算
+        var column = Rendered("ul", "ul", box: new Box(0, 0, 100, 200), children:
+        [
+            Rendered("li:nth-of-type(1)", "li", box: new Box(0, 0, 100, 20)),
+            Rendered("li:nth-of-type(2)", "li", box: new Box(0, 30, 100, 20)),   // gap 10
+            Rendered("li:nth-of-type(3)", "li", box: new Box(0, 30, 0, 0)),     // 隱形,略過
+            Rendered("li:nth-of-type(4)", "li", box: new Box(0, 70, 100, 20)),   // gap 20
+        ]);
+        var row = Rendered("nav", "nav", box: new Box(0, 0, 300, 20), children:
+        [
+            Rendered("a:nth-of-type(1)", "a", box: new Box(0, 0, 40, 20)),
+            Rendered("a:nth-of-type(2)", "a", box: new Box(48, 0, 40, 20)),     // gap 8
+        ]);
+
+        Assert.Equal(15, DiffEngine.MeanChildGap(column, layoutMode: null));
+        Assert.Equal(8, DiffEngine.MeanChildGap(row, layoutMode: null));
+        Assert.Equal(-20, DiffEngine.MeanChildGap(row, layoutMode: "VERTICAL")); // layoutMode 給了就照它,不猜
+        Assert.Null(DiffEngine.MeanChildGap(Rendered("div", children: Rendered("p", "p", box: new Box(0, 0, 10, 10))), null));
+    }
 }

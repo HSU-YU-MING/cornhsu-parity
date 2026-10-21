@@ -47,4 +47,25 @@ public class BoxJsonTests
 
         Assert.Equal(new Box(0, 0, 0, 40), box);
     }
+
+    [Fact]
+    public void Unknown_keys_are_skipped_even_when_they_hold_nested_values()
+    {
+        // 新版工具若在 box 裡多寫欄位(物件或陣列),舊讀端要整塊跳過,不能錯位讀到別的值
+        var box = JsonSerializer.Deserialize<Box>(
+            """{"x":1,"meta":{"w":999,"h":[1,2]},"Width":30,"H":40,"y":2}""");
+
+        Assert.Equal(new Box(1, 2, 30, 40), box); // 欄位名不分大小寫
+    }
+
+    [Theory]
+    [InlineData("\"10,20,30,40\"", "Box must be a JSON object")]
+    [InlineData("""{"x":"10"}""", "Box fields must be numbers")]
+    [InlineData("""{"x":1,"width":true}""", "Box fields must be numbers")]
+    public void Malformed_boxes_fail_with_a_json_exception(string json, string message)
+    {
+        // 明確的 JsonException(report 指令會轉成「unrecognized report format」),不是難懂的 InvalidOperationException
+        var ex = Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Box>(json));
+        Assert.Contains(message, ex.Message);
+    }
 }
