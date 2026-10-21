@@ -224,7 +224,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 ]
 ```
 
-route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測的視窗寬時,才需要在 target 加 `width` / `height` 覆蓋。要給就給 `width`(需要時再加 `height`,沒給是 800):只給 `height` 的話 `check` 會忽略它,照 frame 原尺寸渲染。
+route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測的視窗寬時,才需要在 target 加 `width` / `height` 覆蓋。要給就給 `width`(需要時再加 `height`,沒給是 800):只給 `height` 的話 `check` 會忽略它,照 frame 原尺寸渲染(並印警告說明)。
 
 ## Shadow DOM / iframe
 

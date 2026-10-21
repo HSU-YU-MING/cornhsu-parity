@@ -258,7 +258,7 @@ frame's size**, so a 375-wide phone frame makes your media queries fire naturall
 `route` is only a label in the report, so pick something recognizable. You only need `width` /
 `height` on a target when the frame's width is not the viewport width you want to test. Give
 `width` (with `height` if you need it; it defaults to 800): `height` on its own is ignored by
-`check`, which then renders at the frame's full size.
+`check`, which then renders at the frame's full size (and prints a warning saying so).
 
 ## Shadow DOM / iframes
 

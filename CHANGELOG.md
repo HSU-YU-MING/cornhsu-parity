@@ -95,6 +95,9 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `"x" is a number, but token values must be strings`、`defines no tokens`(exit 2 不變);`check --md` /
   `report` 照常出報告、在 stderr 警告。tokens 檔與 `parity.config.json`、`parity.map.json` 一樣允許 `//`
   註解與尾逗號(原本會被當成「沒有 token」的檔現在讀得到)。
+- **修正:target 只給 `height` 沒給 `width` 時,警告它被忽略**(patch:只多一行 stderr,量測不變)。
+  `check`/`serve`/`map`/`baseline save` 在這種情況下照設計 frame 的寬高渲染、`height` 被靜靜丟掉
+  (`snapshot` 則照用)。改成照用 `height` 會改變量測結果(演進條款 ②),待維護者決定。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
