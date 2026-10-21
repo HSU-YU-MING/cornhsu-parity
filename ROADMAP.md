@@ -75,9 +75,9 @@
     `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位。
     `ReportingTests`/`LintCommandTests` 裡名稱帶 `currently` 的兩條把現況釘住;改成回報解析錯誤
     (附檔名與位置)或放寬成允許註解時,換掉那兩條。盤點(`docs/公開介面盤點.md` §9)判讀屬 patch。
-  - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現;
-    不存在的 email 也不跑密碼雜湊、回得比較快。要不要統一訊息與時序由產品決定——
-    `ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
+  - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現。
+    (時序那一半 2026-10-22 已修:不存在的 email 也跑一次同成本的假密碼驗證。)鎖定訊息要不要統一
+    由產品決定——`ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。

@@ -86,11 +86,17 @@ app.MapGet("/healthz", async (ServerDbContext db) =>
 
 // ── 認證 ───────────────────────────────────────────────────────
 app.MapPost("/api/auth/login", async (
-    LoginRequest req, SignInManager<AppUser> signIn, UserManager<AppUser> users, ServerDbContext db) =>
+    LoginRequest req, SignInManager<AppUser> signIn, UserManager<AppUser> users, ServerDbContext db,
+    IPasswordHasher<AppUser> hasher) =>
 {
     var user = await users.FindByEmailAsync(req.Email.Trim());
     if (user is null)
+    {
+        // 時序對齊:存在的帳號要跑一次密碼雜湊驗證(PBKDF2,數十毫秒),不存在的若直接回,
+        // 光看回應時間就能探測誰有帳號。跑一次同成本的假驗證,結果丟掉
+        LoginTiming.SpendOneVerification(hasher, req.Password);
         return Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
+    }
     var result = await signIn.PasswordSignInAsync(user, req.Password, isPersistent: true, lockoutOnFailure: true);
     if (result.IsLockedOut)
         return Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
@@ -465,6 +471,20 @@ internal static class Auth
         if (token.Length is < 20 or > 200) return null; // 護欄:不是我們發的形狀就不用查庫
         var hash = ProjectToken.Hash(token);
         return await db.Projects.FirstOrDefaultAsync(p => p.TokenHash == hash);
+    }
+}
+
+/// <summary>登入時「帳號不存在」那條路的時序對齊(見 /api/auth/login)。</summary>
+internal static class LoginTiming
+{
+    private static readonly AppUser DummyUser = new() { Id = Guid.Empty, UserName = "timing@invalid", Email = "timing@invalid" };
+    private static string? _dummyHash;
+
+    public static void SpendOneVerification(IPasswordHasher<AppUser> hasher, string? password)
+    {
+        // 假雜湊只算一次(用同一個 hasher,成本設定與真帳號相同);並發時多算一次無妨
+        _dummyHash ??= hasher.HashPassword(DummyUser, Guid.NewGuid().ToString("N"));
+        _ = hasher.VerifyHashedPassword(DummyUser, _dummyHash, password ?? "");
     }
 }
 

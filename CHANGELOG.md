@@ -85,6 +85,9 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `PARITY_SERVER_DB`、web host 只讀 `ConnectionStrings:parity`:只設前者時 `create-project` 寫進一個檔、
   web host 開的是 ContentRoot 下的另一個,push 回 401、邀請連結回 404。現在兩邊共用同一個解析:
   `ConnectionStrings:parity` → `PARITY_SERVER_DB` → `parity-server.db`(cwd/ContentRoot)。
+- **修正:登入時不存在的 email 也跑一次密碼雜湊驗證**(未發佈的伺服器)。原本直接回 401、不跑 PBKDF2,
+  回得明顯比存在的帳號快,光看回應時間就能探測誰有帳號。鎖定訊息只有存在的帳號會出現這一半,
+  留待產品決定(ROADMAP 已知盲點)。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

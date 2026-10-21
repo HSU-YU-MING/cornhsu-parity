@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Parity.Engine;
@@ -352,7 +354,8 @@ public class ServerEndpointTests : IAsyncLifetime
             return (resp.StatusCode, await resp.Content.ReadFromJsonAsync<JsonElement>());
         }
 
-        // 1) 不存在的 email 與錯密碼:狀態碼與訊息逐字相同(不能拿來探測誰有帳號)
+        // 1) 不存在的 email 與錯密碼:狀態碼與訊息逐字相同(訊息層面不能拿來探測誰有帳號;
+        //    回應時間由下一條測試的假驗證對齊;剩下的探測管道是第 3 段的鎖定訊息)
         var unknown = await LoginAsync(Client(), "nobody@t.local", "correct horse battery");
         var wrong = await LoginAsync(Client(), "owner@t.local", "not the password");
         Assert.Equal(HttpStatusCode.Unauthorized, unknown.Status);
@@ -377,6 +380,35 @@ public class ServerEndpointTests : IAsyncLifetime
         var locked = await LoginAsync(Client(), "owner@t.local", "correct horse battery");
         Assert.Equal(HttpStatusCode.Unauthorized, locked.Status);
         Assert.Contains("too many failed attempts", locked.Body.GetProperty("error").GetString());
+    }
+
+    /// <summary>數 VerifyHashedPassword 被呼叫幾次(其餘照 Identity 預設的 PBKDF2)。</summary>
+    private sealed class CountingHasher : IPasswordHasher<AppUser>
+    {
+        private readonly PasswordHasher<AppUser> _inner = new();
+        public int Verifications;
+        public string HashPassword(AppUser user, string password) => _inner.HashPassword(user, password);
+        public PasswordVerificationResult VerifyHashedPassword(AppUser user, string hashedPassword, string providedPassword)
+        {
+            Interlocked.Increment(ref Verifications);
+            return _inner.VerifyHashedPassword(user, hashedPassword, providedPassword);
+        }
+    }
+
+    [Fact]
+    public async Task Login_with_an_unknown_email_still_pays_for_one_password_hash_check()
+    {
+        // 不存在的 email 原本直接回 401、不跑密碼雜湊(PBKDF2,數十毫秒)——回得明顯比存在的帳號快,
+        // 光看回應時間就能探測誰有帳號。訊息已經逐字相同(上一條),時間也要對齊:跑一次同成本的假驗證
+        var hasher = new CountingHasher();
+        await using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureTestServices(s => s.AddSingleton<IPasswordHasher<AppUser>>(hasher)));
+        using var client = factory.CreateClient();
+
+        var resp = await client.PostAsync("/api/auth/login", Json(new { email = "nobody@t.local", password = "whatever-1234" }));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+        Assert.Equal(1, hasher.Verifications);
     }
 
     [Fact]
