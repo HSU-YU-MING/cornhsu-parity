@@ -220,6 +220,20 @@ public class NpmPlatformListTests
     }
 
     [Fact]
+    public void Npm_engines_node_matches_what_the_bundled_playwright_driver_requires()
+    {
+        // npm 通路把 PLAYWRIGHT_NODEJS_PATH 指向使用者自己的 Node(啟動腳本),所以 driver 的 Node 下限
+        // 就是 npm 包的 Node 下限。Playwright 1.63 把它從 18 提到 20,主包卻還宣告 >=18:
+        // npm 安裝時不警告,Node 18 使用者連 install-browser 都會失敗。升 Playwright 時這裡會紅
+        using var driver = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, ".playwright", "package", "package.json")));
+        var required = driver.RootElement.GetProperty("engines").GetProperty("node").GetString();
+
+        using var pkg = JsonDocument.Parse(Read("npm", "cornhsu-parity", "package.json"));
+        Assert.Equal(required, pkg.RootElement.GetProperty("engines").GetProperty("node").GetString());
+    }
+
+    [Fact]
     public void Launcher_points_at_exactly_the_platform_packages_that_are_built()
     {
         // 兩個方向都要成立:指向不會發佈的套件 → 裝不到;發佈了卻沒接上 → 裝得到卻跑不動

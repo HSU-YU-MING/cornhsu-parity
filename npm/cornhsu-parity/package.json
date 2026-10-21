@@ -31,7 +31,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "optionalDependencies": {
     "@cornhsu/parity-win32-x64": "0.0.0-placeholder",

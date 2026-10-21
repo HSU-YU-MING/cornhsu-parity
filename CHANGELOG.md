@@ -4,6 +4,14 @@
 
 ## 未發佈
 
+**升級必做:先確認 Node 版本,再重跑 `parity install-browser`**。這一版的 Microsoft.Playwright
+從 1.61 升到 1.63:Chromium 換成 revision 1243,升級後不重跑 `parity install-browser`,`check` 等指令會
+exit 2(`Chromium is not installed yet`)。**npm 通路(`npx cornhsu-parity`)另外需要 Node 20 以上**——
+npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限是 20;Node 18 上連
+`install-browser` 本身都會失敗,所以順序是**先升 Node、再裝瀏覽器**。主套件的 `engines.node` 已從
+`>=18` 改成 `>=20`,npm 安裝時會在 Node 18 上警告。(這一版的 semver 待維護者決定:npm 生態慣例把提高
+`engines` 下限視為 breaking;六面凍結本身沒有被破壞。)
+
 **產品 bug 修正(2026-10-22 稽核)**——每條標出 semver 判讀;會改變 exit code 或量測結果的修法
 不在這批,留待維護者決定。
 

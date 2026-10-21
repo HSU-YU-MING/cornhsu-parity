@@ -86,7 +86,8 @@ dotnet tool install -g Cornhsu.Parity
 > The npm build is the same self-contained native executable; you only download the one for
 > your platform (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64).
 > Playwright normally bundles its own copy of Node; the npm build strips that out and uses the
-> Node you already have, which saves at least 88 MB per platform package.
+> Node you already have, which saves at least 88 MB per platform package. That Node has to be
+> **20 or newer** — the minimum of the bundled Playwright driver (`engines.node` says so).
 
 ## Quick start
 

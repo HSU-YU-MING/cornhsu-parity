@@ -63,8 +63,9 @@
   能在自家 dogfooding 樣本上量出來。方法與結果見 docs/野生實查-*.md。
 - **2026-10-21 補測試與 README 逐段核對留下的產品端落差**(那次只動測試與文件,刻意不改程式)。
   README 已改成照實描述現況;每修好一條,記得回頭拿掉 README 對應的限定句:
-  - **npm 的 Node 下限**:主包 `engines.node` 仍是 `>=18`,但 Playwright 1.63 的 driver 要 Node 20+,
-    而 npm 通路正是拿使用者自己的 Node 跑 driver。下一版發佈前要決定 semver 與「升級必做」寫法
+  - **npm 的 Node 下限**:Playwright 1.63 的 driver 要 Node 20+,而 npm 通路正是拿使用者自己的 Node 跑 driver。
+    2026-10-22 已把主包 `engines.node` 改成 `>=20`、CHANGELOG 未發佈區開頭寫了「升級必做」;
+    剩下的是下一版的 semver(minor + 升級必做,或承認對 npm 通路是 major),發佈前由維護者決定
     (見 `docs/公開介面盤點.md` §8.2、§10)。
   - **soft 落差會擋 gate**:fontFamily 不扣分,但 `failOn` 含 `minor` 時照樣 GATE FAIL
     (`ParityConfig.GateFailReason` 沒排除 soft),`--baseline` 也把新的 soft 落差算「新增」

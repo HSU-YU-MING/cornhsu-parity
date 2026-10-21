@@ -82,7 +82,8 @@ dotnet tool install -g Cornhsu.Parity
 > npm 版是同一份自帶執行環境的原生執行檔,只下載你這個平台的那一份
 > (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64)。
 > Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
-> 每個平台包因此至少省下 88 MB。
+> 每個平台包因此至少省下 88 MB。這份 Node 必須是 **20 以上**——內附 Playwright driver 的下限
+> (`engines.node` 也這樣宣告)。
 
 ## 快速開始
 
