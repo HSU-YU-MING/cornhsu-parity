@@ -15,6 +15,9 @@
 - **修正:npm 啟動腳本認得 win32-arm64 與 linux-arm64**(patch)。這兩個平台包 1.1.0 就有發佈,
   但啟動腳本的平台表只有 4 筆,`npx cornhsu-parity` 在這兩個平台印「沒有預先建置版本」並 exit 1。
   新增測試要求啟動腳本的平台表與 `npm/prepare.mjs` 一一對應。
+- **修正:Action 的 artifact 不再漏掉 report.json**(patch)。`check` 把報告寫在設定檔所在目錄的
+  `.parity/`,Action 卻固定上傳 `<working-directory>/.parity/report.json`——`config` 指向子目錄時,
+  artifact 靜靜只剩 Markdown。現在上傳路徑跟著設定檔目錄走;報告本身的位置不變(之後的步驟照舊找得到)。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一的寫入口收「已完成的報告」,

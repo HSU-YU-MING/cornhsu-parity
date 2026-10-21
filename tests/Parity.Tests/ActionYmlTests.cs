@@ -76,6 +76,29 @@ public class ActionYmlTests
             Assert.Matches(new Regex($@"^\s+{variable}: \$\{{\{{ inputs\.{Regex.Escape(input)} \}}\}}$", RegexOptions.Multiline), Yml);
     }
 
+    /// <summary>一個 step(`    - name: …`)到下一個 step 之間的內容。</summary>
+    private static string Step(string name)
+    {
+        var m = Regex.Match(Yml, $@"^    - name: {Regex.Escape(name)}\n(?<body>(?:(?!    - name: ).*\n)*)", RegexOptions.Multiline);
+        Assert.True(m.Success, $"action.yml 找不到 step `{name}`");
+        return m.Groups["body"].Value;
+    }
+
+    [Fact]
+    public void The_uploaded_report_json_is_where_check_actually_wrote_it()
+    {
+        // check 把 report.json 寫在**設定檔所在目錄**的 .parity/,不是 working-directory。
+        // 1.1.0 寫死 <working-directory>/.parity/report.json:config 放子目錄時 artifact 靜靜少一個檔
+        // (if-no-files-found: ignore)。修法不搬報告(後續步驟可能照預設路徑讀它),而是讓上傳跟著它走
+        var check = Step("Run Parity check");
+        Assert.Contains("dirname \"$PARITY_CONFIG\"", check);
+        Assert.Matches(new Regex(@"echo ""report=.*/\.parity/report\.json"" >> ""\$GITHUB_OUTPUT"""), check);
+
+        var upload = Step("Upload report");
+        Assert.Contains("${{ steps.check.outputs.report }}", upload);
+        Assert.DoesNotContain(".parity/report.json", upload);
+    }
+
     [Fact]
     public void Check_step_records_the_exit_code_and_the_gate_is_enforced_last()
     {

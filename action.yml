@@ -78,8 +78,17 @@ runs:
         PARITY_CONFIG: ${{ inputs.config }}
         PARITY_TARGET: ${{ inputs.target }}
         PARITY_BASELINE: ${{ inputs.baseline }}
+        PARITY_WORKDIR: ${{ inputs.working-directory }}
       run: |
         set +e
+        # check 把 report.json 寫在「設定檔所在目錄」的 .parity/,不是 working-directory——
+        # config 放子目錄時兩者不同。上傳步驟照這裡算出的位置找(相對路徑以 workspace 為基準)
+        config_dir=$(dirname "$PARITY_CONFIG")
+        case "$PARITY_CONFIG" in
+          /*|[A-Za-z]:[\\/]*) ;;
+          *) config_dir="$PARITY_WORKDIR/$config_dir" ;;
+        esac
+        echo "report=$config_dir/.parity/report.json" >> "$GITHUB_OUTPUT"
         args=(check --config "$PARITY_CONFIG" --md "$RUNNER_TEMP/parity-report.md")
         [ -n "$PARITY_TARGET" ] && args+=(--target "$PARITY_TARGET")
         [ "$PARITY_BASELINE" = "true" ] && args+=(--baseline)
@@ -122,7 +131,7 @@ runs:
       with:
         name: parity-report
         path: |
-          ${{ inputs.working-directory }}/.parity/report.json
+          ${{ steps.check.outputs.report }}
           ${{ runner.temp }}/parity-report.md
         if-no-files-found: ignore
 

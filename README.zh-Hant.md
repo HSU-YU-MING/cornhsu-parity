@@ -330,7 +330,7 @@ jobs:
 行為:
 - **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
 - **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
-- **artifact**:`report.json` + Markdown 報告上傳供下載。action 到 `<working-directory>/.parity/report.json` 找 `report.json`,但 `check` 把它寫在設定檔旁邊的 `.parity/report.json`——`config` 指向子目錄時,artifact 會靜靜只剩 Markdown。請改把 `working-directory` 設成設定檔所在的目錄(`config` 也改成相對於它的路徑)。
+- **artifact**:`report.json` + Markdown 報告上傳供下載(artifact 名稱 `parity-report`)。`report.json` 從設定檔旁邊的 `.parity/report.json`(`check` 寫出的位置)取,`config` 指向子目錄時也一樣。
 
 action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
 

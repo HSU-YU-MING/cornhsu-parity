@@ -385,11 +385,9 @@ Behaviour:
   ever touching the tool.
 - **Blocks the PR**: gaps beyond `gate.failOn` → exit 1 → red PR. (**The comment is posted
   first, then the gate is enforced.**)
-- **Artifacts**: `report.json` plus the Markdown report are uploaded for download. The action
-  looks for `report.json` at `<working-directory>/.parity/report.json`, while `check` writes it
-  to `.parity/report.json` next to the config file — so if `config` points into a subdirectory,
-  the artifact silently carries only the Markdown. Point `working-directory` at the config's
-  directory instead (and give `config` relative to it).
+- **Artifacts**: `report.json` plus the Markdown report are uploaded for download (artifact
+  name `parity-report`). `report.json` is picked up from `.parity/report.json` next to the
+  config file — where `check` writes it — even when `config` points into a subdirectory.
 
 Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
 `baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report`.

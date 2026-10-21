@@ -69,8 +69,6 @@
   - **soft 落差會擋 gate**:fontFamily 不扣分,但 `failOn` 含 `minor` 時照樣 GATE FAIL
     (`ParityConfig.GateFailReason` 沒排除 soft),`--baseline` 也把新的 soft 落差算「新增」
     (`DiffRecord.FromReports` 一起攤平)。修法二擇一:判定排除 soft,或正式把承諾改窄。
-  - **action 漏傳 report.json**:上傳路徑寫死 `<working-directory>/.parity/report.json`,`check` 卻寫在
-    設定檔目錄;config 在子目錄時 artifact 靜靜少一個檔。action 改傳 `--out` 即可(patch)。
   - **`parity report` 重生的 Markdown 沒有 Figma 連結**:`MarkdownReport.Render` 沒收到 `figmaFileKey`
     (`check --md` 那條路有傳)。
   - **Parity.Server 間接帶著 Playwright**(未發佈):`Parity.Server.Data` → `Parity.Engine` 把 Playwright 組件與
