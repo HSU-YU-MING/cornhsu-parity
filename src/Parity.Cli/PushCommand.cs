@@ -80,11 +80,20 @@ internal static class PushCommand
             Console.WriteLine($"  view     {viewUrl}");
 
             // GitHub Actions:把儀表板連結寫進 job summary——紅燈 PR 到「PM 看得懂的那頁」
-            // 之間不再靠人肉找(M4.5 必補 #4)
+            // 之間不再靠人肉找(M4.5 必補 #4)。圖示用**伺服器記下的最終判定**(回應的 gateFailed):
+            // CLI 算不出 gate(沒給 --gate-exit、找不到 config)時伺服器會用預設口徑判,
+            // 只看 CLI 自己的結果會在儀表板紅字時顯示 ✅。兩邊都不知道就不放圖示,不假裝通過
             if (Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY") is { } summaryPath)
+            {
+                var verdict = (Bool(ack, "gateFailed") ?? gateFailed) switch
+                {
+                    true => " ❌",
+                    false => " ✅",
+                    null => "",
+                };
                 await File.AppendAllTextAsync(summaryPath,
-                    $"**Parity** — [{Str(ack, "project")} {Str(ack, "score")}/100 " +
-                    $"{(gateFailed == true ? "❌" : "✅")}]({viewUrl})\n");
+                    $"**Parity** — [{Str(ack, "project")} {Str(ack, "score")}/100{verdict}]({viewUrl})\n");
+            }
             return 0;
         }
 
@@ -144,6 +153,12 @@ internal static class PushCommand
 
     private static string Str(JsonElement e, string prop)
         => e.TryGetProperty(prop, out var v) ? v.ToString() : "?";
+
+    private static bool? Bool(JsonElement e, string prop)
+        => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(prop, out var v)
+            && v.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? v.GetBoolean()
+            : null;
 
     private static string ExtractError(string body)
     {

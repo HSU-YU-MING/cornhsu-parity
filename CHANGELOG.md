@@ -41,6 +41,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   相依的新組件 `Parity.Report`(命名空間不變),伺服器與 `Parity.Storage` 只引用它;伺服器的 publish
   產物裡不再有 Playwright、ImageSharp 或引擎組件。新增測試沿伺服器的 ProjectReference 走完整張圖檢查。
   NuGet tool 包多一個 `Parity.Report.dll`,其餘不變。
+- **修正:`parity push` 的 job summary 圖示跟著儀表板的最終判定**(未發佈的 push)。沒給 `--gate-exit`、
+  又找不到 config 時,CLI 不知道 gate 結果,伺服器改用預設口徑(critical/serious)判定並在回應帶
+  `gateFailed`;summary 原本只看 CLI 自己的結果,一律顯示 ✅——正是 M4.5 要根治的「CI 綠、儀表板紅」。
+  現在用回應的 `gateFailed`;兩邊都不知道時不放圖示。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

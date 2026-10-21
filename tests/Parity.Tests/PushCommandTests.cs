@@ -195,6 +195,45 @@ public class PushCommandTests
     }
 
     [Fact]
+    public async Task Job_summary_follows_the_servers_verdict_when_the_cli_could_not_compute_one()
+    {
+        // 沒給 --gate-exit、又找不到 config:CLI 不送 X-Parity-Gate,伺服器用預設口徑(critical/serious)
+        // 判 FAIL 並在回應帶 gateFailed: true。summary 原本只看 CLI 自己的 null → 一律 ✅,
+        // 正是 M4.5 宣稱根治的「CI 綠、儀表板紅」
+        using var dir = new TempDir();
+        var reportPath = WriteReport(dir, Report(Severity.Serious));
+        var summary = dir.Write("summary.md", "");
+        await using var server = await FakeServer.StartAsync(201,
+            """{ "id": "r7", "project": "demo", "score": 0, "gateFailed": true, "pages": 1, "url": "/runs/r7" }""");
+        using var env = CleanEnv().Set("PARITY_TOKEN", "tok-0123456789abcdefghij").Set("GITHUB_STEP_SUMMARY", summary);
+        using var cwd = new CwdScope(dir.Path);
+        Assert.Null(ParityConfig.FindConfigFile(dir.Path)); // 前提:往上找不到任何 config
+
+        var r = await Cli.RunAsync("push", "--server", server.Url, "--in", reportPath);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Null(Assert.Single(server.Requests).Header("X-Parity-Gate"));
+        Assert.Equal($"**Parity** — [demo 0/100 ❌]({server.Url}/runs/r7)\n", File.ReadAllText(summary));
+    }
+
+    [Fact]
+    public async Task Job_summary_shows_no_verdict_when_nobody_knows_it()
+    {
+        // CLI 算不出、伺服器回應也沒帶 gateFailed(較舊的伺服器)→ 不要假裝通過
+        using var dir = new TempDir();
+        var reportPath = WriteReport(dir, Report(Severity.Serious));
+        var summary = dir.Write("summary.md", "");
+        await using var server = await FakeServer.StartAsync(201, """{ "project": "demo", "score": 0, "url": "/runs/r8" }""");
+        using var env = CleanEnv().Set("PARITY_TOKEN", "tok-0123456789abcdefghij").Set("GITHUB_STEP_SUMMARY", summary);
+        using var cwd = new CwdScope(dir.Path);
+
+        var r = await Cli.RunAsync("push", "--server", server.Url, "--in", reportPath);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Equal($"**Parity** — [demo 0/100]({server.Url}/runs/r8)\n", File.ReadAllText(summary));
+    }
+
+    [Fact]
     public async Task Server_url_with_a_base_path_keeps_the_path()
     {
         using var dir = new TempDir();
