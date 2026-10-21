@@ -94,6 +94,24 @@ public class CliBrowserTests
     }
 
     [Fact]
+    public async Task Snapshot_out_into_a_directory_that_does_not_exist_yet_creates_it()
+    {
+        // 原本寫截圖與 JSON 前不建目錄:擷取全部做完之後才 exit 2(Could not find a part of the path …s.png)。
+        // check 的 --out 一直會先建目錄
+        using var dir = new TempDir();
+        dir.Write("a.html", Page("<h1>Page A</h1>"));
+        var config = dir.Write("parity.config.json", """{ "targets": [{ "route": "/", "url": "./a.html" }] }""");
+        var outPath = dir.File("baselines", "mobile", "s.json");
+
+        var r = await Cli.RunAsync("snapshot", "--config", config, "--out", outPath);
+        if (Cli.BrowserMissing(r)) { Console.WriteLine(Skipped); return; }
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.True(File.Exists(outPath));
+        AssertPng(dir.File("baselines", "mobile", "s.png"));
+    }
+
+    [Fact]
     public async Task Reference_screenshot_comes_from_the_same_page_load_as_the_frozen_tree()
     {
         // CLAUDE.md 地雷「快照的探測擷取不能拍截圖」的指令層驗證(引擎層的機制見 ScreenshotSourceTests)。

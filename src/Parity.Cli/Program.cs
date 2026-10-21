@@ -500,6 +500,8 @@ internal static class SnapshotCommand
                 var shot = targets.Count == 1
                     ? Path.ChangeExtension(outPath, ".png")
                     : Path.ChangeExtension(outPath, $".{i}.png");
+                // --out 可以指到還不存在的目錄(與 check 的 --out 一致);擷取成功才建,失敗不留空目錄
+                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
                 await File.WriteAllBytesAsync(shot, png);
                 shotPaths.Add(shot);
             }
@@ -523,6 +525,7 @@ internal static class SnapshotCommand
             Console.WriteLine($"previous baseline backed up: {bak} (use it to recover from a bad snapshot)");
         }
         // 白名單只在真的測到隨機 id 時才存(anyRandomIds):沒有隨機 id 的站,快照與 1.0 逐位元同形
+        Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(
             root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null));
 
