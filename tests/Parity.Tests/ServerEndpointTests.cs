@@ -173,4 +173,183 @@ public class ServerEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NoContent, (await viewer.PostAsync("/api/auth/logout", null)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await viewer.GetAsync("/api/overview")).StatusCode);
     }
+
+    // ── push 協定(parity push ↔ POST /api/runs):CLI 隨 NuGet 發、Server 自架,版本錯開是常態 ──
+
+    private static string CleanReport()
+    {
+        var report = new FidelityReport("/ok", "http://x/ok", "snap",
+            [new NodeResult("a", "a", "#a", "selector", Severity.None, [])], [],
+            new ReportSummary(1, 1, 0, 0, 0, 0, 0, 0, Severity.None));
+        return JsonSerializer.Serialize(ReportDocument.Of([report]), ReportWire.Compact);
+    }
+
+    private async Task<HttpClient> OwnerAsync()
+    {
+        var owner = Client();
+        Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"/api/invites/{_ownerInviteToken}/accept",
+            Json(new { password = "correct horse battery" }))).StatusCode);
+        return owner;
+    }
+
+    [Fact]
+    public async Task Push_ack_has_six_fields_and_every_metadata_header_reaches_the_run_detail()
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/runs")
+        {
+            Content = new StringContent(DemoReport(), Encoding.UTF8, "application/json"),
+        };
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _ciToken);
+        req.Headers.Add("X-Parity-Commit", "0123456789abcdef0123456789abcdef01234567");
+        req.Headers.Add("X-Parity-Branch", "feature/x");
+        req.Headers.Add("X-Parity-Triggered-By", "octocat");
+        req.Headers.Add("X-Parity-Repo-Url", "https://github.com/owner/repo");
+        req.Headers.Add("X-Parity-Gate", "pass");
+
+        var resp = await Client().SendAsync(req);
+
+        // parity push 讀的就是這六個欄位(印 project/score/url、寫 job summary)
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+        var ack = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(["id", "project", "score", "gateFailed", "pages", "url"], ack.EnumerateObject().Select(p => p.Name));
+        var id = ack.GetProperty("id").GetString();
+        Assert.Equal("demo", ack.GetProperty("project").GetString());
+        Assert.Equal(0, ack.GetProperty("score").GetInt32()); // 唯一節點有 serious → 0/1 忠實
+        Assert.False(ack.GetProperty("gateFailed").GetBoolean()); // X-Parity-Gate: pass 蓋過報告內容
+        Assert.Equal(1, ack.GetProperty("pages").GetInt32());
+        Assert.Equal($"/runs/{id}", ack.GetProperty("url").GetString());
+
+        var detail = await (await OwnerAsync()).GetFromJsonAsync<JsonElement>($"/api/runs/{id}");
+        Assert.Equal("0123456789abcdef0123456789abcdef01234567", detail.GetProperty("commitSha").GetString());
+        Assert.Equal("feature/x", detail.GetProperty("branch").GetString());
+        Assert.Equal("octocat", detail.GetProperty("triggeredBy").GetString());
+        Assert.Equal("https://github.com/owner/repo", detail.GetProperty("repoUrl").GetString());
+        Assert.False(detail.GetProperty("gateFailed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Push_without_metadata_headers_stores_nulls()
+    {
+        var resp = await PushAsync(Client(), _ciToken);
+        var id = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+
+        var detail = await (await OwnerAsync()).GetFromJsonAsync<JsonElement>($"/api/runs/{id}");
+        foreach (var field in new[] { "commitSha", "branch", "triggeredBy", "repoUrl" })
+            Assert.Equal(JsonValueKind.Null, detail.GetProperty(field).ValueKind);
+    }
+
+    [Theory]
+    [InlineData("FAIL", false)]  // 只認小寫 pass/fail;其他值 = 沒給 → 伺服器預設口徑(critical/serious)
+    [InlineData("1", false)]     // 把 exit code 直接塞進標頭不算數(那是 --gate-exit 的事)
+    [InlineData("PASS", true)]
+    [InlineData("0", true)]
+    [InlineData("maybe", true)]
+    public async Task Unrecognized_gate_header_values_are_treated_as_absent(string gate, bool reportHasSerious)
+    {
+        var resp = await PushAsync(Client(), _ciToken, gate: gate, report: reportHasSerious ? DemoReport() : CleanReport());
+
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+        Assert.Equal(reportHasSerious, (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("gateFailed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Newer_schema_version_is_422_not_400()
+    {
+        var resp = await PushAsync(Client(), _ciToken,
+            report: DemoReport().Replace("\"schemaVersion\":1", "\"schemaVersion\":99"));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+        var error = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
+        Assert.Contains("schemaVersion 99 is newer than this server supports (1)", error);
+    }
+
+    [Fact]
+    public async Task Raw_report_download_returns_the_pushed_bytes_to_members_only()
+    {
+        var raw = DemoReport();
+        var push = await PushAsync(Client(), _ciToken, report: raw);
+        var id = (await push.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+
+        var owner = await OwnerAsync();
+        var download = await owner.GetAsync($"/api/runs/{id}/report");
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("application/json", download.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(raw, await download.Content.ReadAsStringAsync()); // gzip 存、原樣還
+
+        // 別的專案的成員:看不到這筆 run(不是 403,是當作不存在)
+        string strangerInvite;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+            var other = new Project { Id = Guid.NewGuid(), Name = "other", TokenHash = ProjectToken.Hash(ProjectToken.Generate()), CreatedAt = DateTimeOffset.UtcNow };
+            db.Projects.Add(other);
+            var (invite, token) = Invites.Create(other.Id, "stranger@t.local", ProjectRole.Owner, DateTimeOffset.UtcNow);
+            db.Invites.Add(invite);
+            await db.SaveChangesAsync();
+            strangerInvite = token;
+        }
+        var stranger = Client();
+        Assert.Equal(HttpStatusCode.OK, (await stranger.PostAsync($"/api/invites/{strangerInvite}/accept",
+            Json(new { password = "stranger pass phrase" }))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync($"/api/runs/{id}/report")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync($"/api/runs/{id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client().GetAsync($"/api/runs/{id}/report")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Invite_acceptance_and_membership_edge_cases()
+    {
+        var owner = await OwnerAsync();
+        async Task<string> InviteAsync(string email, string role)
+        {
+            var resp = await owner.PostAsync($"/api/projects/{_projectId}/invites", Json(new { email, role }));
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            var link = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("link").GetString()!;
+            return link[(link.LastIndexOf('/') + 1)..];
+        }
+
+        // 1) 角色只有 owner/member/viewer
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsync($"/api/projects/{_projectId}/invites",
+            Json(new { email = "x@t.local", role = "admin" }))).StatusCode);
+
+        // 2) 密碼太短 → 400,邀請不被消耗;改用夠長的密碼才成立
+        var memberInvite = await InviteAsync("dev@t.local", "member");
+        var member = Client();
+        Assert.Equal(HttpStatusCode.BadRequest, (await member.PostAsync($"/api/invites/{memberInvite}/accept",
+            Json(new { password = "short" }))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Client().GetAsync($"/api/invites/{memberInvite}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await member.PostAsync($"/api/invites/{memberInvite}/accept",
+            Json(new { password = "a long enough pass" }))).StatusCode);
+
+        // 3) 已有帳號的人被重邀:要用原密碼證明是本人
+        var reInvite = await InviteAsync("dev@t.local", "viewer");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client().PostAsync($"/api/invites/{reInvite}/accept",
+            Json(new { password = "somebody else's guess" }))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Client().PostAsync($"/api/invites/{reInvite}/accept",
+            Json(new { password = "a long enough pass" }))).StatusCode);
+
+        // 4) Owner 移除成員:204、留帳,之後那個人讀不到這個專案的任何東西
+        await PushAsync(Client(), _ciToken);
+        Assert.Single((await member.GetFromJsonAsync<JsonElement>("/api/runs")).EnumerateArray());
+        var members = await owner.GetFromJsonAsync<JsonElement>($"/api/projects/{_projectId}/members");
+        var devId = members.GetProperty("members").EnumerateArray()
+            .First(m => m.GetProperty("email").GetString() == "dev@t.local").GetProperty("userId").GetString();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/projects/{_projectId}/members/{devId}")).StatusCode);
+        Assert.Empty((await member.GetFromJsonAsync<JsonElement>("/api/runs")).EnumerateArray());
+        var audit = await owner.GetFromJsonAsync<JsonElement>($"/api/projects/{_projectId}/audit");
+        Assert.Contains(audit.EnumerateArray(), a =>
+            a.GetProperty("action").GetString() == "member-removed" && a.GetProperty("detail").GetString() == "dev@t.local");
+    }
+
+    [Fact]
+    public async Task Rejected_pushes_store_nothing()
+    {
+        await PushAsync(Client(), "wrong-token-wrong-token");
+        await PushAsync(Client(), _ciToken, report: "not json");
+        await PushAsync(Client(), _ciToken, report: DemoReport().Replace("\"schemaVersion\":1", "\"schemaVersion\":2"));
+
+        using var scope = _factory.Services.CreateScope();
+        Assert.Equal(0, await scope.ServiceProvider.GetRequiredService<ServerDbContext>().Runs.CountAsync());
+    }
 }

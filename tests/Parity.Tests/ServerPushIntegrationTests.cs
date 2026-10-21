@@ -1,0 +1,134 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Parity.Cli;
+using Parity.Engine;
+using Parity.Server.Data;
+
+namespace Parity.Tests;
+
+/// <summary>
+/// 真的 parity push 對真的 Parity.Server(Kestrel,綁 127.0.0.1 的動態埠)。
+/// 兩邊各自的單元測試都綠,不代表兩邊對得上——標頭名、gate 口徑、錯誤狀態碼的提示,
+/// 只有接起來跑才驗得到。TestServer 不經 Kestrel,所以 20MB 上限(413)也只有這裡測得到。
+/// </summary>
+[Collection(ProcessStateCollection.Name)]
+public class ServerPushIntegrationTests : IAsyncLifetime
+{
+    private WebApplicationFactory<ParityServerEntryPoint> _factory = null!;
+    private string _dbPath = null!;
+    private string _ciToken = null!;
+    private string _baseUrl = null!;
+
+    public async Task InitializeAsync()
+    {
+        _dbPath = Path.Combine(Path.GetTempPath(), $"parity-kestrel-{Guid.NewGuid():N}.db");
+        // 埠要用 urls 設定給:Program 在沒有 urls 時會自己 UseUrls(127.0.0.1:4322),
+        // 那會蓋過 UseKestrel(0)、綁到固定埠——跟本機正在跑的 Parity.Server 或另一個測試行程搶埠
+        _factory = new WebApplicationFactory<ParityServerEntryPoint>().WithWebHostBuilder(b =>
+        {
+            b.UseSetting("ConnectionStrings:parity", $"Data Source={_dbPath}");
+            b.UseSetting(WebHostDefaults.ServerUrlsKey, "http://127.0.0.1:0");
+        });
+        _factory.UseKestrel();
+        _factory.StartServer();
+        _baseUrl = _factory.Services.GetRequiredService<IServer>()
+            .Features.Get<IServerAddressesFeature>()!.Addresses.First().TrimEnd('/');
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+        _ciToken = ProjectToken.Generate();
+        db.Projects.Add(new Project
+        {
+            Id = Guid.NewGuid(),
+            Name = "demo",
+            TokenHash = ProjectToken.Hash(_ciToken),
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _factory.DisposeAsync();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try { if (File.Exists(_dbPath)) File.Delete(_dbPath); }
+        catch (IOException) { /* 殘檔在 %TEMP%,無害 */ }
+    }
+
+    private static string ReportJson(Severity severity)
+    {
+        var report = new FidelityReport("/", "http://x/", "snap",
+            [new NodeResult("cta", "id1", "#cta", "auto-name", severity,
+                [new PropDiff("paddingTop", "12", "8", "px", 4, 2, severity)])],
+            [], new ReportSummary(1, 1, 0, 1, 0, severity == Severity.Serious ? 1 : 0, 0,
+                severity == Severity.Minor ? 1 : 0, severity));
+        return JsonSerializer.Serialize(ReportDocument.Of([report]), ReportWire.Indented);
+    }
+
+    [Fact]
+    public async Task Cli_push_lands_in_the_server_with_its_metadata_and_gate_verdict()
+    {
+        using var dir = new TempDir();
+        var reportPath = dir.Write("report.json", ReportJson(Severity.Minor));
+        // 自訂 failOn 含 minor:伺服器預設口徑會判綠,CLI 依 config 重算判紅——儀表板必須跟 CI 一致
+        var config = dir.Write("parity.config.json", """{ "gate": { "failOn": ["minor"] } }""");
+        using var env = new EnvScope().Clear(EnvScope.PushVariables)
+            .Set("PARITY_TOKEN", _ciToken)
+            .Set("GITHUB_SHA", "0123456789abcdef0123456789abcdef01234567")
+            .Set("GITHUB_REF_NAME", "main")
+            .Set("GITHUB_ACTOR", "octocat")
+            .Set("GITHUB_SERVER_URL", "https://github.com")
+            .Set("GITHUB_REPOSITORY", "owner/repo");
+
+        var exit = await PushCommand.RunAsync(["--server", _baseUrl, "--in", reportPath, "--config", config]);
+
+        Assert.Equal(0, exit);
+        using var scope = _factory.Services.CreateScope();
+        var run = await scope.ServiceProvider.GetRequiredService<ServerDbContext>().Runs.SingleAsync();
+        Assert.Equal("0123456789abcdef0123456789abcdef01234567", run.CommitSha);
+        Assert.Equal("main", run.Branch);
+        Assert.Equal("octocat", run.TriggeredBy);
+        Assert.Equal("https://github.com/owner/repo", run.RepoUrl);
+        Assert.True(run.GateFailed);
+        Assert.Equal(File.ReadAllText(reportPath), ReportBlob.Decompress(run.RawReportGzip));
+    }
+
+    [Fact]
+    public async Task Cli_push_with_a_rotated_or_wrong_token_explains_the_401()
+    {
+        using var dir = new TempDir();
+        var reportPath = dir.Write("report.json", ReportJson(Severity.Minor));
+        using var env = new EnvScope().Clear(EnvScope.PushVariables).Set("PARITY_TOKEN", "wrong-token-wrong-token");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => PushCommand.RunAsync(["--server", _baseUrl, "--in", reportPath, "--gate-exit", "0"]));
+
+        Assert.Contains("server returned 401", ex.Message);
+        Assert.Contains("missing or unknown token", ex.Message);   // 伺服器的 error 欄位
+        Assert.Contains("check PARITY_TOKEN", ex.Message);         // CLI 的提示
+    }
+
+    [Fact]
+    public async Task Bodies_over_20_MB_are_rejected_with_413()
+    {
+        // 20MB 是 Kestrel 的 MaxRequestBodySize 護欄(大站接近上限時 413 要給出路)
+        var body = new string(' ', 20 * 1024 * 1024 + 1);
+        using var http = new HttpClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/runs")
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _ciToken);
+
+        using var resp = await http.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, resp.StatusCode);
+    }
+}
