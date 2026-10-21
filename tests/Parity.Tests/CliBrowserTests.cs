@@ -144,6 +144,31 @@ public class CliBrowserTests
             """{ "designFile": "design.json", "targets": [{ "route": "/", "frame": "", "url": "./page.html" }] }""");
     }
 
+    [Fact]
+    public async Task A_leftover_figma_file_key_does_not_link_a_design_file_report_to_figma()
+    {
+        // init 範本預設就有 figmaFileKey;改走 designFile(snapshot)時沒刪掉,設計來源其實是本機檔
+        // (designId 是 CSS selector),Markdown 卻拿 figmaFileKey 組出點了就壞的 figma.com 連結
+        using var dir = new TempDir();
+        BoxProject(dir);
+        var config = dir.Write("parity.config.json", """
+            { "figmaFileKey": "qRzJ3fxF1g09NczsrugiXD", "designFile": "design.json",
+              "targets": [{ "route": "/", "frame": "", "url": "./page.html" }] }
+            """);
+
+        var r = await Cli.RunAsync("check", "--config", config, "--md", dir.File("report.md"));
+        if (Cli.BrowserMissing(r)) { Console.WriteLine(Skipped); return; }
+
+        Assert.Equal(1, r.ExitCode);
+        var md = File.ReadAllText(dir.File("report.md"));
+        Assert.Contains("| `zz` | width |", md); // 圖層名照列,只是不連
+        Assert.DoesNotContain("figma.com", md);
+
+        var rerendered = await Cli.RunAsync("report", "--config", config);
+        Assert.Equal(0, rerendered.ExitCode);
+        Assert.DoesNotContain("figma.com", rerendered.Out);
+    }
+
     private static List<JsonElement> Diffs(string reportPath)
     {
         using var doc = JsonDocument.Parse(File.ReadAllText(reportPath));

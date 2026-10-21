@@ -197,6 +197,16 @@ public class ConfigSchemaTests
         Assert.Contains("\"targets[1]\" is null", Assert.Throws<InvalidOperationException>(() => config.Targets).Message);
     }
 
+    [Theory]
+    [InlineData("""{ "figmaFileKey": "qRzJ3fxF1g09NczsrugiXD" }""", "qRzJ3fxF1g09NczsrugiXD")]
+    [InlineData("""{ "figmaFileKey": "qRzJ3fxF1g09NczsrugiXD", "designFile": "parity.snapshot.json" }""", null)]
+    [InlineData("""{ "designFile": "design.json" }""", null)]
+    public void Figma_links_use_the_file_key_only_when_figma_is_the_design_source(string json, string? expected)
+    {
+        // designFile 優先於 figmaFileKey(ScanSession);那時 designId 是 selector,不是 Figma 節點
+        Assert.Equal(expected, LoadJson(json).FigmaLinkFileKey);
+    }
+
     [Fact]
     public void Loading_a_missing_file_points_at_init()
     {

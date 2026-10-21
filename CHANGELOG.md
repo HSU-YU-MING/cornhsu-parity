@@ -65,6 +65,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   的本機信封檢查原本只驗 `reports` 欄位,`schemaVersion: 99` 一路送到伺服器才被 422 擋下;現在本機就
   exit 2、不送出。`parity report`(已發佈)仍照讀、exit 0 不變(改成拒收是待決定的 semver 問題),但會在
   stderr 警告新版加的欄位會被丟掉、Markdown 可能不完整(patch)。
+- **修正:同時設了 `figmaFileKey` 與 `designFile` 時,不再產生壞掉的 Figma 連結**(patch:只影響 Markdown
+  與本機報告 UI 的連結)。`designFile` 優先於 `figmaFileKey`,設計來源其實是本機檔(snapshot 的 designId
+  是 CSS selector),Markdown 與 `parity serve` 卻拿 `figmaFileKey` 組出點了就壞的 figma.com 連結——
+  `init` 範本預設就有 `figmaFileKey`,改走 snapshot 時沒刪掉就會遇到。現在只有設計來源真的是 Figma 才連。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

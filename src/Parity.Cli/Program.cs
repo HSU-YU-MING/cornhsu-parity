@@ -149,7 +149,7 @@ internal static class CheckCommand
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, MarkdownReport.Render(
             reports, gateFail, baseline, tokens, gateNotes,
-            figmaFileKey: config.FigmaFileKey, baselineScore: baselineScore));
+            figmaFileKey: config.FigmaLinkFileKey, baselineScore: baselineScore));
         Console.WriteLine($"markdown report: {full}");
     }
 

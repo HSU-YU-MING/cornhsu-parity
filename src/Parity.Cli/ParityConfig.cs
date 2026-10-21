@@ -10,6 +10,14 @@ public sealed class ParityConfig
     /// <summary>Figma 檔案 key。與 DesignFile 二擇一。</summary>
     public string? FigmaFileKey { get; set; }
 
+    /// <summary>
+    /// 報告裡「圖層名連回 Figma」要用的 file key:只有設計來源**真的是 Figma** 時才有。
+    /// designFile 優先於 figmaFileKey(ScanSession);init 範本預設帶 figmaFileKey,改走 snapshot
+    /// 時沒刪掉的話,designId 是 CSS selector,拿它組 figma.com 連結點了就壞。
+    /// </summary>
+    [JsonIgnore]
+    public string? FigmaLinkFileKey => DesignFile is null ? FigmaFileKey : null;
+
     /// <summary>本機設計 JSON 檔路徑(離線測試/示範/snapshot 基準用)。與 FigmaFileKey 二擇一。</summary>
     public string? DesignFile { get; set; }
 

@@ -94,7 +94,7 @@ internal static class ServeCommand
             gateFail = state.GateFail,
             gateReasons = state.GateReasons,
             score = state.Score,
-            figmaFileKey = session.Config.FigmaFileKey,
+            figmaFileKey = session.Config.FigmaLinkFileKey, // 只有設計來源真的是 Figma 才給(UI 拿它組連結)
             failOn = session.Config.Gate.FailOn,
             watch,
             targets = state.Scans.Select((s, i) => new
