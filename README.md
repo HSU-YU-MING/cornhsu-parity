@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **556**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **559**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -89,8 +89,8 @@ dotnet tool install -g Cornhsu.Parity
 > Playwright normally bundles its own copy of Node; the npm build strips that out and uses the
 > Node you already have, which saves at least 88 MB per platform package.
 > win32-arm64 and linux-arm64 platform packages are published as well, but the `npx` launcher
-> does not pick them up yet and exits with "no prebuilt version" — on those two platforms, use
-> the .NET tool for now.
+> does not pick them up yet: it exits 1 with an error (currently in Chinese) saying there is no
+> prebuilt build for that platform. On those two platforms, use the .NET tool for now.
 
 ## Quick start
 
@@ -257,7 +257,9 @@ frame's size**, so a 375-wide phone frame makes your media queries fire naturall
 ```
 
 `route` is only a label in the report, so pick something recognizable. You only need `width` /
-`height` on a target when the frame's width is not the viewport width you want to test.
+`height` on a target when the frame's width is not the viewport width you want to test. Give
+`width` (with `height` if you need it; it defaults to 800): `height` on its own is ignored by
+`check`, which then renders at the frame's full size.
 
 ## Shadow DOM / iframes
 
@@ -274,7 +276,8 @@ unaffected and works as usual).
 
 1. **Automatic text anchoring**: design TEXT content ↔ page text (matched only when unique;
    when several elements share the text, the layer name disambiguates — and it still refuses to force a match)
-2. **Layer name ↔ id / class / aria-label**: `CTA Button` matches `class="cta-button"` automatically
+2. **Layer name ↔ id / class / aria-label** (falling back to `data-testid` when there is no
+   aria-label): `CTA Button` matches `class="cta-button"` automatically
 3. **Container inference**: an unmatched container is inferred from the lowest common ancestor of
    its already-matched descendants (pure structure — no guessing)
 4. **Manual fallback**: add `data-parity="Layer Name"` in your HTML, or write
@@ -330,10 +333,13 @@ CI**, where the page, the credentials and the localhost port already are.
 This is not an implementation detail — it is the security claim of the whole design. It is why
 the dashboard has **no SSRF surface at all**: it is never handed a URL to fetch. And it is
 enforced structurally rather than by policy — `Parity.Server.csproj` never references
-Playwright, and a test turns CI red the moment any server code touches a Playwright type, so
-the server never drives a browser. One caveat for now: the server's database project shares
-`Parity.Engine`, so the Playwright assembly and its driver still ride along in the server's
-build output, unused; separating them is tracked in [ROADMAP.md](ROADMAP.md).
+Playwright, and a test turns CI red the moment server code references a Playwright type or the
+engine's capture side (`FidelityEngine`, `IImplementationSource`, or anything in
+`ImplementationSources.Web`, which is the code that opens Chromium). A second test checks that
+every engine type whose fields or method signatures use a Playwright type lives in that
+namespace, so the list does not quietly fall behind. One caveat for now: the server's database
+project shares `Parity.Engine`, so the Playwright assembly and its driver still ride along in the
+server's build output, unused; separating them is tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Local report UI (M3)
 

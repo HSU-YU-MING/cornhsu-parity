@@ -9,7 +9,8 @@
 **[作品介紹與開發故事](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · [English](README.md) · MIT**
 
 > **note** 工具本身的輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文;
-> 目前唯一的例外是 npm 啟動腳本自己的錯誤訊息(找不到平台包之類)仍是中文。
+> 工具自己寫的訊息中,唯一的例外是 npm 啟動腳本的錯誤訊息(找不到平台包之類),仍是中文;
+> 作業系統回報的錯誤(連線被拒、檔案存取之類)則照系統語言原樣帶出。
 > 這份中文說明維持與英文版同步。
 
 ## GitHub Action
@@ -62,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **556 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **559 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -84,7 +85,7 @@ dotnet tool install -g Cornhsu.Parity
 > Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
 > 每個平台包因此至少省下 88 MB。
 > win32-arm64 與 linux-arm64 的平台包也有發佈,但 `npx` 啟動腳本還不認得它們,
-> 會印「沒有預先建置版本」後結束——這兩個平台目前請改用 .NET 版。
+> 會印出「沒有 <平台> 的預先建置版本」並以 exit 1 結束——這兩個平台目前請改用 .NET 版。
 
 ## 快速開始
 
@@ -223,7 +224,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 ]
 ```
 
-route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測的視窗寬時,才需要在 target 加 `width` / `height` 覆蓋。
+route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測的視窗寬時,才需要在 target 加 `width` / `height` 覆蓋。要給就給 `width`(需要時再加 `height`,沒給是 800):只給 `height` 的話 `check` 會忽略它,照 frame 原尺寸渲染。
 
 ## Shadow DOM / iframe
 
@@ -234,7 +235,7 @@ route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測�
 ## 配對策略(以設計端為錨)
 
 1. **自動文字錨定**:設計 TEXT 文字 ↔ 頁面文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)
-2. **圖層名 ↔ id / class / aria-label**:`CTA Button` 自動對上 `class="cta-button"`
+2. **圖層名 ↔ id / class / aria-label**(沒有 aria-label 時改看 `data-testid`):`CTA Button` 自動對上 `class="cta-button"`
 3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)
 4. **手動補漏**:HTML 加 `data-parity="圖層名"`,或 `parity.map.json` 寫 `{ "圖層名": "CSS selector" }`
 5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)
@@ -283,8 +284,11 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 
 這不是實作細節,而是整個設計的安全主張。它使得儀表板**完全沒有 SSRF 攻擊面**:
 沒有人交給它一個 URL 去抓。而且這條鐵則是靠結構、不是靠自律守住的——
-`Parity.Server.csproj` 永遠不引用 Playwright,伺服器端的程式只要碰了任何 Playwright 型別,
-測試就會讓 CI 打紅,所以伺服器從不驅動瀏覽器。目前有一個但書:伺服器的資料庫專案共用
+`Parity.Server.csproj` 永遠不引用 Playwright,伺服器端的程式只要引用了 Playwright 型別、
+或引擎的擷取端(`FidelityEngine`、`IImplementationSource`,以及開 Chromium 的
+`ImplementationSources.Web` 底下任何型別),測試就會讓 CI 打紅;另一條測試確認引擎裡
+欄位或方法簽章用到 Playwright 型別的型別都在那個命名空間裡,禁用清單不會靜靜落後。
+目前有一個但書:伺服器的資料庫專案共用
 `Parity.Engine`,Playwright 組件與它的 driver 仍會被間接帶進伺服器的建置產物(沒有被呼叫);
 拆開的工作記在 [ROADMAP.md](ROADMAP.md)。
 
