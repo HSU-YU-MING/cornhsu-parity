@@ -127,7 +127,7 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
-    "failOn": ["critical", "serious"],
+    "failOn": ["critical", "serious"],       // minor / medium / serious / critical 任選,一個字串放一個等級
     "minMatchRate": 0                        // 選配:配對率低於此值(0–1)→ exit 3,見下方說明;0 = 不設門檻
   }
 }

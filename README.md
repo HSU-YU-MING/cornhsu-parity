@@ -139,7 +139,7 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
-    "failOn": ["critical", "serious"],
+    "failOn": ["critical", "serious"],       // any of minor / medium / serious / critical, one per string
     "minMatchRate": 0                        // optional: below this match rate (0–1) → exit 3, see below; 0 = no threshold
   }
 }

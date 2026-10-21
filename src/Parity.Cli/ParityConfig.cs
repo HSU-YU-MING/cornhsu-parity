@@ -44,6 +44,13 @@ public sealed class ParityConfig
     [JsonIgnore]
     public string BaseDirectory { get; set; } = ".";
 
+    /// <summary>
+    /// 載入時發現、但不擋載入的問題(Load 會印到 stderr)。例如 gate.failOn 裡讓 gate 靜默失效的值:
+    /// 它們從 1.0 起就被接受,收緊成報錯是 semver 問題(待決定),在那之前至少要大聲講出來。
+    /// </summary>
+    [JsonIgnore]
+    public List<string> Warnings { get; } = [];
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -60,6 +67,8 @@ public sealed class ParityConfig
             ?? throw new InvalidOperationException($"could not parse config file: {path}");
         config.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
         config.Validate(path);
+        foreach (var w in config.Warnings)
+            Console.Error.WriteLine($"\x1b[33mwarning: {w}\x1b[0m");
         return config;
     }
 
@@ -67,9 +76,13 @@ public sealed class ParityConfig
     private void Validate(string path)
     {
         foreach (var s in Gate.FailOn)
-            if (!Enum.TryParse<Severity>(s, ignoreCase: true, out _))
+        {
+            if (!Enum.TryParse<Severity>(s, ignoreCase: true, out var sev))
                 throw new InvalidOperationException(
                     $"config {path}: gate.failOn contains \"{s}\", which is not a valid severity (use: minor, medium, serious, critical).");
+            if (FailOnWarning(s, sev) is { } warning)
+                Warnings.Add(warning);
+        }
         if (Gate.MinMatchRate is < 0 or > 1)
             throw new InvalidOperationException(
                 $"config {path}: gate.minMatchRate must be between 0 and 1 (got: {Gate.MinMatchRate}).");
@@ -81,6 +94,25 @@ public sealed class ParityConfig
             throw new InvalidOperationException(
                 $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
                 "fill may be omitted and sampled from the image).");
+    }
+
+    private static readonly Severity[] GatingSeverities =
+        [Severity.Minor, Severity.Medium, Severity.Serious, Severity.Critical];
+
+    /// <summary>
+    /// failOn 的值由 <c>Enum.TryParse</c> 解析,它另外收下 <c>none</c>、數字與逗號旗標語法
+    /// (<c>"serious, critical"</c> = 3|4 = 7)。落差的嚴重度只會是 minor–critical,所以那些值
+    /// 不是永遠對不到(gate 靜默失效),就是被讀成別的等級。
+    /// </summary>
+    private static string? FailOnWarning(string value, Severity parsed)
+    {
+        if (GatingSeverities.Any(g => string.Equals(g.ToString(), value.Trim(), StringComparison.OrdinalIgnoreCase)))
+            return null;
+        return GatingSeverities.Contains(parsed)
+            ? $"gate.failOn value \"{value}\" is read as \"{parsed.ToString().ToLowerInvariant()}\" " +
+              "(only minor, medium, serious, critical are documented; list each severity as its own string)."
+            : $"gate.failOn value \"{value}\" never matches any diff, so it never fails the gate " +
+              "(use: minor, medium, serious, critical; list each severity as its own string).";
     }
 
     /// <summary>從 cwd 往上找 parity.config.json。</summary>

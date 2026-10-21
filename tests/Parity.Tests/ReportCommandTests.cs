@@ -159,6 +159,20 @@ public class ReportCommandTests
     }
 
     [Fact]
+    public async Task A_fail_on_value_that_disables_the_gate_is_warned_on_stderr()
+    {
+        // failOn: ["none"] 讓 gate 永遠不因嚴重度失敗——exit code 與判定不變(收緊待決定),但要看得到
+        using var dir = new TempDir();
+        var config = Setup(dir, """{ "targets": [], "gate": { "failOn": ["none"] } }""");
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("✅ PASS", r.Out);
+        Assert.Contains("warning: gate.failOn value \"none\" never matches", r.Err);
+    }
+
+    [Fact]
     public async Task Newer_schema_version_is_currently_read_anyway()
     {
         // 固定現況(盤點 5.3):report 指令不檢查 schemaVersion 是否比自己新;Parity.Server 則回 422。

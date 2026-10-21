@@ -4,6 +4,15 @@
 
 ## 未發佈
 
+**產品 bug 修正(2026-10-22 稽核)**——每條標出 semver 判讀;會改變 exit code 或量測結果的修法
+不在這批,留待維護者決定。
+
+- **修正:`gate.failOn` 裡讓 gate 靜默失效的值,載入時會印警告**(patch:只多一行 stderr,
+  載入結果與 gate 判定都不變)。`none`、未定義的數字(`"9"`)、逗號字串(`"serious, critical"`
+  會被 Enum 旗標語法讀成 7)都對不到任何落差,gate 永遠不因嚴重度失敗;`"serious, minor"`
+  會被讀成 serious。這些值仍照樣載入(收緊成 exit 2 屬於待決定的 semver 問題),但現在會在 stderr
+  印 `warning: gate.failOn value "…" never matches any diff …` 或 `… is read as "…" …`。
+
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一的寫入口收「已完成的報告」,
 不存在任何「給我 URL 我去掃」的入口;掃描永遠發生在本機/CI。

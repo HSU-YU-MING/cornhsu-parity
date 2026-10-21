@@ -232,6 +232,42 @@ public class ConfigSchemaTests
         Assert.Contains("minor, medium, serious, critical", ex.Message);
     }
 
+    [Theory]
+    [InlineData("none")]
+    [InlineData("9")]
+    [InlineData("serious, critical")] // Enum 旗標語法:3|4 = 7,不是任何嚴重度
+    public void Fail_on_values_that_can_never_match_a_diff_load_with_a_warning(string value)
+    {
+        // 這些值目前照樣載入(收緊成報錯是待決定的 semver 問題),但 gate 會因此靜默失效——
+        // 至少要大聲講出來,而不是讓 CI 永遠綠
+        var config = LoadJson($$"""{ "gate": { "failOn": ["{{value}}"] } }""");
+
+        var warning = Assert.Single(config.Warnings);
+        Assert.Contains($"\"{value}\"", warning);
+        Assert.Contains("never matches", warning);
+        Assert.Contains("minor, medium, serious, critical", warning);
+    }
+
+    [Theory]
+    [InlineData("serious, minor", "serious")] // 3|1 = 3:看起來是兩個值,實際只擋 serious
+    [InlineData("4", "critical")]
+    public void Fail_on_values_that_are_not_severity_names_warn_how_they_are_read(string value, string readAs)
+    {
+        var config = LoadJson($$"""{ "gate": { "failOn": ["{{value}}"] } }""");
+
+        var warning = Assert.Single(config.Warnings);
+        Assert.Contains($"\"{value}\"", warning);
+        Assert.Contains($"read as \"{readAs}\"", warning);
+    }
+
+    [Fact]
+    public void Documented_fail_on_values_load_without_warnings()
+    {
+        var config = LoadJson("""{ "gate": { "failOn": ["Minor", "medium", "SERIOUS", "critical"] } }""");
+
+        Assert.Empty(config.Warnings);
+    }
+
     [Fact]
     public void Fail_on_is_case_insensitive_and_gates_accordingly()
     {
