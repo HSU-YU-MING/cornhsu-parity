@@ -43,6 +43,35 @@ public class CliOptionsTests
         Assert.Contains("requires a value", ex.Message);
     }
 
+    [Theory]
+    [InlineData("--refresh")]
+    [InlineData("--target")]
+    [InlineData("--help")]
+    public void Value_flag_followed_by_another_flag_is_missing_its_value(string next)
+    {
+        // `--config --refresh` 不能把 "--refresh" 吞成檔名(也不能讓 --refresh 默默失效)
+        var ex = Assert.Throws<CliUsageException>(() => CliOptions.Parse(["--config", next], Spec));
+        Assert.Contains("--config requires a value", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("--config=a.json")]
+    [InlineData("--refresh=true")]
+    public void Inline_equals_syntax_is_not_accepted(string arg)
+    {
+        // 1.0 凍結審查定案:只接受「--flag value」的空格式;接受 = 寫法是日後的 minor,不是現在
+        var ex = Assert.Throws<CliUsageException>(() => CliOptions.Parse([arg], Spec));
+        Assert.Contains($"unknown argument: \"{arg}\"", ex.Message);
+    }
+
+    [Fact]
+    public void Value_may_itself_start_with_a_single_dash()
+    {
+        // 只有「--」開頭才算下一個旗標;"-1" 這種值(例如 --gate-exit -1)要照收
+        var opts = CliOptions.Parse(["--target", "-1"], Spec);
+        Assert.Equal("-1", opts["--target"]);
+    }
+
     [Fact]
     public void Bool_flag_does_not_swallow_next_token()
     {
