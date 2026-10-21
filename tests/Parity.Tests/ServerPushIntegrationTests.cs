@@ -120,15 +120,18 @@ public class ServerPushIntegrationTests : IAsyncLifetime
     {
         // 20MB 是 Kestrel 的 MaxRequestBodySize 護欄(大站接近上限時 413 要給出路)
         var body = new string(' ', 20 * 1024 * 1024 + 1);
-        using var http = new HttpClient();
+        // Expect100ContinueTimeout 預設只有 1 秒:伺服器 1 秒內沒回應(冷啟動、慢的 CI runner),
+        // 客戶端照樣開始送本文,下面那個 RST 競態就回來了。拉長到 60 秒,讓客戶端一定先等伺服器回應
+        using var http = new HttpClient(new SocketsHttpHandler { Expect100ContinueTimeout = TimeSpan.FromSeconds(60) });
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/runs")
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         };
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _ciToken);
-        // Expect: 100-continue:Kestrel 依 Content-Length 先回 413,本文根本不會送出。
-        // 少了它,客戶端還在上傳 20MB 時 Kestrel 就回 413 並關連線(RST),HttpClient 時而讀到 413、
-        // 時而拋 HttpRequestException(整套跑、伺服器回得快時最常撞到)。改用 ResponseHeadersRead 也救不了
+        // Expect: 100-continue:客戶端等伺服器先回應(不受預設 1 秒逾時影響),Kestrel 依 Content-Length
+        // 先回 413,本文不會送出。少了它,客戶端還在上傳 20MB 時 Kestrel 就回 413 並關連線(RST),
+        // HttpClient 時而讀到 413、時而拋 HttpRequestException(整套跑、伺服器回得快時最常撞到)。
+        // 改用 ResponseHeadersRead 也救不了
         req.Headers.ExpectContinue = true;
 
         using var resp = await http.SendAsync(req);

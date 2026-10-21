@@ -1,3 +1,6 @@
+using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -108,15 +111,83 @@ public class RepoInvariantsTests
             Read(".github", "dependabot.yml"));
     }
 
+    /// <summary>
+    /// 引擎的「擷取端」:開瀏覽器的型別都在這個命名空間,加上把擷取接進比對的兩個入口。
+    /// 伺服器正當地用到引擎的報告型別(ReportWire / FidelityScore / BaselineComparer…),
+    /// 所以不能整個 Parity.Engine 都禁,只禁這一側。
+    /// </summary>
+    private const string EngineCaptureNamespace = "Parity.Engine.ImplementationSources.Web";
+
+    private static readonly string[] EngineCaptureEntryPoints =
+    [
+        "Parity.Engine.FidelityEngine",
+        "Parity.Engine.ImplementationSources.IImplementationSource",
+    ];
+
+    /// <summary>組件中繼資料裡的 TypeReference(編譯器只為程式真正用到的外部型別寫入)。</summary>
+    private static List<(string Namespace, string FullName)> TypeReferencesOf(Assembly assembly)
+    {
+        using var pe = new PEReader(File.OpenRead(assembly.Location));
+        var md = pe.GetMetadataReader();
+        return md.TypeReferences
+            .Select(h => md.GetTypeReference(h))
+            .Select(t => (Ns: md.GetString(t.Namespace), Name: md.GetString(t.Name)))
+            .Select(t => (t.Ns, t.Ns.Length == 0 ? t.Name : $"{t.Ns}.{t.Name}"))
+            .ToList();
+    }
+
     [Theory]
     [InlineData(typeof(ParityServerEntryPoint))]
     [InlineData(typeof(Parity.Server.Data.ServerDbContext))]
-    public void The_server_never_references_playwright(Type serverType)
+    public void The_server_never_references_playwright_or_the_engine_capture_side(Type serverType)
     {
         // 鐵則「雲端不跑瀏覽器」的實體化:編譯器只為真正用到的組件寫入參考,
         // 伺服器端只要碰了任何 Playwright 型別,這裡就看得到
         Assert.DoesNotContain(serverType.Assembly.GetReferencedAssemblies(),
             a => a.Name!.StartsWith("Microsoft.Playwright", StringComparison.Ordinal));
+
+        // 只看 Playwright 組件參考不夠:引擎的 WebImplementationSource 公開 API 沒有 Playwright 型別,
+        // 伺服器經由共用的 Parity.Engine 呼叫它就能開 Chromium,上面那條照樣綠。
+        // 所以再掃 TypeReference:擷取端的型別一個都不准出現
+        var offending = TypeReferencesOf(serverType.Assembly)
+            .Where(t => t.Namespace.StartsWith("Microsoft.Playwright", StringComparison.Ordinal)
+                || t.Namespace == EngineCaptureNamespace
+                || EngineCaptureEntryPoints.Contains(t.FullName))
+            .Select(t => t.FullName)
+            .ToList();
+        Assert.Empty(offending);
+    }
+
+    [Fact]
+    public void Every_engine_type_that_drives_playwright_is_on_the_server_ban_list()
+    {
+        // 上一條的禁用清單是手寫的:引擎哪天在別的命名空間多一個開瀏覽器的型別,禁用清單就漏了。
+        // 這裡從引擎組件反推「欄位/方法簽章(含編譯器產生的 async 狀態機與閉包)用到 Playwright 型別」
+        // 的最外層型別,它們必須全部落在禁用的命名空間裡
+        const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            | BindingFlags.Static | BindingFlags.DeclaredOnly;
+
+        static bool IsPlaywright(Type t)
+            => !t.IsGenericParameter
+            && (t.Assembly.GetName().Name!.StartsWith("Microsoft.Playwright", StringComparison.Ordinal)
+                || (t.HasElementType && IsPlaywright(t.GetElementType()!))
+                || (t.IsGenericType && t.GetGenericArguments().Any(IsPlaywright)));
+
+        static bool Touches(Type t)
+            => t.GetFields(all).Any(f => IsPlaywright(f.FieldType))
+            || t.GetMethods(all).Any(m => IsPlaywright(m.ReturnType) || m.GetParameters().Any(p => IsPlaywright(p.ParameterType)))
+            || t.GetConstructors(all).Any(c => c.GetParameters().Any(p => IsPlaywright(p.ParameterType)))
+            || t.GetInterfaces().Any(IsPlaywright)
+            || (t.BaseType is { } b && IsPlaywright(b));
+
+        static Type Outermost(Type t) => t.DeclaringType is { } d ? Outermost(d) : t;
+
+        var drivers = typeof(Parity.Engine.FidelityEngine).Assembly.GetTypes()
+            .Where(Touches).Select(Outermost).Distinct().ToList();
+
+        // 偵測本身要有效:WebImplementationSource 的 IBrowser 欄位一定抓得到,抓不到就是這條測試壞了
+        Assert.Contains(typeof(Parity.Engine.ImplementationSources.Web.WebImplementationSource), drivers);
+        Assert.All(drivers, t => Assert.Equal(EngineCaptureNamespace, t.Namespace));
     }
 }
 

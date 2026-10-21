@@ -89,8 +89,30 @@ public class ReportingTests
     [InlineData("fontFamily", "Inter", "font-family should include Inter")]
     [InlineData("offsetX", "16", "horizontal offset from its sibling/parent should be 16px")]
     [InlineData("offsetY", "8", "vertical offset from its sibling/parent should be 8px")]
-    public void Every_prop_the_diff_engine_emits_has_a_fix_hint(string prop, string expected, string hint)
+    public void Fix_hint_maps_the_remaining_props_to_css(string prop, string expected, string hint)
         => Assert.Equal(hint, FixHint.For(Diff(prop, expected, "x")));
+
+    [Fact]
+    public void Every_prop_the_diff_engine_emits_has_a_fix_hint()
+    {
+        // 上面兩張表寫死了現有的 prop;DiffEngine 新增一個 prop 卻忘了補 FixHint 時,
+        // FixHint 回 null、報告那格靜靜空白,表格不會紅。所以直接掃 DiffEngine.cs(去掉註解)
+        // 裡的 camelCase 字串常值——prop 名稱都長這樣,其他常值(HUG/FILL、"0.##")不是。
+        // 新常值若根本不是 prop,把它加進 notProps 並寫一行理由
+        string[] notProps =
+        [
+            "px", // PropDiff 的 Unit 欄位
+        ];
+        var code = string.Join('\n', File.ReadAllLines(Repo.PathOf("src", "Parity.Engine", "Comparison", "DiffEngine.cs"))
+            .Select(l => l.IndexOf("//", StringComparison.Ordinal) is var i and >= 0 ? l[..i] : l));
+        var props = System.Text.RegularExpressions.Regex.Matches(code, "\"([a-z][a-zA-Z]*)\"")
+            .Select(m => m.Groups[1].Value).Except(notProps).Distinct().Order().ToList();
+
+        // 掃描本身要有效:regex 對不上時會安靜地變成「零項通過」
+        Assert.Contains("paddingLeft", props);
+        Assert.Contains("fontFamily", props);
+        Assert.DoesNotContain(props, p => FixHint.For(Diff(p, "1", "2")) is null);
+    }
 
     [Fact]
     public void Fix_hint_null_for_unknown_prop()
@@ -275,10 +297,21 @@ public class ReportingTests
 
         Assert.Null(DesignTokens.LoadJson(dir.File("nope.json")));
         Assert.Null(DesignTokens.LoadJson(dir.Write("empty.json", "{}")));
-        Assert.Null(DesignTokens.LoadJson(dir.Write("broken.json", "{ not json")));
         var tokens = DesignTokens.LoadJson(dir.Write("ok.json", """{ "brand": "#2563EB", "space-2": "8px", "font": "Inter" }"""));
         Assert.NotNull(tokens);
         Assert.Equal(["brand"], tokens.Colors.Select(c => c.Name));
         Assert.Equal(["space-2"], tokens.Sizes.Select(s => s.Name)); // 既不是顏色也不是 px 的值被略過
+    }
+
+    [Fact]
+    public void Tokens_file_that_fails_to_parse_is_currently_treated_as_missing()
+    {
+        // 固定現況,不是規格(ROADMAP「已知盲點」、盤點第 9 節):LoadJson 用 catch 把解析錯誤吞成 null,
+        // lint 接著叫使用者去「set `tokensFile` in the config」——但使用者明明設了。
+        // 改成回報解析錯誤時,把這條換成預期丟出帶檔名與錯誤位置的例外
+        using var dir = new TempDir();
+
+        Assert.Null(DesignTokens.LoadJson(dir.Write("broken.json", "{ not json")));
+        Assert.Null(DesignTokens.LoadJson(dir.Write("number.json", """{ "space-2": 8 }""")));
     }
 }

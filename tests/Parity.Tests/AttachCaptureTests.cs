@@ -25,10 +25,10 @@ public class AttachCaptureTests : IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    private string WritePage(string name, string heading)
+    private string WritePage(string name, string heading, string extraBody = "")
     {
         var path = Path.Combine(_dir, name);
-        File.WriteAllText(path, $"<!doctype html><html><head><meta charset=\"utf-8\"><style>body{{margin:0}}</style></head><body><h1>{heading}</h1></body></html>");
+        File.WriteAllText(path, $"<!doctype html><html><head><meta charset=\"utf-8\"><style>body{{margin:0}}</style></head><body><h1>{heading}</h1>{extraBody}</body></html>");
         return new Uri(path).AbsoluteUri;
     }
 
@@ -66,7 +66,10 @@ public class AttachCaptureTests : IDisposable
         var first = app.Pages.Count > 0 ? app.Pages[0] : await app.NewPageAsync();
         await first.GotoAsync(WritePage("main.html", "Main window"));
         var settings = await app.NewPageAsync();
-        await settings.GotoAsync(WritePage("settings.html", "Settings window"));
+        // 比視窗(500)高的頁面:一般 URL 的 Settle 會把視窗撐到整頁高再還原,attach 必須不走那條路。
+        // 結束時的尺寸看不出「撐高又還原」,所以頁面自己數 resize 事件
+        await settings.GotoAsync(WritePage("settings.html", "Settings window",
+            "<div style=\"height:2000px\"></div><script>window.__resizes=0;addEventListener('resize',()=>window.__resizes++);</script>"));
         var settingsUrl = settings.Url;
         var stylesBefore = await settings.EvaluateAsync<int>("() => document.querySelectorAll('style').length");
 
@@ -83,6 +86,7 @@ public class AttachCaptureTests : IDisposable
         // 不留痕跡:沒導頁、沒關頁、視窗大小沒動、凍結樣式已移除
         Assert.Equal(settingsUrl, settings.Url);
         Assert.Equal(2, app.Pages.Count);
+        Assert.Equal(0, await settings.EvaluateAsync<int>("() => window.__resizes"));
         Assert.Equal(700, await settings.EvaluateAsync<int>("() => window.innerWidth"));
         Assert.Equal(500, await settings.EvaluateAsync<int>("() => window.innerHeight"));
         Assert.Equal(stylesBefore, await settings.EvaluateAsync<int>("() => document.querySelectorAll('style').length"));

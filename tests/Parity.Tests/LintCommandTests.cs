@@ -91,8 +91,9 @@ public class LintCommandTests
     [Fact]
     public async Task Tokens_file_with_comments_is_currently_treated_as_missing()
     {
-        // 固定現況(盤點第 9 節):DesignTokens.LoadJson 不吃註解,而且把解析失敗吞成「沒有 token」,
-        // 與 parity.config.json / map 檔的寬鬆規則不一致。放寬(允許註解)屬 patch——改了請把這條
+        // 固定現況,不是規格(ROADMAP「已知盲點」、盤點第 9 節):DesignTokens.LoadJson 不吃註解,
+        // 而且把解析失敗吞成「沒有 token」,錯誤訊息因此叫人去設一個已經設了的 tokensFile;
+        // 也與 parity.config.json / map 檔的寬鬆規則不一致。放寬(允許註解)屬 patch——改了請把這條
         // 換成預期 exit 1 / 0
         using var dir = new TempDir();
         var config = DemoCopy(dir);
