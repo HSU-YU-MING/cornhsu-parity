@@ -4,6 +4,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Parity.Tests;
 
@@ -160,6 +161,39 @@ public class CliBrowserTests
             """);
         return dir.Write("parity.config.json",
             """{ "designFile": "design.json", "targets": [{ "route": "/", "frame": "", "url": "./page.html" }] }""");
+    }
+
+    [Fact]
+    public async Task The_offline_demo_produces_exactly_the_counts_ci_asserts()
+    {
+        // ci.yml 的離線示範除了 exit 1,還用 jq 斷言報告計數。那組數字以「沒有 parity.map.json 的 checkout」
+        // 為準——這裡只複製進版控的檔案到暫存目錄實跑(使用者本機跑過 parity map 的話,原地跑會是 12/12),
+        // 再拿 ci.yml 裡寫的數字比對:量測或配對一改,本機就先紅,不必等 CI
+        using var dir = new TempDir();
+        foreach (var f in new[] { "design.json", "index.html", "parity.config.json", "tokens.json" })
+            File.Copy(Repo.PathOf("samples", "demo", f), dir.File(f));
+
+        var r = await Cli.RunAsync("check", "--config", dir.File("parity.config.json"));
+        if (Cli.BrowserMissing(r)) { Console.WriteLine(Skipped); return; }
+        Assert.Equal(1, r.ExitCode);
+
+        var ci = Repo.Read(".github", "workflows", "ci.yml");
+        int Expected(string field)
+        {
+            var m = Regex.Match(ci, $@"\.{field} == (?<n>\d+)");
+            Assert.True(m.Success, $"ci.yml 的 jq 斷言裡找不到 .{field}");
+            return int.Parse(m.Groups["n"].Value);
+        }
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(dir.File(".parity", "report.json")));
+        var report = Assert.Single(doc.RootElement.GetProperty("reports").EnumerateArray());
+        var summary = report.GetProperty("summary");
+        foreach (var field in new[] { "designNodes", "matched", "unmatched", "nodesWithDiffs", "critical", "serious", "medium", "minor" })
+            Assert.True(Expected(field) == summary.GetProperty(field).GetInt32(),
+                $"{field}:ci.yml 斷言 {Expected(field)},實跑 {summary.GetProperty(field).GetInt32()}");
+        var soft = report.GetProperty("nodes").EnumerateArray()
+            .SelectMany(n => n.GetProperty("diffs").EnumerateArray()).Count(d => d.GetProperty("soft").GetBoolean());
+        Assert.Matches(new Regex($@"select\(\.soft\)\] \| length\) == {soft}\b"), ci);
     }
 
     [Fact]

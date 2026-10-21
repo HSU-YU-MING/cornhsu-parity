@@ -22,7 +22,10 @@
   ```
   dotnet run --project src/Parity.Cli -c Release --no-build -- check --config samples/demo/parity.config.json
   ```
-  **預期 exit 1**——示範頁是刻意做壞的，GATE FAIL 才是對的行為
+  **預期 exit 1**——示範頁是刻意做壞的，GATE FAIL 才是對的行為。CI 另外用 `jq -e` 斷言
+  report.json 的計數(11/12 配對、5 serious + 1 soft minor,見 ci.yml 那一步的註解);
+  `CliBrowserTests.The_offline_demo_produces_exactly_the_counts_ci_asserts` 對 demo 的乾淨複本實跑、
+  拿 ci.yml 裡的數字比對,量測或配對一改本機就先紅。數字要改時兩邊一起看
 - 首次跑真瀏覽器測試前:`dotnet run --project src/Parity.Cli -- install-browser`
 - 本機乾跑封裝(不發佈):見 [RELEASING.md](RELEASING.md) 最後一節
 
@@ -153,7 +156,7 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 
 - `samples/demo/parity.map.json` 與 `samples/demo/parity.baseline.db` **刻意不進版控**——
   demo 要保持「有未配對、要人工補」的教學情境。本機跑過 `parity map` 會生出來，
-  **不要 commit**。也因此本機跑 demo 是 12/12 全配對，CI 上不是。
+  **不要 commit**。也因此本機跑 demo 是 12/12 全配對，CI 上不是(ci.yml 的計數斷言以 CI 的 11/12 為準)。
 - `.env`(裡面是 `FIGMA_TOKEN`)、`Parity網頁外殼規畫書.md`(含個人職涯脈絡的本機筆記)
   都在 `.gitignore` 裡，兩個都在 repo 根目錄，**不要 commit、不要貼進對外文件**。
 - `.gitignore` 最後那條 `!npm/cornhsu-parity/bin/` 是反向規則:npm 主套件的啟動腳本是

@@ -117,19 +117,32 @@ jobs:
 
       # 離線示範刻意做壞 → 預期 GATE FAIL(exit 1)。這正是 CI 把關該有的行為,
       # 所以「跑出 exit 1」= 成功;跑出別的才是回歸。
+      # 只看退出碼不夠(XamlContrast 的 ci.yml 同一個形狀):再用 jq 驗報告計數,
+      # 「工具真的會擋」與「擋的數量沒有莫名其妙變動」一起驗——配對規則或量測一改,這裡立刻紅。
+      # 計數以「沒有 parity.map.json 的 checkout」為準(map 檔刻意不進版控):12 個設計節點配到 11、
+      # 1 個未配對(hero-badge);3 個節點有落差,共 5 條 serious + 1 條 minor(font-family,soft)。
+      # 本機跑過 `parity map` 的話會是 12/12,與這裡不同是正常的。
+      # 這組數字也被 CliBrowserTests 對著 demo 的乾淨複本實跑比對,改數字前先確認那條測試。
       - name: Parity check (offline demo, 預期 GATE FAIL)
         run: |
           set +e
           dotnet run --project src/Parity.Cli -c Release --no-build -- \
             check --config samples/demo/parity.config.json
           code=$?
-          if [ "$code" -eq 1 ]; then
-            echo "✓ 離線示範如預期 GATE FAIL(exit 1)——CI 把關行為正確"
-            exit 0
-          else
+          set -e
+          if [ "$code" -ne 1 ]; then
             echo "✗ 預期 exit 1(GATE FAIL),實際為 $code"
             exit 1
           fi
+          echo "✓ 離線示範如預期 GATE FAIL(exit 1)——CI 把關行為正確"
+          report=samples/demo/.parity/report.json
+          jq -e '(.reports | length) == 1
+            and (.reports[0].summary | .designNodes == 12 and .matched == 11 and .unmatched == 1
+                 and .nodesWithDiffs == 3 and .critical == 0 and .serious == 5 and .medium == 0 and .minor == 1)
+            and ([.reports[0].nodes[].diffs[] | select(.soft)] | length) == 1' \
+            "$report" > /dev/null \
+            || { echo "✗ demo 報告計數與預期不符"; jq '.reports[0].summary' "$report"; exit 1; }
+          echo "✓ demo 報告計數正確"
 
       - name: Upload report
         if: always()
