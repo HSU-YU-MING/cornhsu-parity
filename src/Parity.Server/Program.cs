@@ -28,8 +28,7 @@ if (builder.Configuration["urls"] is null && Environment.GetEnvironmentVariable(
     builder.WebHost.UseUrls("http://127.0.0.1:4322");
 
 builder.Services.AddDbContext<ServerDbContext>(o => o.UseSqlite(
-    builder.Configuration.GetConnectionString("parity")
-    ?? $"Data Source={Path.Combine(builder.Environment.ContentRootPath, "parity-server.db")}"));
+    ServerDatabase.ConnectionString(builder.Configuration, builder.Environment.ContentRootPath)));
 
 builder.Services.AddIdentityCore<AppUser>(o =>
     {
@@ -469,14 +468,49 @@ internal static class Auth
     }
 }
 
+/// <summary>
+/// 資料庫在哪——web host 與管理指令**共用這一個解析**。原本兩邊各讀各的:管理指令只看
+/// PARITY_SERVER_DB,web host 只看 ConnectionStrings:parity,只設前者時 create-project 寫進一個檔、
+/// web host 開的是另一個(push 回 401、邀請連結 404)。優先序:
+///   ConnectionStrings:parity(完整連線字串;appsettings.json 或環境變數 ConnectionStrings__parity)
+///   → PARITY_SERVER_DB(檔案路徑)→ &lt;defaultDirectory&gt;/parity-server.db
+/// 連線字串排第一:整合測試以設定注入暫存 db,不能被開發機上的 PARITY_SERVER_DB 蓋掉。
+/// </summary>
+internal static class ServerDatabase
+{
+    public static string ConnectionString(IConfiguration configuration, string defaultDirectory)
+    {
+        if (configuration.GetConnectionString("parity") is { Length: > 0 } configured) return configured;
+        var path = Environment.GetEnvironmentVariable("PARITY_SERVER_DB") is { Length: > 0 } env
+            ? env
+            : Path.Combine(defaultDirectory, "parity-server.db");
+        return $"Data Source={Path.GetFullPath(path)}";
+    }
+
+    /// <summary>管理指令不起 web host,自己組一份與 web host 相同來源的設定(appsettings*.json + 環境變數)。</summary>
+    public static IConfiguration AdminConfiguration()
+    {
+        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+            ?? "Production";
+        return new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile($"appsettings.{environment}.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+    }
+}
+
 internal static class AdminCommands
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        var dbPath = Environment.GetEnvironmentVariable("PARITY_SERVER_DB")
-            ?? Path.Combine(Directory.GetCurrentDirectory(), "parity-server.db");
+        var connectionString = ServerDatabase.ConnectionString(
+            ServerDatabase.AdminConfiguration(), Directory.GetCurrentDirectory());
+        var dbPath = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString).DataSource;
         var options = new DbContextOptionsBuilder<ServerDbContext>()
-            .UseSqlite($"Data Source={dbPath}").Options;
+            .UseSqlite(connectionString).Options;
         await using var db = new ServerDbContext(options);
         await db.Database.MigrateAsync();
 

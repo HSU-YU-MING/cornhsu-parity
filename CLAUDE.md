@@ -36,7 +36,10 @@ cd web && npm ci && npm run build      # 產物落 src/Parity.Server/wwwroot(git
 cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:4322
 ```
 
-管理指令的資料庫路徑吃 `PARITY_SERVER_DB`(預設 cwd 的 `parity-server.db`)。
+資料庫位置由 web host 與管理指令**共用同一個解析**(`ServerDatabase.ConnectionString`):
+`ConnectionStrings:parity`(appsettings 或環境變數 `ConnectionStrings__parity`)→ `PARITY_SERVER_DB`(檔案路徑)
+→ cwd(web host 是 ContentRoot)的 `parity-server.db`。2026-10-22 之前兩邊各讀各的,只設 `PARITY_SERVER_DB`
+時管理指令與 web host 開的是不同檔。
 `npm run build` 內含 `tsc --noEmit`，型別錯就不會產出——CI 的 `web-build` job 靠這點守門。
 
 ### EF migrations

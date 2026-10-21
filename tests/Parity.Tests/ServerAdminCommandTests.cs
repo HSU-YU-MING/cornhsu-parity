@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Parity.Server.Data;
 
 namespace Parity.Tests;
@@ -87,5 +90,39 @@ public class ServerAdminCommandTests
         await using var ctx = Open(db);
         Assert.Equal(1, await ctx.Projects.CountAsync());
         Assert.Equal(0, await ctx.Invites.CountAsync());
+    }
+    [Fact]
+    public async Task The_web_host_opens_the_database_the_admin_commands_wrote_to()
+    {
+        // 只設 PARITY_SERVER_DB:原本 create-project 寫進那個檔,web host 卻只看 ConnectionStrings:parity
+        // (沒設就是 ContentRoot 下的 parity-server.db)——push 回 401、邀請連結回 404
+        using var dir = new TempDir();
+        var db = dir.File("server.db");
+        using var env = new EnvScope().Set("PARITY_SERVER_DB", db).Set("ConnectionStrings__parity", null);
+        var token = LineAfter((await Cli.RunServerAdminAsync("create-project", "demo")).Out, "CI token (shown once");
+
+        await using var factory = new WebApplicationFactory<ParityServerEntryPoint>(); // 刻意不設 ConnectionStrings
+        using var scope = factory.Services.CreateScope();
+        var ctx = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+
+        Assert.Equal(Path.GetFullPath(db), new SqliteConnectionStringBuilder(ctx.Database.GetConnectionString()).DataSource);
+        Assert.Equal(ProjectToken.Hash(token), (await ctx.Projects.SingleAsync()).TokenHash);
+    }
+
+    [Fact]
+    public async Task Admin_commands_honour_the_connection_string_the_web_host_uses()
+    {
+        // 反方向:部署時用 ConnectionStrings:parity(環境變數 ConnectionStrings__parity 或 appsettings.json)
+        // 指定資料庫,管理指令原本完全不看它,建出來的專案落在 cwd 的 parity-server.db
+        using var dir = new TempDir();
+        var db = dir.File("from-config.db");
+        using var env = new EnvScope().Set("PARITY_SERVER_DB", null).Set("ConnectionStrings__parity", $"Data Source={db}");
+
+        var r = await Cli.RunServerAdminAsync("create-project", "demo");
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains($"(db: {db})", r.Out);
+        await using var ctx = Open(db);
+        Assert.Equal("demo", (await ctx.Projects.SingleAsync()).Name);
     }
 }

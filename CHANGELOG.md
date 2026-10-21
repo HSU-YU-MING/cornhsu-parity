@@ -81,6 +81,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   讀成「設計還原度不合格」。訊息原本是中文(CLI 本體 0.12.0 起全英文)。
 - **修正:`parity snapshot --out` 可以指到還不存在的目錄**(patch)。原本寫截圖與 JSON 前不建目錄,
   瀏覽器擷取全部做完之後才 exit 2(`Could not find a part of the path …`);`check --out` 一直會先建。
+- **修正:Parity.Server 的 web host 與管理指令開同一個資料庫**(未發佈的伺服器)。原本管理指令只讀
+  `PARITY_SERVER_DB`、web host 只讀 `ConnectionStrings:parity`:只設前者時 `create-project` 寫進一個檔、
+  web host 開的是 ContentRoot 下的另一個,push 回 401、邀請連結回 404。現在兩邊共用同一個解析:
+  `ConnectionStrings:parity` → `PARITY_SERVER_DB` → `parity-server.db`(cwd/ContentRoot)。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
