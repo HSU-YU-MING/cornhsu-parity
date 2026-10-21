@@ -93,6 +93,39 @@ public class CliBrowserTests
         Assert.Equal(["#\\33 d-banner"], parsed.RootElement.GetProperty("ignore").EnumerateArray().Select(e => e.GetString()));
     }
 
+    [Fact]
+    public async Task Reference_screenshot_comes_from_the_same_page_load_as_the_frozen_tree()
+    {
+        // CLAUDE.md 地雷「快照的探測擷取不能拍截圖」的指令層驗證(引擎層的機制見 ScreenshotSourceTests)。
+        // snapshot 會多載入頁面好幾次(隨機 id 探測 1 次、--stabilize 再連拍 2 次);截圖字典後拍覆寫先拍,
+        // 任何一次探測照拍的話,參考截圖就來自另一次載入,serve 的疊框視圖對不齊。
+        // #bar 每次載入寬度都不同,截圖上量到的寬度因此可以指認「這張是哪一次載入拍的」
+        using var dir = new TempDir();
+        dir.Write("page.html", Page("""
+            <div id="bar"></div>
+            <script>document.getElementById('bar').style.width = (100 + Math.floor(Math.random() * 600)) + 'px';</script>
+            """, "#bar { height: 40px; background: #000; }"));
+        var config = dir.Write("parity.config.json", """{ "targets": [{ "route": "/", "url": "./page.html" }] }""");
+
+        var r = await Cli.RunAsync("snapshot", "--config", config, "--stabilize");
+        if (Cli.BrowserMissing(r)) { Console.WriteLine(Skipped); return; }
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("changed across 3 captures", r.Out); // 前提:三次載入的 bar 真的不一樣寬
+        static IEnumerable<JsonElement> Nodes(JsonElement n) =>
+            n.TryGetProperty("children", out var kids) && kids.ValueKind == JsonValueKind.Array
+                ? kids.EnumerateArray().SelectMany(Nodes).Prepend(n)
+                : [n];
+        var bar = Nodes(Root(dir.File("parity.snapshot.json")).GetProperty("root"))
+            .Single(n => n.GetProperty("id").GetString()!.EndsWith("#bar", StringComparison.Ordinal));
+        var frozenWidth = (int)Math.Round(BoxSize(bar).W);
+
+        using var shot = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(dir.File("parity.snapshot.png"));
+        var shotWidth = Enumerable.Range(0, shot.Width).Count(x => shot[x, 20].R < 64); // bar 那一列的黑色像素
+
+        Assert.Equal(frozenWidth, shotWidth);
+    }
+
     // ---------- check:一般 / --reverse / --baseline ----------
 
     private const string BoxCss = "#box { width: 200px; height: 100px; background: #336699; }";
@@ -181,6 +214,15 @@ public class CliBrowserTests
         Assert.Contains("› height [critical]", regressed.Out);
         Assert.DoesNotContain("› width [", regressed.Out); // 基準裡已有的 width 不算新增
         Assert.Contains("🔴 new **1**", File.ReadAllText(dir.File("b.md")));
+
+        // 4) 頁面照設計稿修好:基準裡那條算「修好」、放行,並給 PM 看的分數走勢(基準 0 分 → 現在 100 分)
+        dir.Write("page.html", Page("<div id=\"box\"></div>", BoxCss.Replace("width: 200px", "width: 300px")));
+        var repaired = await Cli.RunAsync("check", "--config", config, "--baseline");
+        Assert.Equal(0, repaired.ExitCode);
+        Assert.Contains("fixed 1", repaired.Out);
+        Assert.Contains("- fixed\x1b[0m    / ‹zz› width", repaired.Out);
+        Assert.Contains("fidelity trend: baseline 0/100 → now 100/100", repaired.Out);
+        Assert.Contains("↑ +100", repaired.Out);
     }
 
     [Fact]
@@ -301,11 +343,74 @@ public class CliBrowserTests
             Assert.False(await CanConnectAsync(address, port), $"serve 不該在 {address}:{port} 上聽");
     }
 
-    private static async Task<HttpResponseMessage> PostMapAsync(HttpClient http, string baseUrl, string? origin)
+    [Fact]
+    public async Task Map_save_writes_the_map_file_rescans_and_tells_the_ui_to_reload()
+    {
+        // `parity map` 的儲存動作(UI 選未配對圖層 → 點頁面元素 → POST /api/map):寫 parity.map.json、
+        // 重掃、SSE 推 reload 讓 UI 自己刷新。用 serve 起(map 指令會順手開使用者的預設瀏覽器),API 是同一套
+        using var dir = new TempDir();
+        var config = BoxProject(dir);
+        // 多一個設計節點「promo」:頁面上那個 aside 沒有任何錨點(沒字、沒 id、class 對不上),只能手動配
+        dir.Write("page.html", Page("<div id=\"box\"></div><aside class=\"x9\"></aside>",
+            BoxCss + " aside { width: 120px; height: 30px; }"));
+        dir.Write("design.json", """
+            { "id": "/", "name": "/", "type": "frame", "box": { "x": 0, "y": 0, "width": 800, "height": 600 },
+              "children": [
+                { "id": "#box", "name": "zz", "type": "frame", "box": { "x": 0, "y": 0, "width": 200, "height": 100 } },
+                { "id": "1:9", "name": "promo", "type": "frame", "box": { "x": 0, "y": 100, "width": 120, "height": 30 } } ] }
+            """);
+        var port = FreeLoopbackPort();
+        using var serve = ServeProcess.Start(config, port);
+        if (!await serve.WaitUntilListeningAsync(TimeSpan.FromSeconds(120)))
+        {
+            if (serve.Stderr.Contains("install-browser", StringComparison.OrdinalIgnoreCase)) { Console.WriteLine(Skipped); return; }
+            Assert.Fail($"parity serve 沒有起來。stdout:\n{serve.Stdout}\nstderr:\n{serve.Stderr}");
+        }
+        var baseUrl = $"http://127.0.0.1:{port}";
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        async Task<JsonElement> TargetAsync()
+        {
+            using var doc = JsonDocument.Parse(await http.GetStringAsync($"{baseUrl}/api/state"));
+            return doc.RootElement.GetProperty("targets")[0].Clone();
+        }
+
+        Assert.Equal("promo", Assert.Single((await TargetAsync()).GetProperty("unmatched").EnumerateArray())
+            .GetProperty("designLayer").GetString()); // 前提:一開始配不到
+
+        // 疊框視圖要的原料:截圖與兩棵樹
+        var shot = await http.GetAsync($"{baseUrl}/api/screenshot/0");
+        Assert.Equal("image/png", shot.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"{baseUrl}/api/screenshot/1")).StatusCode);
+        using (var detail = JsonDocument.Parse(await http.GetStringAsync($"{baseUrl}/api/detail/0")))
+            Assert.Equal(["renderedTree", "designTree"], detail.RootElement.EnumerateObject().Select(p => p.Name));
+
+        using var events = new StreamReader(await (await http.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/events"), HttpCompletionOption.ResponseHeadersRead))
+            .Content.ReadAsStreamAsync());
+        using var sseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        Assert.Equal(": connected", await events.ReadLineAsync(sseTimeout.Token));
+
+        var save = await PostMapAsync(http, baseUrl, origin: null, layer: "promo", selector: "aside.x9");
+
+        // POST 回來時重掃已經做完(端點是 寫檔 → 重掃 → 回應),所以下面三件事都不必等
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        using (var map = JsonDocument.Parse(File.ReadAllText(dir.File("parity.map.json"))))
+            Assert.Equal("aside.x9", map.RootElement.GetProperty("promo").GetString()); // map 檔預設落在 config 旁
+        var target = await TargetAsync();
+        Assert.Empty(target.GetProperty("unmatched").EnumerateArray());
+        Assert.Contains(target.GetProperty("nodes").EnumerateArray(), n =>
+            n.GetProperty("designLayer").GetString() == "promo" && n.GetProperty("matchedBy").GetString() == "explicit");
+        string? line;
+        while ((line = await events.ReadLineAsync(sseTimeout.Token)) == "") { }
+        Assert.Equal("data: reload", line);
+    }
+
+    private static async Task<HttpResponseMessage> PostMapAsync(
+        HttpClient http, string baseUrl, string? origin, string layer = "", string selector = "")
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/map")
         {
-            Content = new StringContent("""{ "layer": "", "selector": "" }""", Encoding.UTF8, "application/json"),
+            Content = new StringContent(JsonSerializer.Serialize(new { layer, selector }), Encoding.UTF8, "application/json"),
         };
         if (origin is not null) req.Headers.Add("Origin", origin);
         return await http.SendAsync(req);
