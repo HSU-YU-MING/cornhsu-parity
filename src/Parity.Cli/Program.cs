@@ -302,7 +302,8 @@ internal static class ReportCommand
             reports,
             gateFail: config.GateFailReasons(reports).Count > 0,
             tokens: tokens,
-            gateNotes: config.MatchIntegrityFailures(reports));
+            gateNotes: config.MatchIntegrityFailures(reports),
+            figmaFileKey: config.FigmaLinkFileKey); // 與 check --md 同一條:圖層名連回 Figma 節點
 
         if (opts.GetValueOrDefault("--md") is { } mdPath)
         {

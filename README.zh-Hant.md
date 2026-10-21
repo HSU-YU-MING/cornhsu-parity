@@ -203,7 +203,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
 
-> 設計來源是 Figma 時,報告(`check --md` 寫出的 Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。`parity report` 重生的 Markdown 目前還沒有這些連結。
+> 設計來源是 Figma 時,報告(`check --md` 寫出或 `parity report` 重生的 Markdown,以及本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。有設 `designFile` 時它優先於 `figmaFileKey`,snapshot/JSON 來源的報告不會有 Figma 連結。
 
 ## 給設計師的兩個方向
 

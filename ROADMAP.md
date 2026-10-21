@@ -70,8 +70,6 @@
   - **soft 落差會擋 gate**:fontFamily 不扣分,但 `failOn` 含 `minor` 時照樣 GATE FAIL
     (`ParityConfig.GateFailReason` 沒排除 soft),`--baseline` 也把新的 soft 落差算「新增」
     (`DiffRecord.FromReports` 一起攤平)。修法二擇一:判定排除 soft,或正式把承諾改窄。
-  - **`parity report` 重生的 Markdown 沒有 Figma 連結**:`MarkdownReport.Render` 沒收到 `figmaFileKey`
-    (`check --md` 那條路有傳)。
   - **tokensFile 解析失敗被吞掉**:`DesignTokens.LoadJson` 用 `catch { return null; }` 把壞掉的 JSON、
     有註解的檔、值是數字的檔都當成「沒有 token」,`lint` 接著回報
     `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位。

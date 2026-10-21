@@ -69,6 +69,9 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   與本機報告 UI 的連結)。`designFile` 優先於 `figmaFileKey`,設計來源其實是本機檔(snapshot 的 designId
   是 CSS selector),Markdown 與 `parity serve` 卻拿 `figmaFileKey` 組出點了就壞的 figma.com 連結——
   `init` 範本預設就有 `figmaFileKey`,改走 snapshot 時沒刪掉就會遇到。現在只有設計來源真的是 Figma 才連。
+- **修正:`parity report` 重生的 Markdown 也把圖層名連回 Figma**(patch:只改 Markdown 內容)。
+  `check --md` 一直有這些連結,`report` 呼叫 `MarkdownReport.Render` 時卻沒傳 `figmaFileKey`。
+  套用上一條的條件(有 `designFile` 就不連)。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

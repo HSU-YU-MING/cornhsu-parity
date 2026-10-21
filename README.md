@@ -225,8 +225,9 @@ Only the things that should hold no matter how the layout flows:
   so comparing it means false positives, which means losing trust.
 
 > When the design source is Figma, layer names in the report (the Markdown written by
-> `check --md` and the local UI) **link back to that node in Figma** — a designer clicks once and
-> lands on the layer. Markdown re-rendered by `parity report` does not carry these links yet.
+> `check --md` or re-rendered by `parity report`, and the local UI) **link back to that node in
+> Figma** — a designer clicks once and lands on the layer. When `designFile` is set it wins over
+> `figmaFileKey`, so a snapshot- or JSON-based report carries no Figma links.
 
 ## Two workflows for designers
 

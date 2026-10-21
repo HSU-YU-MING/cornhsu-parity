@@ -159,6 +159,21 @@ public class ReportCommandTests
     }
 
     [Fact]
+    public async Task Rerendered_markdown_links_layers_back_to_figma_like_check_md_does()
+    {
+        // check --md 會把圖層名連回 Figma 節點;同一份報告用 parity report 重生時原本沒有連結
+        // (MarkdownReport.Render 沒收到 figmaFileKey)
+        using var dir = new TempDir();
+        var config = Setup(dir, """{ "figmaFileKey": "qRzJ3fxF1g09NczsrugiXD", "targets": [] }""");
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("[`CTA`](https://www.figma.com/design/qRzJ3fxF1g09NczsrugiXD?node-id=1-2)", r.Out);
+        Assert.Contains("[`Badge`](https://www.figma.com/design/qRzJ3fxF1g09NczsrugiXD?node-id=1-9) — no-anchor", r.Out);
+    }
+
+    [Fact]
     public async Task Report_does_not_care_that_targets_or_tolerances_are_null()
     {
         // 指名欄位的 null 錯誤只在用到該區段時才丟——report 從沒碰過它們,行為(exit 0)不變
