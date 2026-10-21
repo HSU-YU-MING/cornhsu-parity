@@ -209,6 +209,28 @@ public class CliEntryPointTests
     }
 
     [Theory]
+    [InlineData("check", """{ "designFile": "design.json", "targets": null }""", "\"targets\" is null")]
+    [InlineData("check", """{ "designFile": "design.json", "targets": [{ "route": "/" }], "tolerances": null }""", "\"tolerances\" is null")]
+    [InlineData("check", """{ "designFile": "design.json", "gate": null, "targets": [] }""", "\"gate\" is null")]
+    [InlineData("snapshot", """{ "targets": null }""", "\"targets\" is null")]
+    [InlineData("lint", """{ "designFile": "design.json", "tokensFile": "t.json", "targets": [{ "route": "/" }], "tolerances": null }""", "\"tolerances\" is null")]
+    public async Task A_null_config_section_is_exit_2_naming_the_field(string command, string json, string expected)
+    {
+        using var dir = new TempDir();
+        using var noBrowsers = new TempDir();
+        using var env = new EnvScope().Set("PLAYWRIGHT_BROWSERS_PATH", noBrowsers.Path);
+        dir.Write("t.json", """{ "brand": "#2563EB" }""");
+        dir.Write("design.json", """{ "id": "/", "name": "/", "type": "frame", "box": { "x": 0, "y": 0, "width": 10, "height": 10 } }""");
+        var config = WriteConfig(dir, json);
+
+        var r = await Cli.RunAsync(command, "--config", config);
+
+        Assert.Equal(2, r.ExitCode); // exit code 不變,只是訊息從 NullReferenceException 變成指名欄位
+        Assert.Contains(expected, r.Err);
+        Assert.DoesNotContain("Object reference", r.Err);
+    }
+
+    [Theory]
     [InlineData("snapshot", "--width", "375px", "1280")]
     [InlineData("snapshot", "--height", "tall", "800")]
     [InlineData("serve", "--port", "http", "4321")]

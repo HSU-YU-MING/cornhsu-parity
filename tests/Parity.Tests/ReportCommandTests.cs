@@ -159,6 +159,19 @@ public class ReportCommandTests
     }
 
     [Fact]
+    public async Task Report_does_not_care_that_targets_or_tolerances_are_null()
+    {
+        // 指名欄位的 null 錯誤只在用到該區段時才丟——report 從沒碰過它們,行為(exit 0)不變
+        using var dir = new TempDir();
+        var config = Setup(dir, """{ "targets": null, "tolerances": null }""");
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("paddingTop", r.Out);
+    }
+
+    [Fact]
     public async Task A_fail_on_value_that_disables_the_gate_is_warned_on_stderr()
     {
         // failOn: ["none"] 讓 gate 永遠不因嚴重度失敗——exit code 與判定不變(收緊待決定),但要看得到

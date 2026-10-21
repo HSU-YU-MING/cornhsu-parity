@@ -160,6 +160,43 @@ public class ConfigSchemaTests
         Assert.Equal($"could not parse config file: {path}", ex.Message);
     }
 
+    [Theory]
+    [InlineData("""{ "gate": null }""", "\"gate\" is null")]
+    [InlineData("""{ "gate": { "failOn": null } }""", "\"gate.failOn\" is null")]
+    [InlineData("""{ "compare": null }""", "\"compare\" is null")]
+    public void A_null_section_that_load_reads_is_an_error_naming_the_field(string json, string expected)
+    {
+        // 原本載入時直接 NullReferenceException,使用者只看到 "Object reference not set to an instance of an object."
+        using var dir = new TempDir();
+        var path = dir.Write("parity.config.json", json);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ParityConfig.Load(path));
+        Assert.Contains($"config {path}: {expected}", ex.Message);
+    }
+
+    [Fact]
+    public void Null_targets_and_tolerances_load_but_name_the_field_when_used()
+    {
+        // 這兩個區段載入時用不到:report/push/baseline list 這種不碰它們的指令照樣能跑(行為不變),
+        // 用到的指令(check/serve/map/snapshot/lint)才報錯——原本是執行期的 NullReferenceException
+        using var dir = new TempDir();
+        var path = dir.Write("parity.config.json", """{ "targets": null, "tolerances": null }""");
+        var config = ParityConfig.Load(path);
+
+        Assert.Contains($"config {path}: \"targets\" is null",
+            Assert.Throws<InvalidOperationException>(() => config.Targets).Message);
+        Assert.Contains($"config {path}: \"tolerances\" is null",
+            Assert.Throws<InvalidOperationException>(() => config.ToEngineTolerances()).Message);
+    }
+
+    [Fact]
+    public void A_null_entry_in_targets_names_its_index()
+    {
+        var config = LoadJson("""{ "targets": [{ "route": "/" }, null] }""");
+
+        Assert.Contains("\"targets[1]\" is null", Assert.Throws<InvalidOperationException>(() => config.Targets).Message);
+    }
+
     [Fact]
     public void Loading_a_missing_file_points_at_init()
     {

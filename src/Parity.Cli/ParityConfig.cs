@@ -34,15 +34,58 @@ public sealed class ParityConfig
     /// </summary>
     public string? BaselineFile { get; set; }
 
-    public List<TargetConfig> Targets { get; set; } = [];
-    public CompareConfig Compare { get; set; } = new();
-    public ToleranceConfig Tolerances { get; set; } = new();
+    // 區段在 JSON 裡寫成 null(`"targets": null`)時,反序列化照樣成功、屬性就是 null——
+    // 原本一碰就是 NullReferenceException,使用者只看到 "Object reference not set to an instance of an object."。
+    // getter 改成丟指名欄位的錯。刻意在「用到時」才丟,不在載入時一律檢查:report/push/baseline list
+    // 不碰 targets/tolerances,那些指令的行為(含 exit code)一點都不變;gate/compare 載入時就會讀
+    // (Validate),所以照舊在載入時報錯。
+    private List<TargetConfig>? _targets = [];
+    private CompareConfig? _compare = new();
+    private ToleranceConfig? _tolerances = new();
+    private GateConfig? _gate = new();
+
+    public List<TargetConfig> Targets
+    {
+        get
+        {
+            var targets = _targets ?? throw NullSection("targets", "an array of targets (use [] for none)");
+            var hole = targets.IndexOf(null!);
+            if (hole >= 0) throw NullSection($"targets[{hole}]", "a target object");
+            return targets;
+        }
+        set => _targets = value;
+    }
+
+    public CompareConfig Compare
+    {
+        get => _compare ?? throw NullSection("compare", "an object, e.g. { \"position\": \"relative\" } (or remove the key)");
+        set => _compare = value;
+    }
+
+    public ToleranceConfig Tolerances
+    {
+        get => _tolerances ?? throw NullSection("tolerances", "an object, e.g. { \"sizePx\": 2 } (or remove the key for the defaults)");
+        set => _tolerances = value;
+    }
+
     public List<string> Ignore { get; set; } = [];
-    public GateConfig Gate { get; set; } = new();
+
+    public GateConfig Gate
+    {
+        get => _gate ?? throw NullSection("gate", "an object, e.g. { \"failOn\": [\"critical\", \"serious\"] } (or remove the key for the defaults)");
+        set => _gate = value;
+    }
 
     /// <summary>設定檔所在目錄(相對路徑的基準)。</summary>
     [JsonIgnore]
     public string BaseDirectory { get; set; } = ".";
+
+    /// <summary>設定檔路徑(錯誤訊息用;程式裡直接 new 出來的設定沒有)。</summary>
+    [JsonIgnore]
+    public string? SourcePath { get; private set; }
+
+    private InvalidOperationException NullSection(string field, string expected)
+        => new($"config {SourcePath ?? "(in memory)"}: \"{field}\" is null — it must be {expected}.");
 
     /// <summary>
     /// 載入時發現、但不擋載入的問題(Load 會印到 stderr)。例如 gate.failOn 裡讓 gate 靜默失效的值:
@@ -66,6 +109,7 @@ public sealed class ParityConfig
         var config = JsonSerializer.Deserialize<ParityConfig>(File.ReadAllText(path), SerializerOptions)
             ?? throw new InvalidOperationException($"could not parse config file: {path}");
         config.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+        config.SourcePath = path;
         config.Validate(path);
         foreach (var w in config.Warnings)
             Console.Error.WriteLine($"\x1b[33mwarning: {w}\x1b[0m");
@@ -75,6 +119,8 @@ public sealed class ParityConfig
     /// <summary>設定值驗證——拼錯的 gate 等級或超界的門檻,在載入時就給看得懂的錯,而不是跑到一半炸。</summary>
     private void Validate(string path)
     {
+        if (Gate.FailOn is null)
+            throw NullSection("gate.failOn", "an array of severities, e.g. [\"critical\", \"serious\"] (use [] to gate on match integrity only)");
         foreach (var s in Gate.FailOn)
         {
             if (!Enum.TryParse<Severity>(s, ignoreCase: true, out var sev))

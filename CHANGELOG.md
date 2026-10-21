@@ -48,6 +48,11 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
 - **修正:`parity lint --target` 指到不存在的 route 時,錯誤訊息改成 `no target with route …`**
   (patch:exit 2 不變,只改訊息)。原本說 `the config file declares no targets.`,但 config 明明有 target;
   現在與 `check` 同一句。
+- **修正:設定檔區段寫成 `null` 時,錯誤訊息指名是哪個欄位**(patch:exit 2 與報錯時機都不變)。
+  `"gate": null`、`"compare": null`、`"gate": { "failOn": null }` 載入時、`"targets": null`、
+  `"tolerances": null`、`"targets": [null]` 用到時,原本都只印 `Object reference not set to an instance
+  of an object.`;現在印 `config <路徑>: "targets" is null — it must be an array of targets …`。
+  不碰這些區段的指令(`report`、`push`、`baseline list`)行為不變。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
