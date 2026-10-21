@@ -98,6 +98,9 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
 - **修正:target 只給 `height` 沒給 `width` 時,警告它被忽略**(patch:只多一行 stderr,量測不變)。
   `check`/`serve`/`map`/`baseline save` 在這種情況下照設計 frame 的寬高渲染、`height` 被靜靜丟掉
   (`snapshot` 則照用)。改成照用 `height` 會改變量測結果(演進條款 ②),待維護者決定。
+- **修正:`baseline list` 與 `check --baseline` 在 db 不存在時不再建出空的 db**(patch:exit code 與輸出不變)。
+  唯讀的查詢會留下一個 32 KB 的空 `parity.baseline.db`;被順手 commit 之後,CI 的 `--baseline` 就一直走
+  「no baseline yet」、退回一般 gate。現在只有 `baseline save` 會建檔。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

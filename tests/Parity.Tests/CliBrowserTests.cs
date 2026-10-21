@@ -237,6 +237,7 @@ public class CliBrowserTests
         Assert.Equal(1, fallback.ExitCode);
         Assert.Contains("(no baseline yet)", fallback.Out);
         Assert.Contains("commit parity.baseline.db", fallback.Out);
+        Assert.False(File.Exists(dir.File("parity.baseline.db"))); // 只有 baseline save 會建檔
 
         // 2) 存基準 → 同樣的落差不再擋
         var save = await Cli.RunAsync("baseline", "save", "--config", config);

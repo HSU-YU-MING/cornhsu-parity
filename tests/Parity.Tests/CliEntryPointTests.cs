@@ -402,6 +402,9 @@ public class CliEntryPointTests
 
         Assert.Equal(0, r.ExitCode);
         Assert.Contains("No baseline yet. Run `parity baseline save` first.", r.Out);
+        // 唯讀的查詢不留檔:原本會建出一個 32 KB 的空 db,順手 commit 之後 CI 的 --baseline
+        // 就一直走「no baseline yet」(退回一般 gate),而且沒有任何提示說它是空的
+        Assert.False(File.Exists(dir.File("parity.baseline.db")));
     }
 
     [Fact]

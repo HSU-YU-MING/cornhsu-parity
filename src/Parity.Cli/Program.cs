@@ -169,8 +169,14 @@ internal static class CheckCommand
         }
 
         var current = DiffRecord.FromReports(reports);
-        await using var store = new BaselineStore(BaselineCommand.BaselineDbPath(session.Config));
-        var baseline = await store.GetLatestAsync();
+        // db 不存在 = 還沒有 baseline。不開 BaselineStore(建構子會 migrate、建出空 db 留在 repo 裡)
+        var dbPath = BaselineCommand.BaselineDbPath(session.Config);
+        LatestBaseline? baseline = null;
+        if (File.Exists(dbPath))
+        {
+            await using var store = new BaselineStore(dbPath);
+            baseline = await store.GetLatestAsync();
+        }
 
         if (baseline is null)
         {
