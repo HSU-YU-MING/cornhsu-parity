@@ -10,7 +10,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
-    <ProjectReference Include="..\Parity.Engine\Parity.Engine.csproj" />
+    <!-- 鐵則「雲端不跑瀏覽器」的結構性保證:只引用報告契約(Parity.Report,零套件相依),
+         **不引用 Parity.Engine**——那邊帶著 Playwright 與整個 node driver。RepoInvariantsTests
+         會沿 ProjectReference 走完整張圖檢查 -->
+    <ProjectReference Include="..\Parity.Report\Parity.Report.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- 與 Parity.Storage 同款 pin(NU1903 修補版 SQLite) -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />

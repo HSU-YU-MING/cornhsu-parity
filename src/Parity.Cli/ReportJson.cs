@@ -43,5 +43,5 @@ public static class ReportJson
     }
 }
 
-// ReportDocument(report.json 頂層信封)已於網頁外殼動工時移入 Parity.Engine(Report.cs)
+// ReportDocument(report.json 頂層信封)已於網頁外殼動工時移入引擎,2026-10-22 再搬到 Parity.Report(Report.cs)
 // ——報告契約的每個消費者(CLI / serve / Parity.Server)對同一個型別。

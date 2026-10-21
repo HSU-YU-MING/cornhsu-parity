@@ -34,10 +34,18 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `dotnet tool install`,裝的是最新穩定版——2.0.0 一發佈,所有 `@v1` 的 workflow 就會裝到 2.x,
   README 與 SECURITY.md「`@v1` 跟隨最新 1.x、介面凍結」的承諾在 CI 裡失效。現在改用浮動版號 `"1.*"`
   (取最高的 1.x 穩定版;今天裝到的版本與之前相同)。RELEASING.md 補上發 2.0.0 時要同步改成 `"2.*"`。
+- **修正:Parity.Server 不再間接帶著 Playwright**(未發佈的伺服器;CLI 行為與 wire 格式不變)。
+  `Parity.Server.Data` 原本引用 `Parity.Engine`,把 Microsoft.Playwright 與整個 node driver(約 103 MB)
+  帶進伺服器的建置產物——鐵則「雲端不跑瀏覽器」只靠測試掃型別參考把關,反射載入擋不住。現在報告契約
+  (report.json 型別、`ReportWire`、`FidelityScore`、`DiffRecord`/`BaselineComparer`、`Box`)拆到零套件
+  相依的新組件 `Parity.Report`(命名空間不變),伺服器與 `Parity.Storage` 只引用它;伺服器的 publish
+  產物裡不再有 Playwright、ImageSharp 或引擎組件。新增測試沿伺服器的 ProjectReference 走完整張圖檢查。
+  NuGet tool 包多一個 `Parity.Report.dll`,其餘不變。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
-只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一的寫入口收「已完成的報告」,
-不存在任何「給我 URL 我去掃」的入口;掃描永遠發生在本機/CI。
+只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
+(其他寫入端點只管登入、邀請、成員、token 與刪除 run),不存在任何「給我 URL 我去掃」的入口;
+掃描永遠發生在本機/CI。
 
 - **新增:`parity push` 子指令**(CLI 面加法 = minor)。把既有的 report.json 送上
   Parity.Server:token 走 `PARITY_TOKEN` 環境變數(CI secret;`--token` 旗標僅供本機

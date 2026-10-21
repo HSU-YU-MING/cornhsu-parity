@@ -159,6 +159,33 @@ public class RepoInvariantsTests
     }
 
     [Fact]
+    public void Nothing_the_server_builds_from_can_reach_playwright()
+    {
+        // 鐵則的**結構性**保證:Parity.Server.csproj 自己不引用 Playwright 還不夠——到 2026-10-22 為止,
+        // Server.Data → Parity.Engine 把 Microsoft.Playwright 與整個 node driver(~103 MB)帶進伺服器產物,
+        // 上面那條只掃型別參考,反射載入照樣擋不住。這裡沿 ProjectReference 走完整張圖:伺服器建置用到的
+        // 每一個專案都不准有 Playwright 套件,也不准是引擎本身(報告型別在不含擷取端的 Parity.Report)
+        var visited = new List<string>();
+        void Walk(string csproj)
+        {
+            var full = Path.GetFullPath(csproj);
+            if (visited.Contains(full)) return;
+            visited.Add(full);
+            foreach (Match m in Regex.Matches(File.ReadAllText(full), @"<ProjectReference Include=""(?<path>[^""]+)"""))
+                Walk(Path.Combine(Path.GetDirectoryName(full)!, m.Groups["path"].Value.Replace('\\', Path.DirectorySeparatorChar)));
+        }
+        Walk(Repo.PathOf("src", "Parity.Server", "Parity.Server.csproj"));
+
+        Assert.True(visited.Count >= 3, $"只走到 {visited.Count} 個專案,ProjectReference 解析可能壞了");
+        Assert.DoesNotContain(visited, p => Path.GetFileName(p) == "Parity.Engine.csproj");
+        Assert.All(visited, p => Assert.DoesNotMatch(@"<PackageReference Include=""Microsoft\.Playwright", File.ReadAllText(p)));
+
+        // 編譯後也一樣:伺服器兩個組件都不引用引擎組件
+        foreach (var asm in new[] { typeof(ParityServerEntryPoint).Assembly, typeof(Parity.Server.Data.ServerDbContext).Assembly })
+            Assert.DoesNotContain(asm.GetReferencedAssemblies(), a => a.Name == "Parity.Engine");
+    }
+
+    [Fact]
     public void Every_engine_type_that_drives_playwright_is_on_the_server_ban_list()
     {
         // 上一條的禁用清單是手寫的:引擎哪天在別的命名空間多一個開瀏覽器的型別,禁用清單就漏了。

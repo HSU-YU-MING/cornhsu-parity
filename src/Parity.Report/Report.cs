@@ -1,27 +1,7 @@
-using Parity.Engine.DesignSources;
-using Parity.Engine.ImplementationSources;
-
 namespace Parity.Engine;
 
-/// <summary>一次掃描的輸入:設計參照 + 實作參照(規畫書 4.1)。</summary>
-public sealed record ScanRequest(DesignRef Design, ImplRef Impl, string Route = "/");
-
-/// <summary>每維度容差,預設非零(規畫書 4.8:子像素與渲染差異必然存在)。</summary>
-public sealed record Tolerances(
-    double SizePx = 2.0,
-    double SpacingPx = 2.0,
-    double ColorDeltaE = 2.0,
-    double FontSizePx = 0.5,
-    // 位置容差比尺寸鬆:flow 版面裡文字行高的自然差異會讓後續元素有 2–4px 漂移
-    double PositionPx = 4.0);
-
-public sealed record EngineOptions(Tolerances Tolerances)
-{
-    public static EngineOptions Default { get; } = new(new Tolerances());
-
-    /// <summary>相對位置比對(offsetX/offsetY)。compare.position = "none" 時關閉。</summary>
-    public bool ComparePosition { get; init; } = true;
-}
+// report.json 的型別(1.0 凍結面 4)。住在 Parity.Report 這個不含擷取端的組件,
+// 命名空間沿用 Parity.Engine——見 Parity.Report.csproj 的說明。
 
 /// <summary>落差嚴重度。</summary>
 public enum Severity { None = 0, Minor = 1, Medium = 2, Serious = 3, Critical = 4 }
@@ -77,8 +57,9 @@ public sealed record FidelityReport(
 /// <summary>
 /// report.json 的頂層信封(0.10.0 起;1.0 凍結面 4)。裸陣列無從辨識版本;包一層
 /// schemaVersion,報告格式演進時消費端(parity report / serve / **Parity.Server**)有據可判。
-/// 原住在 Parity.Cli;網頁外殼動工(2026-08-26)時移入引擎——報告契約的每一個消費者
-/// 都該對同一個型別,而不是各抄一份。wire 格式逐位元不變。
+/// 原住在 Parity.Cli;網頁外殼動工(2026-08-26)時移入引擎,2026-10-22 再搬進 Parity.Report
+/// (伺服器不准引用含擷取端的引擎)——報告契約的每一個消費者都該對同一個型別,而不是各抄一份。
+/// 兩次搬家 wire 格式都逐位元不變。
 /// </summary>
 public sealed record ReportDocument(int SchemaVersion, IReadOnlyList<FidelityReport> Reports)
 {

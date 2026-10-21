@@ -72,13 +72,6 @@
     (`DiffRecord.FromReports` 一起攤平)。修法二擇一:判定排除 soft,或正式把承諾改窄。
   - **`parity report` 重生的 Markdown 沒有 Figma 連結**:`MarkdownReport.Render` 沒收到 `figmaFileKey`
     (`check --md` 那條路有傳)。
-  - **Parity.Server 間接帶著 Playwright**(未發佈):`Parity.Server.Data` → `Parity.Engine` 把 Playwright 組件與
-    driver 帶進伺服器的建置產物。鐵則測試(`RepoInvariantsTests`)驗的是伺服器程式的中繼資料:
-    沒有引用 Playwright 型別,也沒有引用引擎的擷取端(`FidelityEngine`、`IImplementationSource`、
-    `ImplementationSources.Web`);另一條確認引擎裡欄位/簽章用到 Playwright 的型別都在那個命名空間。
-    沒驗的是產物,也擋不住用反射動態載入——要結構上乾淨,得把 Server 用到的報告型別從引擎拆出來,
-    或讓 Server.Data 不引用引擎。(2026-10-21 審查前,這條測試只看 Playwright 組件參考,
-    伺服器經由引擎的 `WebImplementationSource` 開瀏覽器照樣綠,當時 README 據此宣稱「伺服器從不驅動瀏覽器」。)
   - **tokensFile 解析失敗被吞掉**:`DesignTokens.LoadJson` 用 `catch { return null; }` 把壞掉的 JSON、
     有註解的檔、值是數字的檔都當成「沒有 token」,`lint` 接著回報
     `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位。
@@ -87,10 +80,6 @@
   - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現;
     不存在的 email 也不跑密碼雜湊、回得比較快。要不要統一訊息與時序由產品決定——
     `ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
-- **文件留帳(2026-10-22)**:CHANGELOG「未發佈」段與 CLAUDE.md「鐵則」段仍寫伺服器「唯一的寫入口」,
-  與 README 和本檔已更正的說法不一致——`POST /api/runs` 是唯一**收掃描結果**的入口,另有登入、邀請、
-  成員、token、刪除 run 等寫入端點。2026-10-21 那批只動測試與文件、刻意不碰 CHANGELOG,
-  下次編修這兩處時一併改。
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。

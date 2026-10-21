@@ -32,7 +32,7 @@ public class ConfigSchemaTests
     [Fact]
     public void Engine_tolerance_defaults_are_the_same_values_as_the_config_defaults()
     {
-        // 引擎(Report.cs)與 config(ParityConfig.cs)各寫一份預設——兩份漂開時,
+        // 引擎(ScanRequest.cs)與 config(ParityConfig.cs)各寫一份預設——兩份漂開時,
         // 「沒寫 tolerances 的 config」與「直接用引擎的外殼」會量出不同結果
         Assert.Equal(new Tolerances(2, 2, 2.0, 0.5, 4), new Tolerances());
         Assert.Equal(new Tolerances(), new ParityConfig().ToEngineTolerances());

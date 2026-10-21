@@ -298,6 +298,8 @@ src/Parity.Engine/        The engine; FidelityEngine is the only entry point
   DesignSources/          IDesignSource + Figma (REST + local cache) / Json
   ImplementationSources/  IImplementationSource + Web (Playwright)
   Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta (CIEDE2000)
+src/Parity.Report/        The report contract: report.json types, ReportWire, the fidelity score,
+                          baseline comparison — no package dependencies, so no Playwright
 src/Parity.Cli/           The dotnet tool shell: parity check / init / install-browser,
                           the local report UI (parity serve) and parity push
 src/Parity.Storage/       Baseline history (EF Core + SQLite), behind parity baseline
@@ -329,14 +331,13 @@ CI**, where the page, the credentials and the localhost port already are.
 
 This is not an implementation detail — it is the security claim of the whole design. It is why
 the dashboard has **no SSRF surface at all**: it is never handed a URL to fetch. And it is
-enforced structurally rather than by policy — `Parity.Server.csproj` never references
-Playwright, and a test turns CI red the moment server code references a Playwright type or the
+enforced structurally rather than by policy — the server projects do not reference the engine
+at all, only `Parity.Report` (the report types, which have no package dependencies), so neither
+Playwright nor its driver is anywhere in the server's build output. A test walks the server's
+whole project-reference graph and turns CI red if any project in it references Playwright or
+the engine; another turns it red the moment server code references a Playwright type or the
 engine's capture side (`FidelityEngine`, `IImplementationSource`, or anything in
-`ImplementationSources.Web`, which is the code that opens Chromium). A second test checks that
-every engine type whose fields or method signatures use a Playwright type lives in that
-namespace, so the list does not quietly fall behind. One caveat for now: the server's database
-project shares `Parity.Engine`, so the Playwright assembly and its driver still ride along in the
-server's build output, unused; separating them is tracked in [ROADMAP.md](ROADMAP.md).
+`ImplementationSources.Web`, which is the code that opens Chromium).
 
 ## Local report UI (M3)
 

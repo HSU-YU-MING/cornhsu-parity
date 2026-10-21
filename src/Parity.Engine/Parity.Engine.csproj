@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 報告契約(report.json 型別、ReportWire、分數、baseline 比對)在 Parity.Report,伺服器只引用那一半 -->
+    <ProjectReference Include="..\Parity.Report\Parity.Report.csproj" />
     <PackageReference Include="Microsoft.Playwright" Version="1.63.0" />
     <!-- ImageDesignSource 的圖片解碼/取樣。純 managed、跨平台;Six Labors Split License(開源專案免費) -->
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />

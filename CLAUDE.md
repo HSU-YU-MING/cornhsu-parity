@@ -88,11 +88,16 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
   `FidelityEngine` 是唯一進入點。外殼有三家:CLI(`Parity.Cli`)、本機報告 UI
   (`parity serve`，零建置 SPA 放 `src/Parity.Cli/wwwroot`)、網頁儀表板
   (`Parity.Server` + `web/`)。**引擎不知道外殼存在**。
-- **鐵則:雲端不跑瀏覽器。** `Parity.Server` 唯一的寫入口是 `POST /api/runs`，收的是
-  **已經跑完的報告**;不存在任何「給我 URL 我去掃」的端點。掃描永遠發生在本機／CI。
+- **鐵則:雲端不跑瀏覽器。** `Parity.Server` 唯一收掃描結果的入口是 `POST /api/runs`，收的是
+  **已經跑完的報告**(其他寫入端點只管登入、邀請、成員、token 與刪除 run);不存在任何
+  「給我 URL 我去掃」的端點。掃描永遠發生在本機／CI。
   這條鐵則的實體化就是 **`Parity.Server.csproj` 永遠不引用 Playwright**——不要為了任何
-  方便把它加進去。
-- **報告契約單一來源:`Parity.Engine/ReportWire.cs`。** CLI 落地、serve API、Server 解析
+  方便把它加進去。而且不只它自己:伺服器整張專案參考圖(`Parity.Server` → `Parity.Server.Data`
+  → `Parity.Report`)都不准碰到 `Parity.Engine` 或 Playwright。報告型別、`ReportWire`、
+  `FidelityScore`、`DiffRecord`/`BaselineComparer` 因此住在**零套件相依的 `Parity.Report`**
+  (命名空間仍是 `Parity.Engine`);伺服器要用引擎的新東西時,先問它是不是報告契約的一部分,
+  是才搬進 `Parity.Report`,不是就不准用。`RepoInvariantsTests` 沿 ProjectReference 檢查。
+- **報告契約單一來源:`Parity.Report/ReportWire.cs`。** CLI 落地、serve API、Server 解析
   全對同一組 `JsonSerializerOptions`。兩個設定是契約的一部分，不是風格:
   **不設 `WhenWritingNull`**(null 欄位顯式輸出，消費端不必判斷 key 存不存在)、
   **`MaxDepth = 512`**(真實網站 DOM 30+ 層，每層 Children 佔 2 個 JSON 深度，預設 64 會炸)。

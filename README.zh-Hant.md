@@ -254,6 +254,8 @@ src/Parity.Engine/        引擎:唯一進入點 FidelityEngine
   DesignSources/          IDesignSource + Figma(REST + 本機快取)/ Json
   ImplementationSources/  IImplementationSource + Web(Playwright)
   Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta(CIEDE2000)
+src/Parity.Report/        報告契約:report.json 型別、ReportWire、還原度分數、baseline 比對
+                          ——沒有任何套件相依,所以沒有 Playwright
 src/Parity.Cli/           dotnet tool 外殼:parity check / init / install-browser、
                           本機報告 UI(parity serve)與 parity push
 src/Parity.Storage/       baseline 歷史(EF Core + SQLite),parity baseline 背後的儲存層
@@ -282,13 +284,11 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 
 這不是實作細節,而是整個設計的安全主張。它使得儀表板**完全沒有 SSRF 攻擊面**:
 沒有人交給它一個 URL 去抓。而且這條鐵則是靠結構、不是靠自律守住的——
-`Parity.Server.csproj` 永遠不引用 Playwright,伺服器端的程式只要引用了 Playwright 型別、
-或引擎的擷取端(`FidelityEngine`、`IImplementationSource`,以及開 Chromium 的
-`ImplementationSources.Web` 底下任何型別),測試就會讓 CI 打紅;另一條測試確認引擎裡
-欄位或方法簽章用到 Playwright 型別的型別都在那個命名空間裡,禁用清單不會靜靜落後。
-目前有一個但書:伺服器的資料庫專案共用
-`Parity.Engine`,Playwright 組件與它的 driver 仍會被間接帶進伺服器的建置產物(沒有被呼叫);
-拆開的工作記在 [ROADMAP.md](ROADMAP.md)。
+伺服器的專案根本不引用引擎,只引用 `Parity.Report`(報告型別,沒有任何套件相依),
+所以伺服器的建置產物裡既沒有 Playwright 組件、也沒有它的 driver。一條測試沿伺服器的
+ProjectReference 走完整張圖,任何一個專案引用了 Playwright 或引擎就讓 CI 打紅;另一條在
+伺服器端的程式引用了 Playwright 型別、或引擎的擷取端(`FidelityEngine`、`IImplementationSource`,
+以及開 Chromium 的 `ImplementationSources.Web` 底下任何型別)時打紅。
 
 ## 本機報告 UI(M3)
 
