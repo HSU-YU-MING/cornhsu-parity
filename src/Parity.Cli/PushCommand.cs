@@ -15,8 +15,7 @@ internal static class PushCommand
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args,
-            "--config=", "--in=", "--server=", "--token=", "--commit=", "--branch=", "--gate-exit=");
+        var opts = CliOptions.Parse(args, Usage.Flags.Push);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Push);
 
         var server = opts.GetValueOrDefault("--server")

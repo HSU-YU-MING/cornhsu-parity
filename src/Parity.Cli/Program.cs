@@ -53,8 +53,7 @@ internal static class CheckCommand
     /// <summary>parity check:讀 parity.config.json → 跑引擎 → 人看的摘要 + report.json + exit code。</summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args,
-            "--config=", "--target=", "--out=", "--md=", "--refresh", "--headed", "--baseline", "--reverse");
+        var opts = CliOptions.Parse(args, Usage.Flags.Check);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Check);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
@@ -264,7 +263,7 @@ internal static class ReportCommand
     /// </summary>
     public static int Run(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--in=", "--md=");
+        var opts = CliOptions.Parse(args, Usage.Flags.Report);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Report);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
@@ -323,7 +322,7 @@ internal static class LintCommand
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--target=", "--refresh");
+        var opts = CliOptions.Parse(args, Usage.Flags.Lint);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Lint);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
@@ -402,8 +401,7 @@ internal static class SnapshotCommand
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args,
-            "--config=", "--target=", "--out=", "--width=", "--height=", "--headed", "--stabilize");
+        var opts = CliOptions.Parse(args, Usage.Flags.Snapshot);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Snapshot);
         var stabilize = opts.ContainsKey("--stabilize");
         // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
@@ -575,7 +573,7 @@ internal static class InitCommand
 
     public static int Run(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args, Usage.Flags.Init);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Init);
         const string path = "parity.config.json";
         if (File.Exists(path))
@@ -603,7 +601,7 @@ internal static class InstallBrowserCommand
 {
     public static int Run(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--with-deps");
+        var opts = CliOptions.Parse(args, Usage.Flags.InstallBrowser);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.InstallBrowser);
         // --with-deps:連同系統相依一起裝(CI 的 Linux runner 需要,否則 Chromium 起不來)
         var withDeps = opts.ContainsKey("--with-deps");
@@ -623,6 +621,29 @@ internal static class InstallBrowserCommand
 /// </summary>
 internal static class Usage
 {
+    /// <summary>
+    /// 各指令 CliOptions 的 spec(「--x=」吃值、「--x」布林)。與下面的用法文字放在一起:
+    /// UsageMatchesParserTests 要求每段用法列出的旗標集合等於這裡——加旗標忘了寫用法、
+    /// 或用法寫了解析器不收的旗標,測試都會紅。
+    /// </summary>
+    public static class Flags
+    {
+        public static readonly string[] Check =
+            ["--config=", "--target=", "--out=", "--md=", "--refresh", "--headed", "--baseline", "--reverse"];
+        public static readonly string[] Report = ["--config=", "--in=", "--md="];
+        public static readonly string[] Push =
+            ["--config=", "--in=", "--server=", "--token=", "--commit=", "--branch=", "--gate-exit="];
+        public static readonly string[] Snapshot =
+            ["--config=", "--target=", "--out=", "--width=", "--height=", "--headed", "--stabilize"];
+        /// <summary>serve 與 map 共用(同一份實作)。</summary>
+        public static readonly string[] Serve = ["--config=", "--port=", "--watch", "--open"];
+        public static readonly string[] Lint = ["--config=", "--target=", "--refresh"];
+        public static readonly string[] BaselineSave = ["--config=", "--target=", "--headed"];
+        public static readonly string[] BaselineList = ["--config="];
+        public static readonly string[] Init = [];
+        public static readonly string[] InstallBrowser = ["--with-deps"];
+    }
+
     public const string Check = """
           parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse] [--md <path>]
               Compare the real numeric values of the design and the implementation; writes a report and sets the exit code.
@@ -646,12 +667,13 @@ internal static class Usage
         """;
 
     public const string Push = """
-          parity push --server <url> [--config <path>] [--in <report.json>] [--commit <sha>] [--branch <name>] [--gate-exit <code>]
+          parity push --server <url> [--config <path>] [--in <report.json>] [--token <token>] [--commit <sha>] [--branch <name>] [--gate-exit <code>]
               Send an existing report.json to a Parity.Server dashboard (no re-scan; the server never
               runs a browser — scanning always happens where `parity check` ran).
               Token comes from the PARITY_TOKEN environment variable (a project token from the server);
+              --token is for local trials only — flag values end up in shell history and CI logs.
               --server may also come from PARITY_SERVER. Commit/branch default to the GitHub Actions
-              environment (GITHUB_SHA / GITHUB_REF_NAME) when present.
+              environment when present (GITHUB_SHA; GITHUB_HEAD_REF on pull requests, else GITHUB_REF_NAME).
               --gate-exit <code>  Pass `parity check`'s real exit code so the dashboard shows the same
                                   verdict as CI (covers custom failOn and --baseline semantics);
                                   omitted → recomputed from the config's gate settings.
@@ -674,8 +696,9 @@ internal static class Usage
         """;
 
     public const string Map = """
-          parity map [--config <path>] [--port <n>]
+          parity map [--config <path>] [--port <n>] [--watch] [--open]
               Interactive matching: pick an unmatched design node → click the page element → writes parity.map.json
+              Always opens the browser (--open is accepted for symmetry with serve); --watch as in serve.
         """;
 
     public const string Lint = """
@@ -686,7 +709,8 @@ internal static class Usage
         """;
 
     public const string Baseline = """
-          parity baseline save|list [--config <path>]
+          parity baseline save [--config <path>] [--target <route>] [--headed]
+          parity baseline list [--config <path>]
               Save or list diff baseline snapshots (SQLite); pair with `check --baseline` for regression gating.
         """;
 

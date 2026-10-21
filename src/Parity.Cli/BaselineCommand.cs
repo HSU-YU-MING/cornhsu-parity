@@ -23,7 +23,7 @@ internal static class BaselineCommand
     /// <summary>跑一次掃描,把當前落差存成新的 baseline 快照。</summary>
     private static async Task<int> SaveAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--target=", "--headed");
+        var opts = CliOptions.Parse(args, Usage.Flags.BaselineSave);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Baseline);
         var configPath = ResolveConfig(opts);
 
@@ -58,7 +58,7 @@ internal static class BaselineCommand
     /// <summary>列出歷史 baseline 快照(新到舊)。</summary>
     private static async Task<int> ListAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=");
+        var opts = CliOptions.Parse(args, Usage.Flags.BaselineList);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Baseline);
         var configPath = ResolveConfig(opts);
         var config = ParityConfig.Load(configPath);
@@ -90,8 +90,9 @@ internal static class BaselineCommand
             parity baseline — diff baselines and their history
 
             Usage:
-              parity baseline save [--config <path>] [--target <route>]
+              parity baseline save [--config <path>] [--target <route>] [--headed]
                   Run one scan and store the current diffs as a new baseline snapshot
+                  (--headed shows the browser window, for debugging)
               parity baseline list [--config <path>]
                   List the stored baseline snapshots
 

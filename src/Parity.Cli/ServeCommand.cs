@@ -23,7 +23,7 @@ internal static class ServeCommand
 
     public static async Task<int> RunAsync(string[] args, bool mapMode = false)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--port=", "--watch", "--open");
+        var opts = CliOptions.Parse(args, Usage.Flags.Serve);
         if (opts.ContainsKey("--help")) return Usage.Print(mapMode ? Usage.Map : Usage.Serve);
         var port = CliOptions.IntOrDefault(opts, "--port", 4321);
         var configPath = opts.GetValueOrDefault("--config")

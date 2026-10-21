@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Parity.Cli;
 
 namespace Parity.Tests;
@@ -348,7 +349,7 @@ public class CliEntryPointTests
         var r = await Cli.RunAsync("baseline", sub, flag);
 
         Assert.Equal(0, r.ExitCode);
-        Assert.Contains("parity baseline save|list [--config <path>]", r.Out);
+        Assert.Contains("parity baseline save [--config <path>] [--target <route>] [--headed]", r.Out);
         Assert.False(File.Exists(dir.File("parity.baseline.db")));
     }
 
@@ -442,5 +443,63 @@ public class CliEntryPointTests
         Assert.Contains("unexpected argument: \"foo\"", r.Err);
         Assert.False(File.Exists(dir.File("parity.config.json")));
         Assert.Throws<CliUsageException>(() => InitCommand.Run(["foo"]));
+    }
+}
+
+/// <summary>
+/// 用法文字與解析器的同步:每個指令 --help(與主 help)印出的旗標集合,必須等於該指令 CliOptions 的 spec
+/// ——值旗標寫成 `--x <…>`、布林旗標寫成 `--x`。2026-10-22 稽核時三處漂開:push 沒列 `--token`、
+/// `baseline save --help` 沒列 `--target`/`--headed`、`map --help` 沒列 `--watch`/`--open`。
+/// </summary>
+[Collection(ProcessStateCollection.Name)]
+public class UsageMatchesParserTests
+{
+    private static string[] Spec(string name) => name switch
+    {
+        "check" => Usage.Flags.Check,
+        "report" => Usage.Flags.Report,
+        "push" => Usage.Flags.Push,
+        "snapshot" => Usage.Flags.Snapshot,
+        "serve" => Usage.Flags.Serve,
+        "lint" => Usage.Flags.Lint,
+        "baseline save" => Usage.Flags.BaselineSave,
+        "baseline list" => Usage.Flags.BaselineList,
+        "init" => Usage.Flags.Init,
+        "install-browser" => Usage.Flags.InstallBrowser,
+        _ => throw new ArgumentException(name),
+    };
+
+    [Theory]
+    [InlineData("check --help", "parity check", "check")]
+    [InlineData("report --help", "parity report", "report")]
+    [InlineData("push --help", "parity push", "push")]
+    [InlineData("snapshot --help", "parity snapshot", "snapshot")]
+    [InlineData("serve --help", "parity serve", "serve")]
+    [InlineData("map --help", "parity map", "serve")] // map 與 serve 同一份實作、同一個 spec
+    [InlineData("lint --help", "parity lint", "lint")]
+    [InlineData("baseline save --help", "parity baseline save", "baseline save")]
+    [InlineData("baseline list --help", "parity baseline list", "baseline list")]
+    [InlineData("baseline", "parity baseline save", "baseline save")]
+    [InlineData("baseline", "parity baseline list", "baseline list")]
+    [InlineData("init --help", "parity init", "init")]
+    [InlineData("install-browser --help", "parity install-browser", "install-browser")]
+    [InlineData("--help", "parity check", "check")]
+    [InlineData("--help", "parity push", "push")]
+    [InlineData("--help", "parity map", "serve")]
+    [InlineData("--help", "parity baseline save", "baseline save")]
+    [InlineData("--help", "parity baseline list", "baseline list")]
+    public async Task Help_lists_exactly_the_flags_the_parser_accepts(string args, string synopsis, string spec)
+    {
+        var r = await Cli.RunAsync(args.Split(' '));
+        Assert.Equal(0, r.ExitCode);
+
+        var line = r.Out.Split('\n').Select(l => l.Trim())
+            .SingleOrDefault(l => l == synopsis || l.StartsWith(synopsis + " ", StringComparison.Ordinal));
+        Assert.True(line is not null, $"`{args}` 的輸出裡找不到以 `{synopsis}` 開頭的用法行");
+
+        var listed = Regex.Matches(line!, @"--(?<name>[a-z-]+)(?<value> <[^>]+>)?")
+            .Select(m => "--" + m.Groups["name"].Value + (m.Groups["value"].Success ? "=" : ""))
+            .Order(StringComparer.Ordinal);
+        Assert.Equal(Spec(spec).Order(StringComparer.Ordinal), listed);
     }
 }

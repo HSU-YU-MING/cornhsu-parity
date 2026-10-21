@@ -53,6 +53,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `"tolerances": null`、`"targets": [null]` 用到時,原本都只印 `Object reference not set to an instance
   of an object.`;現在印 `config <路徑>: "targets" is null — it must be an array of targets …`。
   不碰這些區段的指令(`report`、`push`、`baseline list`)行為不變。
+- **修正:用法文字與解析器同步**(patch:只改 help 文字,解析器接受的旗標不變)。`push` 的用法補上
+  `--token`(註明僅供本機試用)並更正 branch 的來源(先 `GITHUB_HEAD_REF`、再 `GITHUB_REF_NAME`);
+  `baseline save` 的用法補上 `--target`、`--headed`;`map` 的用法補上 `--watch`、`--open`。新增測試要求
+  每個指令 `--help`(與主 help)列出的旗標集合等於該指令解析器的 spec。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
@@ -62,7 +66,8 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
 - **新增:`parity push` 子指令**(CLI 面加法 = minor)。把既有的 report.json 送上
   Parity.Server:token 走 `PARITY_TOKEN` 環境變數(CI secret;`--token` 旗標僅供本機
   試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
-  commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`/`GITHUB_REF_NAME`)。
+  commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`;branch 先取 PR 事件的 `GITHUB_HEAD_REF`,
+  沒有才用 `GITHUB_REF_NAME`)。
   送出前在本機先驗報告信封,壞檔案不浪費往返。
 - **新增:網頁外殼 M4.6——防禦層(拋開部署視角後的純軟體盤點)**。
   1. **端點層整合測試進 CI**:M3 當時用 curl 手跑的認證劇本(401/403/邀請單次/
