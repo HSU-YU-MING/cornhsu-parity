@@ -53,12 +53,20 @@ internal static class PushCommand
             && Environment.GetEnvironmentVariable("GITHUB_REPOSITORY") is { } repo
             ? $"{srv.TrimEnd('/')}/{repo}" : null;
 
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        // 大報告送 Expect: 100-continue:伺服器(Kestrel 上限 20 MB)依 Content-Length 先回 413/401,
+        // 本文根本不送。不這樣做的話,Kestrel 在上傳途中回 413 並關連線,客戶端常常只拿到
+        // "An error occurred while sending the request.",看不到下面寫好的 413 提示(實測約一半)。
+        // 等待上限拉到 15 秒(預設 1 秒,冷啟動的伺服器來不及回,競態又回來);小報告不必等這一趟
+        using var http = new HttpClient(new SocketsHttpHandler { Expect100ContinueTimeout = TimeSpan.FromSeconds(15) })
+        {
+            Timeout = TimeSpan.FromSeconds(60),
+        };
         using var request = new HttpRequestMessage(HttpMethod.Post,
             new Uri(new Uri(server.TrimEnd('/') + "/"), "api/runs"))
         {
             Content = new StringContent(raw, Encoding.UTF8, "application/json"),
         };
+        if (raw.Length > 1024 * 1024) request.Headers.ExpectContinue = true;
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         if (commit is not null) request.Headers.Add("X-Parity-Commit", commit);
         if (branch is not null) request.Headers.Add("X-Parity-Branch", branch);

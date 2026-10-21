@@ -72,6 +72,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
 - **修正:`parity report` 重生的 Markdown 也把圖層名連回 Figma**(patch:只改 Markdown 內容)。
   `check --md` 一直有這些連結,`report` 呼叫 `MarkdownReport.Render` 時卻沒傳 `figmaFileKey`。
   套用上一條的條件(有 `designFile` 就不連)。
+- **修正:`parity push` 推超過 20 MB 的報告時,穩定拿到 413 的提示**(未發佈的 push)。Kestrel 依
+  Content-Length 回 413 後在上傳途中關連線,客戶端常常只拿到 `An error occurred while sending the
+  request.`。現在超過 1 MB 的報告送 `Expect: 100-continue`(等待上限 15 秒),伺服器先回 413/401、本文
+  不送出;exit 2 不變。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

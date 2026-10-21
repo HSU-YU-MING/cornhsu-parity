@@ -116,6 +116,28 @@ public class ServerPushIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Cli_push_of_a_report_over_20_MB_explains_the_413_every_time()
+    {
+        // 下面那條是測試端自己設 Expect: 100-continue;這條驗 CLI 本身。少了它,Kestrel 依 Content-Length
+        // 回 413 後在上傳途中關連線,客戶端約一半拿到 "An error occurred while sending the request."
+        // (稽核 probe 18 次中 9 次;本機單獨跑時較少見,40 次內就撞到),看不到 413 的提示。
+        // 競態是機率性的,所以連推 40 次,每次都要拿到 413(小報告不送 Expect,這裡刻意做成 21 MB)
+        var report = new FidelityReport("/", "http://x/", new string('x', 21 * 1024 * 1024), [], [],
+            new ReportSummary(0, 0, 0, 0, 0, 0, 0, 0, Severity.None));
+        using var dir = new TempDir();
+        var reportPath = dir.Write("report.json", JsonSerializer.Serialize(ReportDocument.Of([report]), ReportWire.Compact));
+        using var env = new EnvScope().Clear(EnvScope.PushVariables).Set("PARITY_TOKEN", _ciToken);
+
+        for (var attempt = 1; attempt <= 40; attempt++)
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => PushCommand.RunAsync(["--server", _baseUrl, "--in", reportPath, "--gate-exit", "0"]));
+            Assert.Contains("server returned 413", ex.Message);
+            Assert.Contains("larger than the server accepts", ex.Message);
+        }
+    }
+
+    [Fact]
     public async Task Bodies_over_20_MB_are_rejected_with_413()
     {
         // 20MB 是 Kestrel 的 MaxRequestBodySize 護欄(大站接近上限時 413 要給出路)
