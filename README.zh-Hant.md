@@ -61,9 +61,9 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **499 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **554 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
-| 真實驗證 | **cornhsu.com 全站 21 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
+| 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
 ## 安裝
 
@@ -80,7 +80,7 @@ dotnet tool install -g Cornhsu.Parity
 > npm 版是同一份自帶執行環境的原生執行檔,只下載你這個平台的那一份
 > (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64)。
 > Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
-> 每個平台包因此省下約 88 MB。
+> 每個平台包因此至少省下 88 MB。
 
 ## 快速開始
 
@@ -194,7 +194,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
   - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
 - **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
 - **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
-- **字體**:size / weight / line-height / letter-spacing 精確比;font-family 是**軟落差**(不擋 gate)
+- **字體**:size / weight / line-height / letter-spacing 依容差做數值比對;font-family 是**軟落差**(不擋 gate)
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
@@ -371,7 +371,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 ## 安全
 
 - Figma token 走環境變數(`env:FIGMA_TOKEN`),不進 log、不進 URL(用 `X-Figma-Token` header)
-- 抓過的 frame 存 `.parity/cache`(已 gitignore),重跑不再打 Figma、可離線比對
+- 抓過的 frame 存 `.parity/cache`(記得把 `.parity/` 加進 `.gitignore`),重跑不再打 Figma、可離線比對
 - 本機報告 UI 只綁 127.0.0.1,另外還擋非預期的 `Host` header(DNS rebinding)與跨來源
   `POST`(CSRF)
 - **團隊儀表板永遠不掃描任何東西**——它只收已完成的報告,所以沒有 SSRF 攻擊面。

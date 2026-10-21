@@ -67,9 +67,9 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **499**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **554**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
-| Proven in production | **All 21 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
+| Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
 ## Install
 
@@ -86,7 +86,7 @@ dotnet tool install -g Cornhsu.Parity
 > The npm build is the same self-contained native executable; you only download the one for
 > your platform (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64).
 > Playwright normally bundles its own copy of Node; the npm build strips that out and uses the
-> Node you already have, which saves about 88 MB per platform package.
+> Node you already have, which saves at least 88 MB per platform package.
 
 ## Quick start
 
@@ -210,8 +210,8 @@ Only the things that should hold no matter how the layout flows:
   as references (TEXT/HUG boxes are never references, TEXT is never a target, and Y is honestly
   skipped when everything above is text), so line-height drift in a flowing layout does not
   produce false positives. Turn it off with `compare.position: "none"`.
-- **Typography**: size, weight, line-height and letter-spacing are compared exactly;
-  font-family is a **soft gap** and never gates.
+- **Typography**: size, weight, line-height and letter-spacing are compared as numbers within the
+  tolerances; font-family is a **soft gap** and never gates.
 - **Color**: thresholded on CIEDE2000 (ΔE), not hex equality. Parsing covers modern syntax
   (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `color(display-p3 …)`).
 - **Absolute x/y is deliberately never compared**: it legitimately differs in a flexible layout,
@@ -435,8 +435,8 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
 
 - The Figma token comes from an environment variable (`env:FIGMA_TOKEN`); it never reaches a log
   and never goes in a URL (it is sent as the `X-Figma-Token` header).
-- Fetched frames are cached in `.parity/cache` (gitignored), so re-runs do not hit Figma and can
-  compare offline.
+- Fetched frames are cached in `.parity/cache` (add `.parity/` to your `.gitignore`), so re-runs do
+  not hit Figma and can compare offline.
 - The local report UI binds 127.0.0.1 only, and additionally rejects unexpected `Host` headers
   (DNS rebinding) and cross-origin `POST`s (CSRF).
 - **The team dashboard never scans anything** — it only receives finished reports, so it has no
