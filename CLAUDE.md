@@ -174,9 +174,20 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 
 ## 技術債與留帳
 
-- **相依漏洞:2026-08-26 實掃 0 個**(`dotnet list Parity.slnx package --vulnerable
-  --include-transitive`，六個專案全綠)。`SQLitePCLRaw` 手動 pin 到 3.0.5 蓋掉 EF Sqlite
-  傳遞進來的 NU1903 版本，dependabot 每月盯著。
+- **相依漏洞:2026-10-22 實掃只剩 `SixLabors.ImageSharp` 3.1.12 一個套件**(`dotnet list Parity.slnx
+  package --vulnerable --include-transitive`;2026-08-26 那次是 0 個,這五個 advisory 是 2026-10-07 才公布的)。
+  `SQLitePCLRaw` 手動 pin 到 3.0.5 蓋掉 EF Sqlite 傳遞進來的 NU1903 版本,dependabot 每月盯著。
+  - **ImageSharp:刻意不修,留帳**。五個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w;
+    中:wmxv-xphr-5c9g、gwg2-r3hj-4w44)的修補版都只有 **4.1.2**,3.1.x 沒有修補版(nuget.org 上 3.1 線
+    最後一版就是 3.1.12),而 4.x 的授權問題見上面「地雷 → 其他」那條,不升。
+  - **暴露面**:Parity 只在 `designImage` 模式呼叫 `Image.LoadAsync<Rgba32>`(`ImageDesignSource.cs`),
+    只解碼、不做任何影像處理或編碼。所以 HistogramEqualization(j3p4)與兩個 TIFF CCITT **編碼器**
+    (j9gm、jjfr)三個高風險項目都碰不到;碰得到的是兩個中風險的**解碼**項目:BigTIFF IFD 讓解碼卡住
+    (wmxv,`LoadAsync` 依內容自動判格式,副檔名是 .png 的 TIFF 也會走到)與 ICC CLUT 依未驗證尺寸配置記憶體
+    (gwg2)。兩者都是 DoS,輸入是使用者自己 repo 裡的檔案——在 CI 裡能改那個檔的人本來就能改 workflow,
+    增量風險低。
+  - **重新評估的時機**:3.1.x 出修補版就升;或改成只註冊 PNG/JPEG 解碼器(可擋掉 TIFF 那條,但
+    原本能用的 WebP/BMP/GIF/TIFF `designImage` 會變成錯誤,是 semver 問題,待決定)。
 - **auto-name 通用名假配對**(ROADMAP 有完整留帳):「Content」這種通用圖層名會撞到
   無關頁面的 `#content`。尺寸合理性防線(面積比 >16 拒配)只擋得住量級差很多的;
   **`auto-container`(LCA 推論)不經這道防線**。要根治得上語意層，動工前先蒐集更多野生樣本。
