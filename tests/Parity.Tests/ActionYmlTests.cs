@@ -117,6 +117,20 @@ public class ActionYmlTests
     }
 
     [Fact]
+    public void Finding_the_previous_comment_looks_through_every_page()
+    {
+        // `gh api …/issues/$pr/comments` 不分頁只看得到第一頁(預設 30 則,舊的在前):PR 留言超過 30 則、
+        // Parity 的留言掉到後面的頁時,每次都找不到標記、每次都 POST 新留言——與「原地更新、不洗版」相反
+        var comment = Step("Comment report on PR");
+        var lookup = Regex.Match(comment, @"gh api (?<args>[^\n]*(?:\\\n[^\n]*)*)/issues/\$pr/comments""(?<rest>[^\n]*(?:\\\n[^\n]*)*)");
+        Assert.True(lookup.Success, "找不到查舊留言的 gh api 呼叫");
+        Assert.Contains("--paginate", lookup.Value);
+        // --paginate 搭 --jq 是逐頁套用:`.[0]` 會每頁各吐一個,必須逐筆輸出、在 shell 裡取第一筆
+        Assert.DoesNotContain(".[0]", lookup.Value);
+        Assert.Contains("${ids%%", comment);
+    }
+
+    [Fact]
     public void Check_step_records_the_exit_code_and_the_gate_is_enforced_last()
     {
         // 先貼報告、後擋 gate:check 那步不能讓 job 失敗,最後一步才 exit 原始 exit code

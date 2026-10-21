@@ -119,8 +119,11 @@ runs:
           { echo "$marker"; cat "$report"; } > "$out"
         fi
         pr="$PR_NUMBER"
-        existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
-          --jq 'map(select(.body | startswith("<!-- parity-report -->"))) | .[0].id // empty')
+        # --paginate:不分頁只看得到第一頁(30 則,舊的在前),PR 留言一多就找不到舊留言、每次都發新的。
+        # --jq 是逐頁套用,所以逐筆輸出 id,再在 shell 裡取第一筆(最舊的那則)
+        ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
+          --jq '.[] | select(.body | startswith("<!-- parity-report -->")) | .id')
+        existing=${ids%%$'\n'*}
         if [ -n "$existing" ]; then
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$out" >/dev/null
         else
