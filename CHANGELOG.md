@@ -57,6 +57,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `--token`(註明僅供本機試用)並更正 branch 的來源(先 `GITHUB_HEAD_REF`、再 `GITHUB_REF_NAME`);
   `baseline save` 的用法補上 `--target`、`--headed`;`map` 的用法補上 `--watch`、`--open`。新增測試要求
   每個指令 `--help`(與主 help)列出的旗標集合等於該指令解析器的 spec。
+- **修正:儀表板的 Figma 深連結真的會出現**(未發佈的網頁外殼;M4.5 #5 原本完全失效)。引擎寫的
+  `designReference` 是 `<fileKey>#<frame>`,前端卻拿整串比對 `^[A-Za-z0-9]{15,}$`,裡面有 `#` 所以永遠
+  不成立。現在先取 `#` 之前的部分再驗證,node-id 照 CLI 的 Markdown 報告把 `:` 換成 `-`。解析抽成
+  `web/src/figma.ts`,用 Node 內建 test runner 測(`npm test`,CI 的 web-build job 也跑)。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

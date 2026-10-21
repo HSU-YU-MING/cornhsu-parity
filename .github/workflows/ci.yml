@@ -81,6 +81,9 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
+      # 前端的純函式(例如 Figma 深連結的解析)用 Node 內建 test runner 跑,不另裝測試框架
+      - run: npm test
+        working-directory: web
 
   build-test:
     name: Build + Test + Parity 自我把關
