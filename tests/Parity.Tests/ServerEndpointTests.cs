@@ -343,6 +343,136 @@ public class ServerEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Login_never_reveals_which_half_was_wrong_and_locks_out_after_five_failures()
+    {
+        await OwnerAsync(); // 接受邀請 = 建立帳號(密碼 "correct horse battery")
+        async Task<(HttpStatusCode Status, JsonElement Body)> LoginAsync(HttpClient c, string email, string password)
+        {
+            var resp = await c.PostAsync("/api/auth/login", Json(new { email, password }));
+            return (resp.StatusCode, await resp.Content.ReadFromJsonAsync<JsonElement>());
+        }
+
+        // 1) 不存在的 email 與錯密碼:狀態碼與訊息逐字相同(不能拿來探測誰有帳號)
+        var unknown = await LoginAsync(Client(), "nobody@t.local", "correct horse battery");
+        var wrong = await LoginAsync(Client(), "owner@t.local", "not the password");
+        Assert.Equal(HttpStatusCode.Unauthorized, unknown.Status);
+        Assert.Equal(HttpStatusCode.Unauthorized, wrong.Status);
+        Assert.Equal(unknown.Body.GetRawText(), wrong.Body.GetRawText());
+
+        // 2) 正確登入(email 前後空白容忍):回 me 的形狀,cookie 隨即生效
+        var browser = Client();
+        var ok = await LoginAsync(browser, "  owner@t.local ", "correct horse battery");
+        Assert.Equal(HttpStatusCode.OK, ok.Status);
+        Assert.Equal("owner@t.local", ok.Body.GetProperty("email").GetString());
+        var membership = Assert.Single(ok.Body.GetProperty("memberships").EnumerateArray());
+        Assert.Equal(("demo", "owner"), (membership.GetProperty("project").GetString(), membership.GetProperty("role").GetString()));
+        Assert.Equal(HttpStatusCode.OK, (await browser.GetAsync("/api/auth/me")).StatusCode);
+
+        // 3) 連錯 5 次 → 鎖定:之後連正確密碼也進不去,訊息改說「稍後再試」
+        for (var i = 0; i < 5; i++)
+            await LoginAsync(Client(), "owner@t.local", $"guess number {i}");
+        var locked = await LoginAsync(Client(), "owner@t.local", "correct horse battery");
+        Assert.Equal(HttpStatusCode.Unauthorized, locked.Status);
+        Assert.Contains("too many failed attempts", locked.Body.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task Run_changes_endpoint_compares_with_the_previous_run_on_the_same_branch_for_members_only()
+    {
+        async Task<string> PushOnMainAsync(string report)
+        {
+            var resp = await PushAsync(Client(), _ciToken, branch: "main", report: report);
+            return (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
+        }
+        var first = await PushOnMainAsync(DemoReport());   // cta 的 paddingTop serious
+        await PushAsync(Client(), _ciToken, branch: "other", report: CleanReport()); // 別的分支不算「上一筆」
+        var second = await PushOnMainAsync(CleanReport()); // 修好了
+        var owner = await OwnerAsync();
+
+        var firstChanges = await owner.GetFromJsonAsync<JsonElement>($"/api/runs/{first}/changes");
+        Assert.Equal(JsonValueKind.Null, firstChanges.GetProperty("prevRunId").ValueKind); // 該分支第一筆
+
+        var changes = await owner.GetFromJsonAsync<JsonElement>($"/api/runs/{second}/changes");
+        Assert.Equal(first, changes.GetProperty("prevRunId").GetString());
+        Assert.Empty(changes.GetProperty("regressions").EnumerateArray());
+        var fixedDiff = Assert.Single(changes.GetProperty("fixed").EnumerateArray());
+        Assert.Equal(("cta", "paddingTop", "serious"), (fixedDiff.GetProperty("designLayer").GetString(),
+            fixedDiff.GetProperty("prop").GetString(), fixedDiff.GetProperty("severity").GetString()));
+
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/runs/{Guid.NewGuid()}/changes")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client().GetAsync($"/api/runs/{second}/changes")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Push_auth_scheme_is_case_insensitive_but_must_be_bearer()
+    {
+        async Task<HttpStatusCode> PushWithAuthorizationAsync(string authorization)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/api/runs")
+            {
+                Content = new StringContent(DemoReport(), Encoding.UTF8, "application/json"),
+            };
+            req.Headers.TryAddWithoutValidation("Authorization", authorization);
+            return (await Client().SendAsync(req)).StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.Created, await PushWithAuthorizationAsync($"bearer {_ciToken}"));
+        Assert.Equal(HttpStatusCode.Created, await PushWithAuthorizationAsync($"Bearer   {_ciToken}  "));
+        // "Digest " 與 "Bearer " 一樣長:沒驗 scheme 的話,切掉前 7 字剛好就是合法 token
+        Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync($"Digest {_ciToken}"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync(_ciToken)); // 少了 scheme
+        Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync($"Bearer {_ciToken[..10]}"));
+    }
+
+    [Fact]
+    public async Task Rows_stored_per_push_do_not_grow_with_the_number_of_diffs()
+    {
+        // CLAUDE.md「Parity.Server.Data 刻意沒有 Diff 表」:M4 實測一次 push 的逐條落差 36,058 列、零讀者,
+        // 所以只存 run + 每頁一列 + gzip 原文。這條守的是那個取捨的效果,不管表叫什麼名字——
+        // 要把逐條落差加回資料庫,先回 CLAUDE.md 確認有讀者
+        async Task<Dictionary<string, long>> RowCountsAsync()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var conn = scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.GetDbConnection();
+            await conn.OpenAsync();
+            var tables = new List<string>();
+            await using (var list = conn.CreateCommand())
+            {
+                list.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table'";
+                await using var reader = await list.ExecuteReaderAsync();
+                while (await reader.ReadAsync()) tables.Add(reader.GetString(0));
+            }
+            var counts = new Dictionary<string, long>();
+            foreach (var table in tables)
+            {
+                await using var count = conn.CreateCommand();
+                count.CommandText = $"SELECT COUNT(*) FROM \"{table}\"";
+                counts[table] = (long)(await count.ExecuteScalarAsync())!;
+            }
+            return counts;
+        }
+        static string ReportWithDiffs(int n)
+        {
+            var nodes = Enumerable.Range(0, n).Select(i => new NodeResult($"n{i}", $"id{i}", $"#n{i}", "selector", Severity.Serious,
+                [new PropDiff("paddingTop", "12", "8", "px", 4, 2, Severity.Serious)])).ToList();
+            var report = new FidelityReport("/", "http://x/", "snap", nodes, [],
+                new ReportSummary(n, n, 0, n, 0, n, 0, 0, Severity.Serious));
+            return JsonSerializer.Serialize(ReportDocument.Of([report]), ReportWire.Compact);
+        }
+
+        var before = await RowCountsAsync();
+        Assert.Equal(HttpStatusCode.Created, (await PushAsync(Client(), _ciToken, report: ReportWithDiffs(1))).StatusCode);
+        var afterSmall = await RowCountsAsync();
+        Assert.Equal(HttpStatusCode.Created, (await PushAsync(Client(), _ciToken, report: ReportWithDiffs(300))).StatusCode);
+        var afterLarge = await RowCountsAsync();
+
+        foreach (var table in before.Keys)
+            Assert.True(afterLarge[table] - afterSmall[table] == afterSmall[table] - before[table],
+                $"{table}:1 條落差的 push 加了 {afterSmall[table] - before[table]} 列,300 條的加了 {afterLarge[table] - afterSmall[table]} 列");
+        Assert.Equal(1, afterSmall["Runs"] - before["Runs"]); // 前提:真的有落庫
+    }
+
+    [Fact]
     public async Task Rejected_pushes_store_nothing()
     {
         await PushAsync(Client(), "wrong-token-wrong-token");
