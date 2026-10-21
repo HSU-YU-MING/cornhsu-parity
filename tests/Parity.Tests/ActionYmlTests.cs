@@ -100,6 +100,23 @@ public class ActionYmlTests
     }
 
     [Fact]
+    public void Without_a_version_the_action_installs_the_latest_release_of_its_own_major()
+    {
+        // README 承諾「@v1 跟隨最新 1.x、介面凍結」。不帶範圍的 `dotnet tool install` 裝的是最新穩定版——
+        // 2.0.0 一發佈,所有 @v1 的 workflow 就會裝到 2.x。浮動版號 "1.*" 取最高的 1.x 穩定版
+        // (NuGet 的 "[1.0.0,2.0.0)" 則會取**最低**的 1.0.0,不能用)
+        var install = Step("Install Parity");
+        var floating = Regex.Match(install, @"--version ""(?<major>\d+)\.\*""");
+        Assert.True(floating.Success, "沒指定 version 時要用 \"<major>.*\" 鎖住 major");
+        Assert.DoesNotMatch(new Regex(@"dotnet tool install --global Cornhsu\.Parity\s*$", RegexOptions.Multiline), install);
+
+        // 鎖的 major = CHANGELOG 最新發佈版的 major。發 2.0.0 時這裡會紅,提醒把 action 一起改成 "2.*"
+        var latest = Regex.Match(Repo.Read("CHANGELOG.md"), @"^## (?<major>\d+)\.\d+\.\d+", RegexOptions.Multiline);
+        Assert.True(latest.Success, "CHANGELOG 找不到已發佈的版本標題");
+        Assert.Equal(latest.Groups["major"].Value, floating.Groups["major"].Value);
+    }
+
+    [Fact]
     public void Check_step_records_the_exit_code_and_the_gate_is_enforced_last()
     {
         // 先貼報告、後擋 gate:check 那步不能讓 job 失敗,最後一步才 exit 原始 exit code

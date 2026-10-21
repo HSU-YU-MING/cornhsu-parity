@@ -393,7 +393,8 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 `baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report`.
 
 > The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
-> nuget.org). This repo's own `.github/workflows/ci.yml` instead **builds from source** and runs
+> nuget.org) — the latest 1.x when `version` is omitted, so `@v1` never jumps to a future 2.x,
+> or exactly the `version` you pass. This repo's own `.github/workflows/ci.yml` instead **builds from source** and runs
 > the offline demo as a self-check, so it does not depend on a published release.
 
 ## Report vocabulary (for anyone parsing `report.json`)

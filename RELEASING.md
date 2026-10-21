@@ -81,6 +81,9 @@ git tag v1 v1.0.0 && git push origin v1
 - [ ] 之後**每發一個 1.x**,把 `v1` 前移到最新:`git tag -f v1 v1.x.y && git push -f origin v1`
       （`v1` 的推送**不會**觸發 release——workflow 只認三段式 `v*.*.*` tag,這是刻意的：
       `v1` 若觸發,守門會因 tag ≠ CHANGELOG 版號而必紅一次,徒增失敗通知）
+- [ ] **發新 major(2.0.0)時**:`action.yml` 沒給 `version` 時安裝的浮動版號 `"1.*"` 要改成 `"2.*"`,
+      再建 `v2` 移動式 tag。`v1` 停在最後一個 1.x,它的 `action.yml` 仍寫 `"1.*"`,`@v1` 使用者就不會跨 major
+      ——這正是那行浮動版號存在的理由(`ActionYmlTests` 會在 CHANGELOG 頂端變成 2.x 時紅燈提醒)。
 
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
 

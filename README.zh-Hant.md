@@ -334,7 +334,7 @@ jobs:
 
 action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
 
-> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
+> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org):沒給 `version` 時裝最新的 1.x(`@v1` 不會跳到日後的 2.x),給了就裝那一版。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 
 ## 報告字彙表(給解析 `report.json` 的人)
 
