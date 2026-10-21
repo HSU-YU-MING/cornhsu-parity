@@ -8,8 +8,8 @@
 
 **[作品介紹與開發故事](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · [English](README.md) · MIT**
 
-> **note** 工具本身的輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文;
-> 工具自己寫的訊息中,唯一的例外是 npm 啟動腳本的錯誤訊息(找不到平台包之類),仍是中文;
+> **note** 工具本身的輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文
+> (npm 啟動腳本的錯誤訊息自下一版起也是);
 > 作業系統回報的錯誤(連線被拒、檔案存取之類)則照系統語言原樣帶出。
 > 這份中文說明維持與英文版同步。
 

@@ -28,16 +28,20 @@ const TARGETS = {
   "darwin arm64": { pkg: "@cornhsu/parity-darwin-arm64", bin: "parity" },
 };
 
+// 啟動腳本自己的錯誤一律 exit 2:CLI 的契約是 0 通過 / 1 落差超 gate / 2 執行錯誤 / 3 可信度不足,
+// 回 1 會被 CI 讀成「設計還原度不合格」。訊息用英文,與 CLI 本體一致(0.12.0 起)。
+const EXECUTION_ERROR = 2;
+
 const key = `${process.platform} ${process.arch}`;
 const target = TARGETS[key];
 
 if (!target) {
   console.error(
-    `Cornhsu.Parity 沒有 ${key} 的預先建置版本。\n` +
-      `目前支援:${Object.keys(TARGETS).join("、")}\n` +
-      `其他平台請改用 .NET 版本:dotnet tool install -g Cornhsu.Parity`
+    `cornhsu-parity: there is no prebuilt build for ${key}.\n` +
+      `Supported: ${Object.keys(TARGETS).join(", ")}\n` +
+      `On other platforms use the .NET tool instead: dotnet tool install -g Cornhsu.Parity`
   );
-  process.exit(1);
+  process.exit(EXECUTION_ERROR);
 }
 
 let binary;
@@ -48,11 +52,11 @@ try {
   binary = path.join(path.dirname(manifest), "bin", target.bin);
 } catch {
   console.error(
-    `找不到平台套件 ${target.pkg}。\n` +
-      `可能是安裝時加了 --no-optional,或安裝過程中斷。\n` +
-      `請重新安裝:npm install cornhsu-parity`
+    `cornhsu-parity: the platform package ${target.pkg} is not installed.\n` +
+      `It is an optional dependency, so the install may have skipped it (--no-optional / --omit=optional) or been interrupted.\n` +
+      `Reinstall: npm install cornhsu-parity`
   );
-  process.exit(1);
+  process.exit(EXECUTION_ERROR);
 }
 
 const result = spawnSync(binary, process.argv.slice(2), {
@@ -65,8 +69,8 @@ const result = spawnSync(binary, process.argv.slice(2), {
 });
 
 if (result.error) {
-  console.error(`無法執行 ${binary}:${result.error.message}`);
-  process.exit(1);
+  console.error(`cornhsu-parity: could not run ${binary}: ${result.error.message}`);
+  process.exit(EXECUTION_ERROR);
 }
 
 // 被訊號中斷時 status 會是 null;轉成慣例的 128+signal,別讓 CI 誤判為成功
