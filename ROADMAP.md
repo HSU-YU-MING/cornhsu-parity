@@ -12,7 +12,8 @@
   **這三條到今天都還成立**,所以這一條保留原判,不是過期文字。
 - **M7 — 團隊儀表板外殼(`Parity.Server` + `Parity.Server.Data` + `web/`):進行中**
   (2026-08-26 動工,尚未發佈)。**它跟被否決的 M6 不是同一件事,所以不牴觸上面那條決定。**
-  差別只有一句話:**雲端不跑瀏覽器**。伺服器唯一的寫入口是 `POST /api/runs`,收的是
+  差別只有一句話:**雲端不跑瀏覽器**。伺服器唯一收掃描結果的入口是 `POST /api/runs`
+  (其他寫入端點只管登入、邀請、成員、token 與刪除 run),收的是
   `parity push` 送上來的**已完成報告**;不存在「給我 URL 我去掃」的端點,掃描永遠留在
   本機/CI。逐條對回當年否決的理由:
   - *只碰得到公開網址* → 不成立:掃描端仍是你的 CI 與本機,localhost、staging、
@@ -49,7 +50,7 @@
   補測 B8)。剩餘的要語意層才殺得掉——動工前先蒐集更多野生樣本。
 - ~~**隨機 id 的偵測降級**(2026-08-10 路線 A 實查 F2 殘留):純字母隨機字串(rkxvdnnzty)
   現行啟發法分不出來,誠實漏放。~~
-  **已補(2026-08-26,「未發佈」段)**:照當日留帳的設計實作——連拍實測(兩次載入,
+  **已補(1.1.0)**:照當日留帳的設計實作——連拍實測(兩次載入,
   單邊 id = 隨機)+ 快照信封存穩定 id 白名單 + check 擷取沿用同一份名單
   (只在拍照端避開是不夠的,check 端規則要一致)。零誤判、免語言模型;
   無隨機 id 的站快照同形零回歸。端到端實測:純字母隨機 id 頁 snapshot→check
@@ -63,7 +64,7 @@
 - **2026-10-21 補測試與 README 逐段核對留下的產品端落差**(那次只動測試與文件,刻意不改程式)。
   README 已改成照實描述現況;每修好一條,記得回頭拿掉 README 對應的限定句:
   - **npm 啟動腳本缺兩個 arm64 平台**:`npm/cornhsu-parity/bin/parity.js` 的平台表沒有
-    `win32 arm64`/`linux arm64`,平台包有發佈、`npx` 卻印「沒有預先建置版本」exit 1(1.1.0 就是如此)。
+    `win32 arm64`/`linux arm64`,平台包有發佈、`npx` 卻印「沒有 <平台> 的預先建置版本」exit 1(1.1.0 就是如此)。
   - **npm 的 Node 下限**:主包 `engines.node` 仍是 `>=18`,但 Playwright 1.63 的 driver 要 Node 20+,
     而 npm 通路正是拿使用者自己的 Node 跑 driver。下一版發佈前要決定 semver 與「升級必做」寫法
     (見 `docs/公開介面盤點.md` §8.2、§10)。
@@ -75,11 +76,24 @@
   - **`parity report` 重生的 Markdown 沒有 Figma 連結**:`MarkdownReport.Render` 沒收到 `figmaFileKey`
     (`check --md` 那條路有傳)。
   - **Parity.Server 間接帶著 Playwright**(未發佈):`Parity.Server.Data` → `Parity.Engine` 把 Playwright 組件與
-    driver 帶進伺服器的建置產物。鐵則測試只驗「伺服器程式沒用到 Playwright 型別」,沒驗產物——
-    要結構上乾淨,得把 Server 用到的報告型別從引擎拆出來,或讓 Server.Data 不引用引擎。
+    driver 帶進伺服器的建置產物。鐵則測試(`RepoInvariantsTests`)驗的是伺服器程式的中繼資料:
+    沒有引用 Playwright 型別,也沒有引用引擎的擷取端(`FidelityEngine`、`IImplementationSource`、
+    `ImplementationSources.Web`);另一條確認引擎裡欄位/簽章用到 Playwright 的型別都在那個命名空間。
+    沒驗的是產物,也擋不住用反射動態載入——要結構上乾淨,得把 Server 用到的報告型別從引擎拆出來,
+    或讓 Server.Data 不引用引擎。(2026-10-21 審查前,這條測試只看 Playwright 組件參考,
+    伺服器經由引擎的 `WebImplementationSource` 開瀏覽器照樣綠,當時 README 據此宣稱「伺服器從不驅動瀏覽器」。)
+  - **tokensFile 解析失敗被吞掉**:`DesignTokens.LoadJson` 用 `catch { return null; }` 把壞掉的 JSON、
+    有註解的檔、值是數字的檔都當成「沒有 token」,`lint` 接著回報
+    `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位。
+    `ReportingTests`/`LintCommandTests` 裡名稱帶 `currently` 的兩條把現況釘住;改成回報解析錯誤
+    (附檔名與位置)或放寬成允許註解時,換掉那兩條。盤點(`docs/公開介面盤點.md` §9)判讀屬 patch。
   - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現;
     不存在的 email 也不跑密碼雜湊、回得比較快。要不要統一訊息與時序由產品決定——
     `ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
+- **文件留帳(2026-10-22)**:CHANGELOG「未發佈」段與 CLAUDE.md「鐵則」段仍寫伺服器「唯一的寫入口」,
+  與 README 和本檔已更正的說法不一致——`POST /api/runs` 是唯一**收掃描結果**的入口,另有登入、邀請、
+  成員、token、刪除 run 等寫入端點。2026-10-21 那批只動測試與文件、刻意不碰 CHANGELOG,
+  下次編修這兩處時一併改。
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。
@@ -126,4 +140,6 @@
 3. ~~CI 的 `--baseline` 實跑~~ 已實證(舊債不擋、新落差精確擋)。
 4. ~~接下來輪到整潔項、M5 下半 / M6。~~ 整潔項與 M5 下半已完成;M6 明文不做(理由見上)。
    **目前在做 M7 團隊儀表板外殼**(內部 M1–M4.6 完成,下一步是內部 M5:對外部署)。
-   引擎面的已知盲點只剩 auto-name 通用名假配對一條,待更多野生樣本。
+   引擎面與外殼的已知盲點見上面「已知盲點 / 該補的」:auto-name 通用名假配對待更多野生樣本,
+   2026-10-21 那批(soft 落差擋 gate、`parity report` 少 Figma 連結、tokensFile 解析錯誤被吞…)
+   都還開著。
