@@ -352,11 +352,26 @@ public class DiffEngineTests
     }
 
     [Fact]
-    public void Item_spacing_needs_two_visible_children_on_both_sides()
+    public void Item_spacing_needs_two_children_on_both_sides()
     {
-        // 間距是「相鄰子元素之間」的量:任一邊湊不出一對可量的子元素,就沒有東西可比
+        // 間距是「相鄰子元素之間」的量:任一邊湊不出一對子元素,就沒有東西可比
         var design = Design("d1", "nav", box: new Box(0, 0, 300, 40), itemSpacing: 16, layoutMode: "HORIZONTAL",
             children: [Design("d2", "a", box: new Box(0, 0, 50, 40)), Design("d3", "b", box: new Box(66, 0, 50, 40))]);
+        var designOneChild = Design("d1", "nav", box: new Box(0, 0, 300, 40), itemSpacing: 16, layoutMode: "HORIZONTAL",
+            children: [Design("d2", "a", box: new Box(0, 0, 50, 40))]);
+        var gap40 = Rendered("nav", "nav", box: new Box(0, 0, 300, 40), children:
+        [
+            Rendered("nav > a:nth-of-type(1)", "a", box: new Box(0, 0, 50, 40)),
+            Rendered("nav > a:nth-of-type(2)", "a", box: new Box(90, 0, 50, 40)),
+        ]);
+
+        // 設計端:同一個實作(間距 40 ≠ 16),設計有兩個子節點就報,只有一個就不比
+        Assert.Contains(Engine.Diff(new NodePair(design, gap40, "auto-name")).Diffs, d => d.Prop == "itemSpacing");
+        Assert.DoesNotContain(Engine.Diff(new NodePair(designOneChild, gap40, "auto-name")).Diffs, d => d.Prop == "itemSpacing");
+
+        // 實作端:可量的子元素(寬高 > 0)不到兩個就不比。
+        // 註:只有一個子元素那半是文件性質——DiffEngine 的 r.Children.Count >= 2 與 MeanChildGap 的
+        // 「可量子元素 < 2 回 null」等價,拿掉任一道都不會讓它紅;寬高為 0 那半才守得到過濾
         var oneChild = Rendered("nav", "nav", box: new Box(0, 0, 300, 40),
             children: Rendered("nav > a", "a", box: new Box(0, 0, 50, 40)));
         var invisibleChildren = Rendered("nav", "nav", box: new Box(0, 0, 300, 40), children:
@@ -364,7 +379,6 @@ public class DiffEngineTests
             Rendered("nav > a:nth-of-type(1)", "a", box: new Box(0, 0, 0, 0)),
             Rendered("nav > a:nth-of-type(2)", "a", box: new Box(90, 0, 0, 0)),
         ]);
-
         Assert.DoesNotContain(Engine.Diff(new NodePair(design, oneChild, "auto-name")).Diffs, d => d.Prop == "itemSpacing");
         Assert.DoesNotContain(Engine.Diff(new NodePair(design, invisibleChildren, "auto-name")).Diffs, d => d.Prop == "itemSpacing");
     }

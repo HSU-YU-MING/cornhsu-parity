@@ -207,6 +207,9 @@ public class CaptureScriptTests(CaptureScriptTests.CapturedPage page) : IClassFi
     [Fact]
     public void Closed_shadow_roots_are_skipped_but_the_host_is_still_measured()
     {
+        // 這條守的是平台行為,不是 Parity 的程式碼路徑:closed shadow root 在頁面腳本裡本來就是 null,
+        // CaptureScript 沒有任何寫法能走進去。留著當 README「closed shadow root 拿不到,跳過」那條限制的文件——
+        // 哪天 Chromium 改了行為,這裡會先紅
         if (!Captured(out var all)) return;
 
         ById(all, "closed");

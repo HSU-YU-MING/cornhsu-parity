@@ -126,6 +126,10 @@ public class ServerPushIntegrationTests : IAsyncLifetime
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         };
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _ciToken);
+        // Expect: 100-continue:Kestrel 依 Content-Length 先回 413,本文根本不會送出。
+        // 少了它,客戶端還在上傳 20MB 時 Kestrel 就回 413 並關連線(RST),HttpClient 時而讀到 413、
+        // 時而拋 HttpRequestException(整套跑、伺服器回得快時最常撞到)。改用 ResponseHeadersRead 也救不了
+        req.Headers.ExpectContinue = true;
 
         using var resp = await http.SendAsync(req);
 

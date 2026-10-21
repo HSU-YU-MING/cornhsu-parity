@@ -91,7 +91,7 @@ public class RgbaParseTests
     [InlineData("color(display-p3 1 1 1)", 255, 255, 255, 1.0)]
     [InlineData("color(display-p3 1 0 0)", 255, 0, 0, 1.0)]           // 超出 sRGB → clamp 到紅
     [InlineData("color(display-p3 0 1 0 / 50%)", 0, 255, 0, 0.5)]
-    [InlineData("color(display-p3 100% 100% 100%)", 255, 255, 255, 1.0)] // 分量也可以寫百分比
+    [InlineData("color(display-p3 100% 100% 100%)", 255, 255, 255, 1.0)] // 分量也可以寫百分比(語法接受)
     [InlineData("color(display-p3 0% 0% 0% / 0.25)", 0, 0, 0, 0.25)]
     public void Parses_wide_gamut_exact(string css, int r, int g, int b, double a)
     {
@@ -100,6 +100,19 @@ public class RgbaParseTests
         Assert.Equal((byte)g, c.G);
         Assert.Equal((byte)b, c.B);
         Assert.Equal(a, c.A, 3);
+    }
+
+    // 0% / 100% 落在會被 clamp 的端點,換算比例寫錯(例如 50% 當成 50)也照樣綠——
+    // 換算要用端點以外的值,才看得出「50% = 0.5」
+    [Theory]
+    [InlineData("color(display-p3 50% 25% 75%)", "color(display-p3 0.5 0.25 0.75)", "#893BC6")]
+    [InlineData("color(display-p3 50% 0.25 75% / 50%)", "color(display-p3 0.5 0.25 0.75 / 0.5)", "#893BC680")] // 混寫
+    public void Display_p3_percentages_scale_like_fractions(string percent, string fraction, string hex)
+    {
+        Assert.True(Rgba.TryParseCss(percent, out var fromPercent));
+        Assert.True(Rgba.TryParseCss(fraction, out var fromFraction));
+        Assert.Equal(fromFraction, fromPercent);
+        Assert.Equal(hex, fromPercent.ToHex()); // CSS Color 4:線性化 → P3→sRGB 矩陣 → 編碼
     }
 
     [Theory]

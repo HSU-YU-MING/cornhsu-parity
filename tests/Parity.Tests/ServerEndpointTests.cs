@@ -343,7 +343,7 @@ public class ServerEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Login_never_reveals_which_half_was_wrong_and_locks_out_after_five_failures()
+    public async Task Login_answers_unknown_email_and_wrong_password_alike_and_locks_out_after_five_failures()
     {
         await OwnerAsync(); // 接受邀請 = 建立帳號(密碼 "correct horse battery")
         async Task<(HttpStatusCode Status, JsonElement Body)> LoginAsync(HttpClient c, string email, string password)
@@ -368,7 +368,10 @@ public class ServerEndpointTests : IAsyncLifetime
         Assert.Equal(("demo", "owner"), (membership.GetProperty("project").GetString(), membership.GetProperty("role").GetString()));
         Assert.Equal(HttpStatusCode.OK, (await browser.GetAsync("/api/auth/me")).StatusCode);
 
-        // 3) 連錯 5 次 → 鎖定:之後連正確密碼也進不去,訊息改說「稍後再試」
+        // 3) 連錯 5 次 → 鎖定:之後連正確密碼也進不去,訊息改說「稍後再試」。
+        //    注意這則訊息只有「存在的帳號」才會出現(不存在的 email 不走鎖定,永遠回 incorrect),
+        //    等於另一條帳號探測管道——這裡釘的是現行行為,不是「完全不洩漏帳號」的保證。
+        //    訊息要不要統一由產品決定(ROADMAP 已知盲點有留帳),決定後再改這段斷言
         for (var i = 0; i < 5; i++)
             await LoginAsync(Client(), "owner@t.local", $"guess number {i}");
         var locked = await LoginAsync(Client(), "owner@t.local", "correct horse battery");
@@ -417,11 +420,26 @@ public class ServerEndpointTests : IAsyncLifetime
         }
 
         Assert.Equal(HttpStatusCode.Created, await PushWithAuthorizationAsync($"bearer {_ciToken}"));
-        Assert.Equal(HttpStatusCode.Created, await PushWithAuthorizationAsync($"Bearer   {_ciToken}  "));
         // "Digest " 與 "Bearer " 一樣長:沒驗 scheme 的話,切掉前 7 字剛好就是合法 token
         Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync($"Digest {_ciToken}"));
         Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync(_ciToken)); // 少了 scheme
+        // 截短的 token 行為上被拒(查無此 token)。長度護欄只是查庫前的短路,行為與查無等價,這條不守它
         Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync($"Bearer {_ciToken[..10]}"));
+
+        // scheme 後多個空白、結尾空白也要認得(伺服器端 Trim)。這條不能走 HttpClient:它把 Authorization
+        // 解析成 AuthenticationHeaderValue 再送,多餘空白在到達伺服器之前就被正規化掉了——
+        // 所以直接對 TestServer 送原始 header
+        var raw = await _factory.Server.SendAsync(c =>
+        {
+            var body = Encoding.UTF8.GetBytes(DemoReport());
+            c.Request.Method = "POST";
+            c.Request.Path = "/api/runs";
+            c.Request.Headers.Authorization = $"Bearer   {_ciToken}  ";
+            c.Request.ContentType = "application/json";
+            c.Request.ContentLength = body.Length;
+            c.Request.Body = new MemoryStream(body);
+        });
+        Assert.Equal((int)HttpStatusCode.Created, raw.Response.StatusCode);
     }
 
     [Fact]
