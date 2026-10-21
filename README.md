@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **227**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **499**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 21 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -131,7 +131,7 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
   "compare": { "position": "relative" },     // relative = compare relative position (default); none = skip position
-  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "positionPx": 4 },
+  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],
@@ -141,8 +141,9 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
 ```
 
 > Besides gaps, the gate also validates **match integrity**: zero matches (or zero design nodes)
-> is always a GATE FAIL — with nothing matched there are no gaps to catch, so a silent PASS
-> would be a false pass, usually caused by a wrong url or frame. `--baseline` mode is not exempt.
+> always fails, with exit code 3 (`MATCH INTEGRITY TOO LOW`) rather than 1 — with nothing
+> matched there are no gaps to catch, so a silent PASS would be a false pass, usually caused by
+> a wrong url or frame. `--baseline` mode is not exempt.
 
 ## Targets: a web page or an Electron desktop app
 
@@ -309,8 +310,9 @@ There are three shells, and **the engine does not know that any of them exist**:
 
 ### The iron rule: the cloud never runs a browser
 
-`Parity.Server`'s only write endpoint is `POST /api/runs`, and what it accepts is **a report
-that has already finished running**. There is no "give me a URL and I will go scan it"
+`Parity.Server`'s only endpoint that takes in scan results is `POST /api/runs` (its other
+write endpoints only manage sign-in, invites, members, tokens and run deletion), and what it
+accepts is **a report that has already finished running**. There is no "give me a URL and I will go scan it"
 endpoint, and there will not be one: **scanning always happens on your own machine or in your
 CI**, where the page, the credentials and the localhost port already are.
 

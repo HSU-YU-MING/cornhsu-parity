@@ -61,7 +61,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **227 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **499 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 21 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -119,7 +119,7 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
   "compare": { "position": "relative" },     // relative = 比相對位置(預設);none = 不比位置
-  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "positionPx": 4 },
+  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],
@@ -128,7 +128,7 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
 }
 ```
 
-> gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律 GATE FAIL——
+> gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律失敗,exit code 是 3(`MATCH INTEGRITY TOO LOW`)而不是 1——
 > 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。`--baseline` 模式也不豁免。
 
 ## 目標:網頁或 Electron 桌面 app
@@ -272,7 +272,7 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 
 ### 鐵則:雲端不跑瀏覽器
 
-`Parity.Server` 唯一的寫入口是 `POST /api/runs`,它收的是**已經跑完的報告**。
+`Parity.Server` 唯一收掃描結果的入口是 `POST /api/runs`(其他寫入端點只管登入、邀請、成員、token 與刪除 run),它收的是**已經跑完的報告**。
 不存在任何「給我一個 URL、我去掃」的端點,將來也不會有:**掃描永遠發生在你自己的機器
 或你的 CI 上**——頁面、登入憑證、localhost 的埠本來就在那裡。
 
