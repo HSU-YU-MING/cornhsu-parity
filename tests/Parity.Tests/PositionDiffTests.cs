@@ -97,6 +97,53 @@ public class PositionDiffTests
     }
 
     [Fact]
+    public async Task Nearest_left_sibling_is_the_horizontal_reference()
+    {
+        // 一排三個:最左邊的 A 偏了 20px,B、C 的間距都沒變。
+        // C 的參照必須是緊鄰的 B——拿 A(較遠的那個)當參照,C 會被 A 的錯連坐
+        var design = Design("1:1", "home", box: new Box(0, 0, 800, 600), children:
+        [
+            Design("1:2", "a", box: new Box(0, 40, 50, 30)),
+            Design("1:3", "b", box: new Box(100, 40, 50, 30)),
+            Design("1:4", "c", box: new Box(200, 40, 50, 30)),
+        ]);
+        var rendered = Rendered("body", box: new Box(0, 0, 800, 600), children:
+        [
+            Rendered(".a", box: new Box(20, 40, 50, 30), explicitMatch: "a"),   // 偏 20
+            Rendered(".b", box: new Box(100, 40, 50, 30), explicitMatch: "b"),
+            Rendered(".c", box: new Box(200, 40, 50, 30), explicitMatch: "c"),
+        ]);
+
+        var report = await Run(design, rendered);
+
+        Assert.DoesNotContain(report.Nodes, n => n.DesignLayer == "c" && n.Diffs.Count > 0);
+        Assert.Contains(report.Nodes, n => n.DesignLayer == "a" && n.Diffs.Any(d => d.Prop == "offsetX" && d.Delta == 20));
+    }
+
+    [Fact]
+    public async Task Nearest_sibling_above_is_the_vertical_reference()
+    {
+        // 垂直版:一欄三塊,最上面的 A 偏了 12px;C 只該拿緊鄰上方的 B 當參照
+        var design = Design("1:1", "home", box: new Box(0, 0, 800, 600), children:
+        [
+            Design("1:2", "a", box: new Box(40, 0, 100, 40)),
+            Design("1:3", "b", box: new Box(40, 100, 100, 40)),
+            Design("1:4", "c", box: new Box(40, 200, 100, 40)),
+        ]);
+        var rendered = Rendered("body", box: new Box(0, 0, 800, 600), children:
+        [
+            Rendered(".a", box: new Box(40, 12, 100, 40), explicitMatch: "a"),  // 偏 12
+            Rendered(".b", box: new Box(40, 100, 100, 40), explicitMatch: "b"),
+            Rendered(".c", box: new Box(40, 200, 100, 40), explicitMatch: "c"),
+        ]);
+
+        var report = await Run(design, rendered);
+
+        Assert.DoesNotContain(report.Nodes, n => n.DesignLayer == "c" && n.Diffs.Count > 0);
+        Assert.Contains(report.Nodes, n => n.DesignLayer == "a" && n.Diffs.Any(d => d.Prop == "offsetY" && d.Delta == 12));
+    }
+
+    [Fact]
     public async Task Text_sibling_is_not_a_position_reference()
     {
         // 標題是 TEXT:DOM 的 block 寬(720)≠ Figma 文字框寬(300)。

@@ -292,4 +292,79 @@ public class MatcherTests
         Assert.Empty(result.Pairs);
         Assert.Equal("no-anchor", Assert.Single(result.Unmatched).Reason);
     }
+
+    [Fact]
+    public void Layer_name_matches_an_aria_label()
+    {
+        // 圖示按鈕常常沒有文字、沒有語意 class,只有 aria-label——第 3 關要認得它
+        var design = Design("1", "frame", children: Design("2", "Close dialog", box: new Box(0, 0, 24, 24)));
+        var rendered = Rendered("body", children:
+            Rendered("body > button:nth-of-type(1)", "button", ariaLabel: "close dialog", box: new Box(0, 0, 24, 24)));
+
+        var pair = Assert.Single(Matcher.Match(design, rendered).Pairs);
+
+        Assert.Equal("auto-name", pair.MatchedBy);
+        Assert.Equal("body > button:nth-of-type(1)", pair.Rendered.Selector);
+    }
+
+    [Fact]
+    public void Explicit_anchor_names_are_case_insensitive()
+    {
+        // map 檔 / data-parity 是人手打的:大小寫不同仍是同一個圖層
+        var design = Design("1", "frame", children: Design("2", "Hero Banner"));
+        var rendered = Rendered("body", children: Rendered("#top", explicitMatch: "hero banner"));
+
+        Assert.Equal("explicit", Assert.Single(Matcher.Match(design, rendered).Pairs).MatchedBy);
+    }
+
+    [Fact]
+    public void Container_whose_children_only_meet_at_the_page_root_stays_unmatched()
+    {
+        // 子節點散在 body 底下(沒有包住它們的元素):LCA 是頁面根,拿它當容器會產生
+        // 「整頁 vs 一張卡片」的荒謬尺寸落差——寧可誠實留在未配對
+        var design = Design("1", "frame", children:
+            Design("2", "product-card", box: new Box(0, 0, 200, 120), children:
+            [
+                Design("3", "card-title", DesignNodeType.Text, characters: "Widget"),
+                Design("4", "card-price", DesignNodeType.Text, characters: "$9.99"),
+            ]));
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+        [
+            Rendered("body > h3", "h3", text: "Widget"),
+            Rendered("body > span", "span", text: "$9.99"),
+        ]);
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Equal(["card-title", "card-price"], result.Pairs.Select(p => p.Design.Name));
+        Assert.Equal("product-card", Assert.Single(result.Unmatched).DesignLayer);
+    }
+
+    [Fact]
+    public void Container_inference_never_reuses_an_element_already_matched()
+    {
+        // 「panel」的子節點都在 div.card 裡,但 div.card 已經被圖層名「card」配走了——
+        // 一個元素只能代表一個設計節點,否則兩個設計節點的落差會重複算在同一個元素上
+        var design = Design("1", "frame", children:
+        [
+            Design("2", "panel", box: new Box(0, 0, 200, 120), children:
+            [
+                Design("3", "card-title", DesignNodeType.Text, characters: "Widget"),
+                Design("4", "card-price", DesignNodeType.Text, characters: "$9.99"),
+            ]),
+            Design("5", "card", box: new Box(0, 0, 200, 120)),
+        ]);
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+            Rendered("body > div.card", classes: "card", box: new Box(0, 0, 200, 120), children:
+            [
+                Rendered("body > div.card > h3", "h3", text: "Widget"),
+                Rendered("body > div.card > span", "span", text: "$9.99"),
+            ]));
+
+        var result = Matcher.Match(design, rendered);
+
+        var card = Assert.Single(result.Pairs, p => p.Rendered.Selector == "body > div.card");
+        Assert.Equal(("card", "auto-name"), (card.Design.Name, card.MatchedBy));
+        Assert.Equal("panel", Assert.Single(result.Unmatched).DesignLayer);
+    }
 }

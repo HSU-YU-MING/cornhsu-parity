@@ -201,6 +201,37 @@ public class ReportingTests
         Assert.Contains("**Fidelity 50/100** (baseline 75 ↓ -25)", md);
     }
 
+    [Theory]
+    [InlineData(25, "(baseline 25 ↑ +25)")]
+    [InlineData(50, "(baseline 50 → ±0)")]
+    public void Markdown_score_trend_also_reads_up_and_flat(int baselineScore, string trend)
+    {
+        var report = Report(2, [Node("bad", Diff("fontSize", "32", "30")), Node("ok")]); // 50 分
+        Assert.Contains($"**Fidelity 50/100** {trend}", MarkdownReport.Render([report], gateFail: true, baselineScore: baselineScore));
+    }
+
+    [Fact]
+    public void Markdown_lists_new_worsened_and_fixed_items_under_their_own_headings()
+    {
+        // reviewer 在 PR 留言裡最先看的是「這次變了什麼」:三類各自一段,空的那類不出標題
+        var report = Report(1, [Node("cta", Diff("color", "#fff", "#000"))]);
+        DiffRecord Rec(string layer, string prop) => new("/", layer, "sel", prop, Severity.Serious, "12", "8");
+
+        var all = MarkdownReport.Render([report], gateFail: true, baseline: new BaselineComparison(
+            Regressions: [Rec("cta", "paddingTop")], Worsened: [Rec("hero", "height")], Fixed: [Rec("nav", "itemSpacing")], Unchanged: 2));
+
+        Assert.Contains("vs baseline: 🔴 new **1**, 🟠 worsened **1**, 🟢 fixed **1**, ⚪ unchanged 2", all);
+        Assert.Contains("**🔴 New diffs**\n- `cta` · paddingTop · `12` → `8`", all.ReplaceLineEndings("\n"));
+        Assert.Contains("**🟠 Worsened**\n- `hero` · height · `12` → `8`", all.ReplaceLineEndings("\n"));
+        Assert.Contains("**🟢 Fixed**\n- `nav` · itemSpacing · `12` → `8`", all.ReplaceLineEndings("\n"));
+
+        var onlyFixed = MarkdownReport.Render([report], gateFail: false, baseline: new BaselineComparison(
+            Regressions: [], Worsened: [], Fixed: [Rec("nav", "itemSpacing")], Unchanged: 0));
+        Assert.Contains("**🟢 Fixed**", onlyFixed);
+        Assert.DoesNotContain("**🔴 New diffs**", onlyFixed);
+        Assert.DoesNotContain("**🟠 Worsened**", onlyFixed);
+    }
+
     [Fact]
     public void Markdown_pipe_in_value_is_escaped()
     {

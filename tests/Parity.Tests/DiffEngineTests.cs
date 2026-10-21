@@ -306,4 +306,66 @@ public class DiffEngineTests
         Assert.Equal(-20, DiffEngine.MeanChildGap(row, layoutMode: "VERTICAL")); // layoutMode 給了就照它,不猜
         Assert.Null(DiffEngine.MeanChildGap(Rendered("div", children: Rendered("p", "p", box: new Box(0, 0, 10, 10))), null));
     }
+
+    [Theory]
+    [InlineData(400.0, 400.5, null)]              // 字重是 100 級距:差不到 1 不算落差
+    [InlineData(400.0, 500.0, Severity.Medium)]   // 差一級
+    [InlineData(400.0, 600.0, Severity.Serious)]  // 差兩級(邊界含)
+    [InlineData(700.0, 400.0, Severity.Serious)]  // 方向無關
+    public void Font_weight_severity_steps_by_hundreds(double designWeight, double pageWeight, Severity? expected)
+    {
+        // 字重不走「超出容差倍率」那套:級距本身就是單位,差一級 medium、兩級以上 serious
+        var pair = new NodePair(
+            Design("d1", "title", DesignNodeType.Text, text: new Typography(FontWeight: designWeight)),
+            Rendered("h1", "h1", text: "x", typography: new Typography(FontWeight: pageWeight)),
+            "auto-text");
+
+        var diffs = Engine.Diff(pair).Diffs;
+
+        if (expected is null)
+        {
+            Assert.Empty(diffs);
+            return;
+        }
+        var weight = Assert.Single(diffs);
+        Assert.Equal(new PropDiff("fontWeight",
+            designWeight.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            pageWeight.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Unit: null, Delta: Math.Abs(designWeight - pageWeight), Tolerance: 0, expected.Value), weight);
+        Assert.False(weight.Soft); // 字重是硬落差(會擋 gate),只有字型家族是軟的
+    }
+
+    [Fact]
+    public void Typography_and_text_color_are_compared_only_where_the_page_reports_them()
+    {
+        // 頁面沒回報的屬性(擷取不到 / 不適用)不是「做錯」,不能生出落差,也不能當成 missing
+        var design = Design("d1", "title", DesignNodeType.Text,
+            fill: new Rgba(0x11, 0x18, 0x27),
+            text: new Typography("Inter", FontSize: 32, FontWeight: 700, LineHeight: 40, LetterSpacing: 1));
+
+        var nothingReported = Rendered("h1", "h1", text: "x");
+        Assert.Empty(Engine.Diff(new NodePair(design, nothingReported, "auto-text")).Diffs);
+
+        var partlyReported = Rendered("h1", "h1", text: "x", color: new Rgba(0xFF, 0, 0),
+            typography: new Typography(FontSize: 20));
+        Assert.Equal(["fontSize", "color"], Engine.Diff(new NodePair(design, partlyReported, "auto-text")).Diffs.Select(d => d.Prop));
+    }
+
+    [Fact]
+    public void Item_spacing_needs_two_visible_children_on_both_sides()
+    {
+        // 間距是「相鄰子元素之間」的量:任一邊湊不出一對可量的子元素,就沒有東西可比
+        var design = Design("d1", "nav", box: new Box(0, 0, 300, 40), itemSpacing: 16, layoutMode: "HORIZONTAL",
+            children: [Design("d2", "a", box: new Box(0, 0, 50, 40)), Design("d3", "b", box: new Box(66, 0, 50, 40))]);
+        var oneChild = Rendered("nav", "nav", box: new Box(0, 0, 300, 40),
+            children: Rendered("nav > a", "a", box: new Box(0, 0, 50, 40)));
+        var invisibleChildren = Rendered("nav", "nav", box: new Box(0, 0, 300, 40), children:
+        [
+            Rendered("nav > a:nth-of-type(1)", "a", box: new Box(0, 0, 0, 0)),
+            Rendered("nav > a:nth-of-type(2)", "a", box: new Box(90, 0, 0, 0)),
+        ]);
+
+        Assert.DoesNotContain(Engine.Diff(new NodePair(design, oneChild, "auto-name")).Diffs, d => d.Prop == "itemSpacing");
+        Assert.DoesNotContain(Engine.Diff(new NodePair(design, invisibleChildren, "auto-name")).Diffs, d => d.Prop == "itemSpacing");
+    }
 }

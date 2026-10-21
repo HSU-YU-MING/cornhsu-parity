@@ -91,6 +91,8 @@ public class RgbaParseTests
     [InlineData("color(display-p3 1 1 1)", 255, 255, 255, 1.0)]
     [InlineData("color(display-p3 1 0 0)", 255, 0, 0, 1.0)]           // 超出 sRGB → clamp 到紅
     [InlineData("color(display-p3 0 1 0 / 50%)", 0, 255, 0, 0.5)]
+    [InlineData("color(display-p3 100% 100% 100%)", 255, 255, 255, 1.0)] // 分量也可以寫百分比
+    [InlineData("color(display-p3 0% 0% 0% / 0.25)", 0, 0, 0, 0.25)]
     public void Parses_wide_gamut_exact(string css, int r, int g, int b, double a)
     {
         Assert.True(Rgba.TryParseCss(css, out var c));

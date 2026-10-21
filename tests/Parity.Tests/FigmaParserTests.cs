@@ -84,6 +84,40 @@ public class FigmaParserTests
     }
 
     [Fact]
+    public void First_visible_solid_fill_wins_and_both_opacities_multiply_into_alpha()
+    {
+        // Figma 的 fills 是一疊圖層:漸層(比不了)與隱藏的 fill 要跳過,取第一個看得見的 SOLID;
+        // fill 自己的 opacity × 節點 opacity × color.a 才是畫面上的不透明度
+        var node = FigmaNodeParser.Parse(JsonNode.Parse("""
+            { "id": "1:1", "name": "chip", "type": "RECTANGLE", "opacity": 0.5,
+              "absoluteBoundingBox": { "x": 0, "y": 0, "width": 100, "height": 50 },
+              "fills": [
+                { "type": "GRADIENT_LINEAR", "color": { "r": 1, "g": 0, "b": 0, "a": 1 } },
+                { "type": "SOLID", "visible": false, "color": { "r": 0, "g": 1, "b": 0, "a": 1 } },
+                { "type": "SOLID", "opacity": 0.5, "color": { "r": 0, "g": 0, "b": 1, "a": 1 } },
+                { "type": "SOLID", "color": { "r": 1, "g": 1, "b": 0, "a": 1 } }
+              ] }
+            """)!);
+
+        var fill = node.Fill!.Value;
+        Assert.Equal((0, 0, 255), ((int)fill.R, (int)fill.G, (int)fill.B));
+        Assert.Equal(0.25, fill.A, precision: 6);
+    }
+
+    [Fact]
+    public void Node_without_a_usable_solid_fill_has_no_fill_to_compare()
+    {
+        // 只有圖片/漸層 fill 的節點:沒有單一顏色可比 → null(DiffEngine 就不比背景),不是黑色
+        var node = FigmaNodeParser.Parse(JsonNode.Parse("""
+            { "id": "1:1", "name": "hero", "type": "FRAME",
+              "absoluteBoundingBox": { "x": 0, "y": 0, "width": 100, "height": 50 },
+              "fills": [{ "type": "IMAGE", "imageRef": "abc" }, { "type": "GRADIENT_RADIAL" }] }
+            """)!);
+
+        Assert.Null(node.Fill);
+    }
+
+    [Fact]
     public void Parses_text_typography_and_layout_sizing()
     {
         var title = Parse().Children[0];

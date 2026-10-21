@@ -1,4 +1,5 @@
 using Parity.Engine.DesignSources.Snapshot;
+using Parity.Engine.ImplementationSources;
 using Parity.Engine.Model;
 using static Parity.Tests.TestData;
 
@@ -64,6 +65,54 @@ public class SnapshotStabilizerTests
 
         var u = Assert.Single(SnapshotStabilizer.FindUnstable([a, b]));
         Assert.Equal("body > div#hero", u.Selector);
+    }
+
+    [Theory]
+    [InlineData("color")]
+    [InlineData("background")]
+    [InlineData("typography")]
+    [InlineData("padding")]
+    public void Style_only_changes_are_flagged_with_their_own_reason(string changed)
+    {
+        // 輪播的換色、hover 動畫殘留、字型換置:框沒動但量出來的值會變,一樣是「會動」。
+        // 理由印在 --stabilize 的輸出上,讓人知道該 ignore 還是該等字型載入
+        RenderedNode Node(bool second) => Rendered("body > div:nth-of-type(1)",
+            color: changed == "color" && second ? new Rgba(255, 0, 0) : new Rgba(0, 0, 0),
+            background: changed == "background" && second ? new Rgba(0, 0, 255) : new Rgba(255, 255, 255),
+            typography: new Typography(FontSize: changed == "typography" && second ? 18 : 16),
+            padding: changed == "padding" && second ? new Insets(8, 8, 8, 8) : new Insets(4, 4, 4, 4));
+
+        var u = Assert.Single(SnapshotStabilizer.FindUnstable(
+            [Rendered("body", children: Node(second: false)), Rendered("body", children: Node(second: true))]));
+
+        Assert.Equal("body > div:nth-of-type(1)", u.Selector);
+        Assert.Equal(changed == "background" ? "color" : changed, u.Reason);
+    }
+
+    [Fact]
+    public void A_sibling_whose_selector_merely_shares_a_prefix_is_not_collapsed()
+    {
+        // 收攏只跨「真的子孫」(selector 接著 " > " 或 " >>> "):#hero2 字串上以 #hero 開頭,
+        // 但它是兄弟——吃掉它,建議的 ignore 就漏了一塊會動的區域
+        var a = Rendered("body", children:
+        [
+            Rendered("body > div#hero", box: new Box(0, 0, 800, 100)),
+            Rendered("body > div#hero2", box: new Box(0, 100, 800, 100)),
+            Rendered("body > mdn-ad:nth-of-type(1)", box: new Box(0, 200, 300, 250), children:
+                Rendered("body > mdn-ad:nth-of-type(1) >>> img:nth-of-type(1)", "img", box: new Box(0, 200, 300, 250))),
+        ]);
+        var b = Rendered("body", children:
+        [
+            Rendered("body > div#hero", box: new Box(0, 10, 800, 100)),
+            Rendered("body > div#hero2", box: new Box(0, 110, 800, 100)),
+            Rendered("body > mdn-ad:nth-of-type(1)", box: new Box(0, 210, 300, 250), children:
+                Rendered("body > mdn-ad:nth-of-type(1) >>> img:nth-of-type(1)", "img", box: new Box(0, 210, 300, 250))),
+        ]);
+
+        var selectors = SnapshotStabilizer.FindUnstable([a, b]).Select(u => u.Selector).Order(StringComparer.Ordinal);
+
+        // shadow 內部的 img 收進宿主;兩個 hero 各自保留
+        Assert.Equal(["body > div#hero", "body > div#hero2", "body > mdn-ad:nth-of-type(1)"], selectors);
     }
 
     [Theory]

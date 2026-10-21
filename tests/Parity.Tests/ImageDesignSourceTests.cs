@@ -38,6 +38,38 @@ public class ImageDesignSourceTests
     }
 
     [Fact]
+    public void Transparent_pixels_do_not_vote_and_an_all_transparent_region_has_no_color()
+    {
+        // 匯出的 PNG 常有透明底:透明像素即使佔多數也不能贏(否則取樣出「透明黑」);
+        // 整塊都透明 → null(不比),而不是瞎猜一個顏色
+        using var img = new Image<Rgba32>(100, 100, new Rgba32(0, 0, 0, 0));
+        for (var y = 0; y < 100; y++)
+            for (var x = 0; x < 25; x++)
+                img[x, y] = new Rgba32(0, 128, 0);
+
+        Assert.Equal("#008000", ImageDesignSource.SampleDominant(img, new Box(0, 0, 100, 100))!.Value.ToHex());
+        Assert.Null(ImageDesignSource.SampleDominant(img, new Box(50, 0, 50, 100)));
+    }
+
+    [Fact]
+    public async Task Missing_design_image_names_the_path()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var annPath = Path.Combine(dir, "design.json");
+            await File.WriteAllTextAsync(annPath, """{ "id": "1:1", "name": "frame", "type": "Frame", "box": { "x": 0, "y": 0, "width": 10, "height": 10 } }""");
+            var missing = Path.Combine(dir, "nope.png");
+
+            var ex = await Assert.ThrowsAsync<FileNotFoundException>(
+                () => new ImageDesignSource(missing).GetFrameAsync(new DesignRef(annPath, "")));
+            Assert.Contains($"design image not found: {missing}", ex.Message);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task Fills_missing_colors_but_keeps_explicit_and_text()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
