@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "root": {
+    "id": "/",
+    "name": "/",
+    "type": "frame",
+    "box": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 800
+    },
+    "fill": {
+      "r": 255,
+      "g": 255,
+      "b": 255,
+      "a": 0.5,
+      "isTransparent": false
+    },
+    "text": null,
+    "padding": {
+      "top": 8,
+      "right": 16,
+      "bottom": 8,
+      "left": 16
+    },
+    "itemSpacing": 12,
+    "cornerRadius": 4,
+    "children": [
+      {
+        "id": "#title",
+        "name": "title",
+        "type": "text",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "width": 200,
+          "height": 32
+        },
+        "fill": {
+          "r": 17,
+          "g": 24,
+          "b": 39,
+          "a": 1,
+          "isTransparent": false
+        },
+        "text": {
+          "fontFamily": "Inter",
+          "fontSize": 24,
+          "fontWeight": 700,
+          "lineHeight": 32,
+          "letterSpacing": 0
+        },
+        "padding": null,
+        "itemSpacing": null,
+        "cornerRadius": null,
+        "children": [],
+        "characters": "Hello",
+        "layoutMode": null,
+        "layoutSizingHorizontal": null,
+        "layoutSizingVertical": null
+      }
+    ],
+    "characters": null,
+    "layoutMode": "VERTICAL",
+    "layoutSizingHorizontal": "FIXED",
+    "layoutSizingVertical": "HUG"
+  },
+  "stableIdAnchors": [
+    "app",
+    "nav"
+  ]
+}

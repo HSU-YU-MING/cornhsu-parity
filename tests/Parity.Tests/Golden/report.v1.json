@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "reports": [
+    {
+      "route": "/pricing",
+      "url": "http://localhost:8080/pricing",
+      "designReference": "abcd1234#10:1",
+      "nodes": [
+        {
+          "designLayer": "CTA Button",
+          "designId": "10:2",
+          "selector": "#cta",
+          "matchedBy": "auto-name",
+          "severity": "serious",
+          "diffs": [
+            {
+              "prop": "paddingTop",
+              "expected": "12",
+              "actual": "8",
+              "unit": "px",
+              "delta": 4,
+              "tolerance": 2,
+              "severity": "serious",
+              "status": "mismatch",
+              "soft": false
+            },
+            {
+              "prop": "fontFamily",
+              "expected": "Inter",
+              "actual": "Arial",
+              "unit": null,
+              "delta": null,
+              "tolerance": 0,
+              "severity": "minor",
+              "status": "mismatch",
+              "soft": true
+            },
+            {
+              "prop": "background",
+              "expected": "#2563EB",
+              "actual": "(transparent)",
+              "unit": null,
+              "delta": null,
+              "tolerance": 2,
+              "severity": "medium",
+              "status": "missing",
+              "soft": false
+            }
+          ],
+          "designBox": {
+            "x": 16,
+            "y": 24,
+            "width": 160,
+            "height": 48
+          },
+          "renderedBox": {
+            "x": 16,
+            "y": 26,
+            "width": 158,
+            "height": 48
+          }
+        },
+        {
+          "designLayer": "Title",
+          "designId": "10:3",
+          "selector": "body \u003E h1:nth-of-type(1)",
+          "matchedBy": "selector",
+          "severity": "none",
+          "diffs": [],
+          "designBox": {
+            "x": 0,
+            "y": 0,
+            "width": 320,
+            "height": 40.5
+          },
+          "renderedBox": {
+            "x": 0,
+            "y": 0,
+            "width": 320,
+            "height": 40
+          }
+        }
+      ],
+      "unmatched": [
+        {
+          "designLayer": "Badge",
+          "designId": "10:9",
+          "reason": "no-anchor",
+          "designBox": {
+            "x": 0,
+            "y": 0,
+            "width": 40,
+            "height": 20
+          }
+        }
+      ],
+      "summary": {
+        "designNodes": 3,
+        "matched": 2,
+        "unmatched": 1,
+        "nodesWithDiffs": 1,
+        "critical": 0,
+        "serious": 1,
+        "medium": 1,
+        "minor": 1,
+        "maxSeverity": "serious"
+      }
+    }
+  ]
+}
