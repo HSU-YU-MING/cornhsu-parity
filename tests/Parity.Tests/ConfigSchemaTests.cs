@@ -150,6 +150,17 @@ public class ConfigSchemaTests
     }
 
     [Fact]
+    public void A_config_that_is_just_null_is_a_parse_error_naming_the_file()
+    {
+        // `null` 是合法 JSON,反序列化不丟例外而是回 null——要接住,不能變成後面的 NullReferenceException
+        using var dir = new TempDir();
+        var path = dir.Write("parity.config.json", "null");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ParityConfig.Load(path));
+        Assert.Equal($"could not parse config file: {path}", ex.Message);
+    }
+
+    [Fact]
     public void Loading_a_missing_file_points_at_init()
     {
         using var dir = new TempDir();

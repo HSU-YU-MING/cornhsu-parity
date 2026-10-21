@@ -134,6 +134,19 @@ public class ReportCommandTests
     }
 
     [Fact]
+    public void A_report_that_is_just_null_is_a_parse_error_not_a_crash()
+    {
+        // `null` 是合法 JSON:反序列化回 null 而不丟例外,要接住並講出是哪個檔
+        using var dir = new TempDir();
+        var config = dir.Write("parity.config.json", """{ "targets": [] }""");
+        var input = dir.Write("in.json", "null");
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => ReportCommand.Run(["--config", config, "--in", input]));
+        Assert.Equal($"could not parse report: {input}", ex.Message);
+    }
+
+    [Fact]
     public void Envelope_without_reports_field_says_which_field_is_missing()
     {
         using var dir = new TempDir();

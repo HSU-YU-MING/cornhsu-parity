@@ -177,6 +177,24 @@ public class PushCommandTests
     }
 
     [Fact]
+    public async Task Job_summary_marks_a_failed_gate_with_a_cross()
+    {
+        // 紅燈的 PR:job summary 那一行就是 reviewer 點進儀表板的入口,圖示要跟 CI 的結果一致
+        using var dir = new TempDir();
+        var reportPath = WriteReport(dir, Report(Severity.Serious));
+        var summary = dir.Write("summary.md", "");
+        await using var server = await FakeServer.StartAsync(201,
+            """{ "id": "r9", "project": "demo", "score": 0, "gateFailed": true, "pages": 1, "url": "/runs/r9" }""");
+        using var env = CleanEnv().Set("PARITY_TOKEN", "tok-0123456789abcdefghij").Set("GITHUB_STEP_SUMMARY", summary);
+
+        var r = await Cli.RunAsync("push", "--server", server.Url, "--in", reportPath, "--gate-exit", "3");
+
+        Assert.Equal(0, r.ExitCode); // push 本身成功;紅燈是 check 那一步的事
+        Assert.Equal("fail", Assert.Single(server.Requests).Header("X-Parity-Gate"));
+        Assert.Equal($"**Parity** — [demo 0/100 ❌]({server.Url}/runs/r9)\n", File.ReadAllText(summary));
+    }
+
+    [Fact]
     public async Task Server_url_with_a_base_path_keeps_the_path()
     {
         using var dir = new TempDir();

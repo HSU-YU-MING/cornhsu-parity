@@ -239,6 +239,24 @@ public class CliEntryPointTests
     }
 
     [Fact]
+    public async Task Without_an_installed_browser_check_is_exit_2_and_points_at_install_browser()
+    {
+        // 新使用者第一次跑 check 最常撞到的錯。這句話也是整個測試套件「沒瀏覽器就略過」的判準
+        // (Cli.BrowserMissing 認的就是 install-browser)——訊息一改,真瀏覽器測試會從「略過」變「紅」
+        using var dir = new TempDir();
+        using var noBrowsers = new TempDir();
+        using var env = new EnvScope().Set("PLAYWRIGHT_BROWSERS_PATH", noBrowsers.Path);
+        var config = WriteConfig(dir, MinimalConfig);
+
+        var r = await Cli.RunAsync("check", "--config", config);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("Chromium is not installed yet. Run `parity install-browser` first.", r.Err);
+        Assert.True(Cli.BrowserMissing(r));
+        Assert.False(File.Exists(dir.File(".parity", "report.json")));
+    }
+
+    [Fact]
     public async Task Without_config_flag_or_file_above_cwd_check_explains_init()
     {
         using var dir = new TempDir();
@@ -265,6 +283,28 @@ public class CliEntryPointTests
         Assert.Equal(0, r.ExitCode);
         Assert.Contains("parity baseline save [--config <path>] [--target <route>]", r.Out);
         Assert.Contains("parity baseline list [--config <path>]", r.Out);
+    }
+
+    [Theory]
+    [InlineData("save", "--help")]
+    [InlineData("save", "-h")]
+    [InlineData("list", "--help")]
+    public async Task Baseline_subcommand_help_never_scans_or_writes_the_store(string sub, string flag)
+    {
+        // 與 `snapshot --help` 曾直接覆寫基準同一類事故:cwd 有一份能跑的設定檔,
+        // `baseline save --help` 若沒先看 --help,就會開掃描、存一筆基準。瀏覽器指到空目錄,
+        // 真的去掃的話會變成 exit 2 而不是 0
+        using var dir = new TempDir();
+        using var noBrowsers = new TempDir();
+        using var env = new EnvScope().Set("PLAYWRIGHT_BROWSERS_PATH", noBrowsers.Path);
+        WriteConfig(dir, MinimalConfig);
+        using var cwd = new CwdScope(dir.Path);
+
+        var r = await Cli.RunAsync("baseline", sub, flag);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("parity baseline save|list [--config <path>]", r.Out);
+        Assert.False(File.Exists(dir.File("parity.baseline.db")));
     }
 
     [Fact]
