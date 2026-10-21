@@ -63,8 +63,6 @@
   能在自家 dogfooding 樣本上量出來。方法與結果見 docs/野生實查-*.md。
 - **2026-10-21 補測試與 README 逐段核對留下的產品端落差**(那次只動測試與文件,刻意不改程式)。
   README 已改成照實描述現況;每修好一條,記得回頭拿掉 README 對應的限定句:
-  - **npm 啟動腳本缺兩個 arm64 平台**:`npm/cornhsu-parity/bin/parity.js` 的平台表沒有
-    `win32 arm64`/`linux arm64`,平台包有發佈、`npx` 卻印「沒有 <平台> 的預先建置版本」exit 1(1.1.0 就是如此)。
   - **npm 的 Node 下限**:主包 `engines.node` 仍是 `>=18`,但 Playwright 1.63 的 driver 要 Node 20+,
     而 npm 通路正是拿使用者自己的 Node 跑 driver。下一版發佈前要決定 semver 與「升級必做」寫法
     (見 `docs/公開介面盤點.md` §8.2、§10)。

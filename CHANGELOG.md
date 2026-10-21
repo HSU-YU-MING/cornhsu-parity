@@ -12,6 +12,9 @@
   會被 Enum 旗標語法讀成 7)都對不到任何落差,gate 永遠不因嚴重度失敗;`"serious, minor"`
   會被讀成 serious。這些值仍照樣載入(收緊成 exit 2 屬於待決定的 semver 問題),但現在會在 stderr
   印 `warning: gate.failOn value "…" never matches any diff …` 或 `… is read as "…" …`。
+- **修正:npm 啟動腳本認得 win32-arm64 與 linux-arm64**(patch)。這兩個平台包 1.1.0 就有發佈,
+  但啟動腳本的平台表只有 4 筆,`npx cornhsu-parity` 在這兩個平台印「沒有預先建置版本」並 exit 1。
+  新增測試要求啟動腳本的平台表與 `npm/prepare.mjs` 一一對應。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一的寫入口收「已完成的報告」,

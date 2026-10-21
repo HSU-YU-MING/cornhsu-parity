@@ -73,8 +73,7 @@ PR comment, updating the same comment rather than adding new ones.
 
 ## Install
 
-Two channels — pick whichever runtime you already have. **They are functionally identical** on the
-platforms both of them cover (see the note below for the two that npm does not run on yet).
+Two channels — pick whichever runtime you already have. **They are functionally identical.**
 
 ```sh
 # If you have Node (common in front-end projects): no .NET install needed
@@ -85,12 +84,9 @@ dotnet tool install -g Cornhsu.Parity
 ```
 
 > The npm build is the same self-contained native executable; you only download the one for
-> your platform (win32-x64 / linux-x64 / darwin-x64 / darwin-arm64).
+> your platform (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64).
 > Playwright normally bundles its own copy of Node; the npm build strips that out and uses the
 > Node you already have, which saves at least 88 MB per platform package.
-> win32-arm64 and linux-arm64 platform packages are published as well, but the `npx` launcher
-> does not pick them up yet: it exits 1 with an error (currently in Chinese) saying there is no
-> prebuilt build for that platform. On those two platforms, use the .NET tool for now.
 
 ## Quick start
 

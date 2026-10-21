@@ -17,10 +17,13 @@
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 
-// 平台 → 子套件名 / 執行檔名
+// 平台 → 子套件名 / 執行檔名。必須與 npm/prepare.mjs 的 TARGETS 一一對應
+// (RepoInvariantsTests 會比對;1.1.0 漏了兩個 arm64,平台包有發佈、npx 卻說不支援)
 const TARGETS = {
   "win32 x64": { pkg: "@cornhsu/parity-win32-x64", bin: "parity.exe" },
+  "win32 arm64": { pkg: "@cornhsu/parity-win32-arm64", bin: "parity.exe" },
   "linux x64": { pkg: "@cornhsu/parity-linux-x64", bin: "parity" },
+  "linux arm64": { pkg: "@cornhsu/parity-linux-arm64", bin: "parity" },
   "darwin x64": { pkg: "@cornhsu/parity-darwin-x64", bin: "parity" },
   "darwin arm64": { pkg: "@cornhsu/parity-darwin-arm64", bin: "parity" },
 };

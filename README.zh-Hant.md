@@ -69,8 +69,7 @@
 
 ## 安裝
 
-兩條通路,選你手邊有的執行環境即可 —— 在兩邊都支援的平台上**功能完全相同**
-(npm 目前還跑不了的兩個平台見下方說明)。
+兩條通路,選你手邊有的執行環境即可 —— **功能完全相同**。
 
 ```sh
 # 有 Node(前端專案常見):不需要安裝 .NET
@@ -81,11 +80,9 @@ dotnet tool install -g Cornhsu.Parity
 ```
 
 > npm 版是同一份自帶執行環境的原生執行檔,只下載你這個平台的那一份
-> (win32-x64 / linux-x64 / darwin-x64 / darwin-arm64)。
+> (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64)。
 > Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
 > 每個平台包因此至少省下 88 MB。
-> win32-arm64 與 linux-arm64 的平台包也有發佈,但 `npx` 啟動腳本還不認得它們,
-> 會印出「沒有 <平台> 的預先建置版本」並以 exit 1 結束——這兩個平台目前請改用 .NET 版。
 
 ## 快速開始
 

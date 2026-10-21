@@ -220,14 +220,17 @@ public class NpmPlatformListTests
     }
 
     [Fact]
-    public void Launcher_only_points_at_platform_packages_that_are_built()
+    public void Launcher_points_at_exactly_the_platform_packages_that_are_built()
     {
-        // 啟動腳本的 TARGETS 不能指向一個根本不會發佈的套件。另一個方向(發佈了卻沒接上)
-        // 目前不成立:啟動腳本缺 win32 arm64 / linux arm64,已另案回報,修好後改成 Assert.Equal
-        var launcher = Regex.Matches(Read("npm", "cornhsu-parity", "bin", "parity.js"), @"pkg: ""@cornhsu/(?<pkg>[^""]+)""")
-            .Select(m => m.Groups["pkg"].Value).ToList();
+        // 兩個方向都要成立:指向不會發佈的套件 → 裝不到;發佈了卻沒接上 → 裝得到卻跑不動
+        // (1.1.0 的啟動腳本就缺 win32 arm64 / linux arm64,npx 印「沒有預先建置版本」exit 1)
+        var launcher = Regex.Matches(Read("npm", "cornhsu-parity", "bin", "parity.js"),
+                @"""(?<os>[a-z0-9]+) (?<cpu>[a-z0-9]+)"": \{ pkg: ""@cornhsu/(?<pkg>[^""]+)""")
+            .Select(m => (Key: $"{m.Groups["os"].Value} {m.Groups["cpu"].Value}", Pkg: m.Groups["pkg"].Value))
+            .ToList();
 
-        Assert.NotEmpty(launcher);
-        Assert.Subset(PrepareTargets().Values.ToHashSet(), launcher.ToHashSet());
+        Assert.Equal(PrepareTargets().Values.Order(), launcher.Select(l => l.Pkg).Order());
+        // 平台鍵(process.platform + process.arch)與套件名的 os/cpu 一致
+        Assert.All(launcher, l => Assert.Equal("parity-" + l.Key.Replace(' ', '-'), l.Pkg));
     }
 }
