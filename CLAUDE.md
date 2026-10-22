@@ -173,6 +173,16 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 (`version: ${{ github.event.issue.body }}`)，那段內容就變成 runner 上的指令。
 所以每個 input 都先進 `env:` 再用 shell 變數引用。**不要為了短而改成內插。**
 
+**只走 env 還不夠**(2026-10-22 修 #4 時踩到,審查實證):env 擋得住 shell 注入,擋不住**換行**。
+`$GITHUB_OUTPUT`/`$GITHUB_ENV`/`$GITHUB_PATH` 是一行一筆,值裡帶 `\n` 就多出新的一筆——曾經可以先寫
+`exit=0`、再用 heredoc 吞掉真正的 `exit=…`,讓 Enforce gate 讀到 0,還能指定上傳 runner 上的任意檔。
+因此:
+- 寫進這些檔案的值**不能來自 input**;目前只准數字 exit code 與 `$HOME/.dotnet/tools` 兩行
+  (`ActionYmlTests` 掃所有非註解行把關)。
+- **上傳路徑不能來自 step output**:check 步驟把報告複製到 `$RUNNER_TEMP/parity-artifact/`,Upload 只認那個固定目錄。
+- **複製一個 repo 控制得到的路徑要防 symlink**:repo 可以 commit `.parity/report.json → /proc/self/environ`,
+  `cp` 會把這一步的環境(含 `FIGMA_TOKEN`)複製進 artifact。只收一般檔案、檔案與所在目錄都不能是 symlink。
+
 ### 其他
 
 - `ImageSharp` 的 major 升級被 dependabot **明確 ignore**:4.0 把授權變成建置期強制，
