@@ -25,7 +25,12 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   新增測試要求啟動腳本的平台表與 `npm/prepare.mjs` 一一對應。
 - **修正:Action 的 artifact 不再漏掉 report.json**(patch)。`check` 把報告寫在設定檔所在目錄的
   `.parity/`,Action 卻固定上傳 `<working-directory>/.parity/report.json`——`config` 指向子目錄時,
-  artifact 靜靜只剩 Markdown。現在上傳路徑跟著設定檔目錄走;報告本身的位置不變(之後的步驟照舊找得到)。
+  artifact 靜靜只剩 Markdown。現在 check 步驟跑完後把設定檔目錄的 report.json 與 Markdown 複製到
+  `$RUNNER_TEMP/parity-artifact/`,上傳那個固定目錄;報告本身的位置不變(之後的步驟照舊找得到)。
+  artifact 名稱不變,內部結構變成根目錄直接是 `report.json` 與 `parity-report.md`(原本的路徑隨 runner 的
+  目錄結構而定,例如 `<repo>/<repo>/.parity/report.json`、`_temp/parity-report.md`)。上傳路徑刻意不經
+  step output:input 值帶換行時會被寫成新的 output 行(可改寫 exit、指定上傳任意檔),這一步寫進
+  `$GITHUB_OUTPUT` 的只有數字 exit code。
 - **修正:`snapshot --width/--height`、`serve/map --port` 給了非整數時印警告**(patch:只多一行 stderr)。
   1.x 一直是靜默退回預設值(`--width 375px` 會以 1280 寬凍結手機基準);現在仍退回預設值、exit code
   不變(改成 exit 2 屬於待決定的 semver 問題),但會印 `warning: --width expects an integer (got "375px");

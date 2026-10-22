@@ -80,22 +80,22 @@ runs:
         PARITY_CONFIG: ${{ inputs.config }}
         PARITY_TARGET: ${{ inputs.target }}
         PARITY_BASELINE: ${{ inputs.baseline }}
-        PARITY_WORKDIR: ${{ inputs.working-directory }}
       run: |
         set +e
-        # check 把 report.json 寫在「設定檔所在目錄」的 .parity/,不是 working-directory——
-        # config 放子目錄時兩者不同。上傳步驟照這裡算出的位置找(相對路徑以 workspace 為基準)
-        config_dir=$(dirname "$PARITY_CONFIG")
-        case "$PARITY_CONFIG" in
-          /*|[A-Za-z]:[\\/]*) ;;
-          *) config_dir="$PARITY_WORKDIR/$config_dir" ;;
-        esac
-        echo "report=$config_dir/.parity/report.json" >> "$GITHUB_OUTPUT"
         args=(check --config "$PARITY_CONFIG" --md "$RUNNER_TEMP/parity-report.md")
         [ -n "$PARITY_TARGET" ] && args+=(--target "$PARITY_TARGET")
         [ "$PARITY_BASELINE" = "true" ] && args+=(--baseline)
         parity "${args[@]}"
         echo "exit=$?" >> "$GITHUB_OUTPUT"
+        # artifact:check 把 report.json 寫在「設定檔所在目錄」的 .parity/,不是 working-directory
+        # (config 放子目錄時兩者不同)。複製到 runner.temp 底下固定的目錄,上傳步驟只認那個目錄。
+        # 刻意不用 step output 傳路徑:寫進 $GITHUB_OUTPUT 的值只要帶換行,每一行都會變成新的 output
+        # (可以改寫 exit、指定上傳任意檔案)——這一步寫進 $GITHUB_OUTPUT 的只有上面那個數字。
+        # 報告本身也不搬:使用者之後照預設路徑讀它的步驟照舊找得到
+        artifact="$RUNNER_TEMP/parity-artifact"
+        mkdir -p "$artifact"
+        cp -- "$(dirname -- "$PARITY_CONFIG")/.parity/report.json" "$artifact/report.json" 2>/dev/null || true
+        cp -- "$RUNNER_TEMP/parity-report.md" "$artifact/parity-report.md" 2>/dev/null || true
 
     # 把還原度報告貼成 PR 留言(同一則留言反覆更新,不洗版)。
     # continue-on-error:fork PR 的 GITHUB_TOKEN 唯讀,貼留言會 403——那是預期的,
@@ -135,9 +135,8 @@ runs:
       uses: actions/upload-artifact@v7
       with:
         name: parity-report
-        path: |
-          ${{ steps.check.outputs.report }}
-          ${{ runner.temp }}/parity-report.md
+        # check 步驟複製好的固定目錄(report.json + parity-report.md);路徑不來自任何 step output
+        path: ${{ runner.temp }}/parity-artifact
         if-no-files-found: ignore
 
     # 報告貼完了,現在才依 gate 結論決定 job 成敗

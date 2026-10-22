@@ -84,19 +84,125 @@ public class ActionYmlTests
         return m.Groups["body"].Value;
     }
 
-    [Fact]
-    public void The_uploaded_report_json_is_where_check_actually_wrote_it()
+    // ---------- 真的跑 check 步驟的 bash(regex 比字串殺不掉「拼錯路徑」這種 mutation)----------
+
+    /// <summary>bash:Linux/macOS 用 PATH 上的;Windows 用 Git Bash(GitHub 的 Windows runner 與本機都有)。</summary>
+    private static string BashPath()
+    {
+        if (!OperatingSystem.IsWindows()) return "bash";
+        foreach (var root in new[] { Environment.GetEnvironmentVariable("ProgramW6432"), Environment.GetEnvironmentVariable("ProgramFiles"), @"C:\Program Files" })
+            if (root is not null && File.Exists(Path.Combine(root, "Git", "bin", "bash.exe")))
+                return Path.Combine(root, "Git", "bin", "bash.exe");
+        throw new InvalidOperationException("找不到 Git Bash(Program Files\\Git\\bin\\bash.exe),這條測試需要它");
+    }
+
+    /// <summary>step 的 `run: |` 內容(去掉 8 格縮排)。</summary>
+    private static string RunScript(string step)
+    {
+        var m = Regex.Match(Step(step), @"^      run: \|\n(?<body>(?:(?:        .*)?\n)*)", RegexOptions.Multiline);
+        Assert.True(m.Success, $"step `{step}` 沒有 run: | 區塊");
+        return string.Join("\n", m.Groups["body"].Value.Split('\n').Select(l => l.Length >= 8 ? l[8..] : l.TrimStart()));
+    }
+
+    /// <summary>
+    /// 用 runner 的方式(bash -eo pipefail)跑「Run Parity check」那段,parity 換成 stub:
+    /// 設定檔存在就照真的 check 把報告寫到「設定檔所在目錄/.parity/report.json」、exit 1;不存在就 exit 2。
+    /// </summary>
+    private static (int Exit, string Output, string ArtifactDir) RunCheckStep(string workspace, string workingDirectory, string config)
+    {
+        string Unix(string p) => p.Replace('\\', '/');
+        var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
+        var output = Path.Combine(runnerTemp, "github_output");
+        File.WriteAllText(output, "");
+        const string stub = """
+            parity() {
+              local cfg=""
+              while [ $# -gt 0 ]; do
+                case "$1" in
+                  --config) cfg="$2"; shift 2 ;;
+                  --md) printf 'markdown\n' > "$2"; shift 2 ;;
+                  *) shift ;;
+                esac
+              done
+              [ -f "$cfg" ] || return 2
+              mkdir -p "$(dirname -- "$cfg")/.parity"
+              printf 'report for %s' "$cfg" > "$(dirname -- "$cfg")/.parity/report.json"
+              return 1
+            }
+
+            """;
+        var script = Path.Combine(runnerTemp, "step.sh");
+        File.WriteAllText(script, stub + RunScript("Run Parity check"));
+
+        var psi = new System.Diagnostics.ProcessStartInfo(BashPath())
+        {
+            WorkingDirectory = Path.Combine(workspace, workingDirectory),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var a in new[] { "--noprofile", "--norc", "-eo", "pipefail", Unix(script) }) psi.ArgumentList.Add(a);
+        psi.Environment["RUNNER_TEMP"] = Unix(runnerTemp);
+        psi.Environment["GITHUB_OUTPUT"] = Unix(output);
+        psi.Environment["PARITY_CONFIG"] = config;
+        psi.Environment["PARITY_TARGET"] = "";
+        psi.Environment["PARITY_BASELINE"] = "false";
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        _ = p.StandardOutput.ReadToEndAsync();
+        _ = p.StandardError.ReadToEndAsync();
+        Assert.True(p.WaitForExit(30_000), "bash 沒有在 30 秒內結束");
+        return (p.ExitCode, File.ReadAllText(output).Replace("\r\n", "\n"), Path.Combine(runnerTemp, "parity-artifact"));
+    }
+
+    [Theory]
+    [InlineData(".", "parity.config.json")]
+    [InlineData(".", "web/parity.config.json")]        // config 在子目錄:1.1.0 的 artifact 就漏在這裡
+    [InlineData("app", "parity.config.json")]          // working-directory 不是 workspace 根
+    [InlineData("app", "design/parity.config.json")]
+    public void The_artifact_carries_the_report_check_wrote_next_to_the_config(string workingDirectory, string config)
     {
         // check 把 report.json 寫在**設定檔所在目錄**的 .parity/,不是 working-directory。
-        // 1.1.0 寫死 <working-directory>/.parity/report.json:config 放子目錄時 artifact 靜靜少一個檔
-        // (if-no-files-found: ignore)。修法不搬報告(後續步驟可能照預設路徑讀它),而是讓上傳跟著它走
-        var check = Step("Run Parity check");
-        Assert.Contains("dirname \"$PARITY_CONFIG\"", check);
-        Assert.Matches(new Regex(@"echo ""report=.*/\.parity/report\.json"" >> ""\$GITHUB_OUTPUT"""), check);
+        // 1.1.0 寫死上傳 <working-directory>/.parity/report.json:config 放子目錄時 artifact 靜靜少一個檔。
+        // 報告本身不搬(後續步驟可能照預設路徑讀它),而是複製到 runner.temp 底下固定的目錄再上傳
+        using var dir = new TempDir();
+        dir.Write(Path.Combine(workingDirectory, config), "{}");
+
+        var (exit, output, artifact) = RunCheckStep(dir.Path, workingDirectory, config);
+
+        Assert.Equal(0, exit); // 這步本身不讓 job 失敗(gate 在最後一步才擋)
+        Assert.Equal("exit=1\n", output);
+        Assert.Equal($"report for {config}", File.ReadAllText(Path.Combine(artifact, "report.json")));
+        Assert.Equal("markdown\n", File.ReadAllText(Path.Combine(artifact, "parity-report.md")).Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public void A_config_input_with_newlines_cannot_inject_step_outputs()
+    {
+        // 審查實證的攻擊:input 先進 env 擋得住 shell 注入,擋不住「把值寫進 $GITHUB_OUTPUT」——
+        // 值裡的換行會變成新的 output 行。先寫 exit=0,再用 heredoc 把真正的 exit=… 吞掉,
+        // Enforce gate 就讀到 0;若上傳路徑也走 step output,還能指定上傳 runner 上的任意檔案
+        using var dir = new TempDir();
+        const string payload = "x\nexit=0\nreport<<EOF\n/home/runner/work/**/.git/config\nEOF\nskip<<exit=2\ny/parity.config.json";
+
+        var (exit, output, artifact) = RunCheckStep(dir.Path, ".", payload);
+
+        Assert.Equal(0, exit);
+        Assert.Equal("exit=2\n", output); // 只有 parity 真正的 exit code 一行
+        Assert.False(File.Exists(Path.Combine(artifact, "report.json")));
+    }
+
+    [Fact]
+    public void Only_the_exit_code_is_ever_written_to_step_outputs_and_uploads_use_a_fixed_path()
+    {
+        // 上一條的靜態那一半:寫進 $GITHUB_OUTPUT / $GITHUB_ENV 的只能是數字 exit code;
+        // 上傳路徑不能來自任何 step output(那等於讓 input 決定上傳什麼)
+        var writes = Regex.Matches(Yml, @"^.*>>\s*""?\$(GITHUB_OUTPUT|GITHUB_ENV)""?.*$", RegexOptions.Multiline)
+            .Select(m => m.Value.Trim()).ToList();
+        Assert.Equal(["echo \"exit=$?\" >> \"$GITHUB_OUTPUT\""], writes);
 
         var upload = Step("Upload report");
-        Assert.Contains("${{ steps.check.outputs.report }}", upload);
-        Assert.DoesNotContain(".parity/report.json", upload);
+        Assert.DoesNotContain("steps.", upload);
+        Assert.Contains("${{ runner.temp }}/parity-artifact", upload);
     }
 
     [Fact]
