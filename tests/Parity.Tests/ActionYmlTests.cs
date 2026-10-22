@@ -358,6 +358,20 @@ public class ActionYmlTests
     }
 
     [Fact]
+    public void Only_the_actions_bot_own_comment_is_ever_updated()
+    {
+        // 原本取「最舊的、以 marker 開頭」的留言,不看作者:任何人搶先貼一則以 marker 開頭的留言,
+        // bot 就會去 PATCH 那則(GITHUB_TOKEN 改不了別人的留言 → 403,報告永遠貼不上),或改到別人的內容。
+        // 這一步用的是 github.token,留言作者一定是 github-actions[bot]
+        var comment = Step("Comment report on PR");
+        Assert.Contains("GH_TOKEN: ${{ github.token }}", comment);
+        var jq = Regex.Match(comment, @"--jq '(?<q>[^']*)'");
+        Assert.True(jq.Success, "找不到查舊留言的 --jq");
+        Assert.Contains(".user.login == \"github-actions[bot]\"", jq.Groups["q"].Value);
+        Assert.Contains("startswith(\"<!-- parity-report -->\")", jq.Groups["q"].Value);
+    }
+
+    [Fact]
     public void Check_step_records_the_exit_code_and_the_gate_is_enforced_last()
     {
         // 先貼報告、後擋 gate:check 那步不能讓 job 失敗,最後一步才 exit 原始 exit code
