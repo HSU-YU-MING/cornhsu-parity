@@ -377,7 +377,12 @@ public class CliBrowserTests
         // 只綁 127.0.0.1 擋不住 DNS rebinding(惡意網域解析到 127.0.0.1)與同瀏覽器的惡意分頁(CSRF);
         // serve 的中介層另外擋 Host 與 POST 的 Origin。serve 會一直跑到 Ctrl+C,所以在獨立行程裡起、測完砍掉
         using var dir = new TempDir();
-        var config = BoxProject(dir);
+        BoxProject(dir);
+        // 順便驗 UI 的 Figma 連結:設計來源是 designFile 時,殘留的 figmaFileKey 不能交給 UI 組連結
+        var config = dir.Write("parity.config.json", """
+            { "figmaFileKey": "qRzJ3fxF1g09NczsrugiXD", "designFile": "design.json",
+              "targets": [{ "route": "/", "frame": "", "url": "./page.html" }] }
+            """);
         var port = FreeLoopbackPort();
         using var serve = ServeProcess.Start(config, port);
 
@@ -396,7 +401,11 @@ public class CliBrowserTests
 
         var state = await http.GetAsync($"{baseUrl}/api/state");
         Assert.Equal(HttpStatusCode.OK, state.StatusCode);
-        Assert.Contains("\"targets\"", await state.Content.ReadAsStringAsync());
+        using (var stateJson = JsonDocument.Parse(await state.Content.ReadAsStringAsync()))
+        {
+            Assert.True(stateJson.RootElement.TryGetProperty("targets", out _));
+            Assert.Equal(JsonValueKind.Null, stateJson.RootElement.GetProperty("figmaFileKey").ValueKind);
+        }
 
         using (var rebinding = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/state"))
         {
