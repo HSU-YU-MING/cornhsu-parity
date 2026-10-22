@@ -351,6 +351,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 
 ## 報告字彙表(給解析 `report.json` 的人)
 
+- **未知的 key** — 消費端必須忽略不認得的 key。2.x 之內 `report.json` 只會**新增**欄位,既有的 key 不刪、不改名、不改型別(那是 3.0 的事)。下面的封閉集在 2.x 之內也不會多成員。
 - `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
 - `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`randomized-id`、`size-implausible`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。

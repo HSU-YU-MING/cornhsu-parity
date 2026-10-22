@@ -424,6 +424,7 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 
 ## Report vocabulary (for anyone parsing `report.json`)
 
+- **Unknown keys** — consumers must ignore keys they do not recognize. Within 2.x, `report.json` only *gains* fields; existing keys are never removed, renamed or given a different type (that would be 3.0). Closed sets below never gain members within 2.x either.
 - `severity` — **closed set** (spelling and membership frozen): `none` / `minor` / `medium` / `serious` / `critical`. `status`: `mismatch` / `missing`.
 - `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `randomized-id`, `size-implausible`.
 - `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`.
