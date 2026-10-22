@@ -185,6 +185,39 @@ public class ReportingTests
     }
 
     [Fact]
+    public void Markdown_ends_with_a_link_to_report_a_misjudgment()
+    {
+        // 2.0.0 的回報功能:Markdown 報告(也就是 PR 留言)最後一行連到誤判/漏判的 issue 範本(預填網址)。
+        // 只是一個連結,工具本身不送任何東西;也不進 report.json
+        var md = MarkdownReport.Render([Report(1, [Node("cta", Diff("color", "#fff", "#000"))])], gateFail: true);
+
+        var last = md.TrimEnd().Split('\n')[^1];
+        Assert.Contains("Report a misjudgment", last);
+        Assert.Contains("(https://github.com/HSU-YU-MING/cornhsu-parity/issues/new?template=1-misjudgment.yml)", last);
+        Assert.Contains("mask", last);
+        Assert.Equal(FeedbackLinks.Misjudgment, "https://github.com/HSU-YU-MING/cornhsu-parity/issues/new?template=1-misjudgment.yml");
+    }
+
+    [Fact]
+    public void Feedback_links_point_at_templates_that_exist()
+    {
+        foreach (var url in new[] { FeedbackLinks.Misjudgment, FeedbackLinks.Bug })
+        {
+            var template = url[(url.IndexOf("template=", StringComparison.Ordinal) + "template=".Length)..];
+            Assert.True(File.Exists(Repo.PathOf(".github", "ISSUE_TEMPLATE", template)), $"{url} 指向不存在的範本");
+        }
+    }
+
+    [Fact]
+    public void The_local_report_ui_links_to_the_misjudgment_template()
+    {
+        var html = Repo.Read("src", "Parity.Cli", "wwwroot", "index.html");
+
+        Assert.Contains($"href=\"{FeedbackLinks.Misjudgment}\"", html);
+        Assert.Contains("rel=\"noopener noreferrer\"", html);
+    }
+
+    [Fact]
     public void Markdown_includes_baseline_change_section()
     {
         var report = Report(1, [Node("cta", Diff("color", "#fff", "#000"))]);

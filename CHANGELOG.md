@@ -102,6 +102,10 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
   (1–100 字,不可以 `-` 開頭、不可以全是點,例如 `.`、`..`、`-rf`),其他值 exit 2。同一個 job 呼叫兩次時,check 步驟會先清掉前一次留在 `$RUNNER_TEMP` 的報告,
   check 沒跑就不上傳。多次呼叫優先用 matrix:同一個 job 裡第一次呼叫的 gate 失敗,job 就停在那裡,第二次不會跑。
 
+- **新增:報告裡的回報連結**(none:Markdown 與本機 UI 不屬於凍結面)。`check --md`、`parity report` 的 Markdown 與
+  Action 的 PR 留言最後一行是「Report a misjudgment」,連到誤判/漏判範本的預填網址(`issues/new?template=1-misjudgment.yml`),
+  並提醒貼報告片段前先遮掉內部網址與內容;`parity serve` 的本機報告 UI 頂列也有同一個連結。只是連結:工具不連網、
+  不送任何資料。不進 report.json。
 - **新增:GitHub issue 範本**(none:只動 repo 設定)。三張表單——誤判/漏判(設計值、實作值、哪個屬性、為什麼認為判斷錯了;
   附截圖或報告片段前提醒先遮掉網址與內容)、錯誤回報(版本、安裝通路、作業系統、Node、Chromium、重現步驟、預期與實際)、
   功能建議;`config.yml` 關掉空白 issue,安全問題導向私下回報與 SECURITY.md。

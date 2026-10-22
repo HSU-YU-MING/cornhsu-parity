@@ -338,7 +338,7 @@ jobs:
 ```
 
 行為:
-- **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
+- **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**,最後一行是連到誤判/漏判回報表單的「Report a misjudgment」——只是連結,不會送出任何東西),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
 - **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
 - **artifact**:`report.json` + Markdown 報告上傳供下載(artifact 名稱預設 `parity-report`,可用 `artifact-name` 改;根目錄就是 `report.json` 與 `parity-report.md`)。`report.json` 從設定檔旁邊的 `.parity/report.json`(`check` 寫出的位置)取,`config` 指向子目錄時也一樣。
 - **同一次執行呼叫多次**:優先用 **matrix**(每個網站或設定檔一個 job),每次給不同的 `artifact-name`(例如 `parity-report-${{ matrix.site }}`)。每個名稱各自一個 artifact、各自一則 PR 留言;名稱相同的兩次呼叫,artifact 上傳會撞名。同一個 job 裡呼叫兩次,只在第一次通過時可行:第一次的 gate 失敗,job 就停在那一次的最後一步,第二次根本不會跑(沒有它的報告、留言或 artifact)。

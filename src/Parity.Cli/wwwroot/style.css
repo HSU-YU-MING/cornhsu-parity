@@ -35,6 +35,9 @@ header {
 .brand { font-weight: 700; font-size: 16px; letter-spacing: .5px; }
 .spacer { flex: 1; }
 .muted { color: var(--muted); font-size: 12px; }
+/* 回報入口:只是一個開到 GitHub 誤判範本的連結,不搶 Re-scan 的視覺份量 */
+.feedback { color: var(--muted); font-size: 12px; text-decoration: none; white-space: nowrap; }
+.feedback:hover, .feedback:focus-visible { color: var(--accent); text-decoration: underline; }
 
 .badge {
   padding: 2px 10px; border-radius: 999px;

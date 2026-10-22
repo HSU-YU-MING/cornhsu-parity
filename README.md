@@ -393,7 +393,8 @@ jobs:
 
 Behaviour:
 
-- **PR comment**: posts a fidelity report (score + gap table + **suggested fixes**) and keeps
+- **PR comment**: posts a fidelity report (score + gap table + **suggested fixes**, ending with a
+  "Report a misjudgment" link to the issue form — a link only, nothing is sent) and keeps
   updating that same comment instead of adding new ones — so PMs and reviewers see it without
   ever touching the tool.
 - **Blocks the PR**: gaps beyond `gate.failOn` → exit 1 → red PR. (**The comment is posted
