@@ -479,12 +479,18 @@ public class ActionYmlTests
             .Where(l => Regex.IsMatch(l, @"\$\{?GITHUB_(OUTPUT|ENV|PATH|STATE|STEP_SUMMARY)\}?"))
             .Select(l => l.Trim())
             .ToList();
-        Assert.Equal(
+        string[] allowed =
         [
             "echo \"$HOME/.dotnet/tools\" >> \"$GITHUB_PATH\"",
             "echo \"exit=2\" >> \"$GITHUB_OUTPUT\"",
             "echo \"exit=$?\" >> \"$GITHUB_OUTPUT\"",
-        ], touches);
+        ];
+        // 紅了的下一步:確認新的那一行寫進去的值不來自任何 input 或 step output 之後,才把它加進 allowed
+        Assert.True(allowed.SequenceEqual(touches),
+            "action.yml 裡碰到 $GITHUB_OUTPUT/ENV/PATH/STATE/STEP_SUMMARY 的行與允許清單不同。實際:\n  "
+            + string.Join("\n  ", touches)
+            + "\n下一步:確認新的那一行寫進去的值不來自任何 input 或 step output(值帶換行就能多寫一筆)之後,"
+            + "再把它加進這條測試的 allowed;值可能來自 input 的話,改成固定值,或先擋 \\n/\\r。");
 
         // 上傳路徑不能來自任何 step output 或 input(那等於讓 input 決定上傳什麼),而且整段 with: 逐行固定:
         // 不准 `path: |` 多行、不准 `/..` 之類的尾巴、不准多掛一行 ${{ inputs.* }}
