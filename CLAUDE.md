@@ -177,8 +177,9 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 `$GITHUB_OUTPUT`/`$GITHUB_ENV`/`$GITHUB_PATH` 是一行一筆,值裡帶 `\n` 就多出新的一筆——曾經可以先寫
 `exit=0`、再用 heredoc 吞掉真正的 `exit=…`,讓 Enforce gate 讀到 0,還能指定上傳 runner 上的任意檔。
 因此:
-- 寫進這些檔案的值**不能來自 input**;目前只准數字 exit code 與 `$HOME/.dotnet/tools` 兩行
-  (`ActionYmlTests` 掃所有非註解行把關)。
+- 寫進這些檔案的值**不能來自 input**;目前只准 exit code(數字或常數 `exit=2`)與 `$HOME/.dotnet/tools`
+  (`ActionYmlTests` 掃所有非註解行把關)。config/target 帶 `\r`/`\n` 一律在呼叫 parity 之前就拒絕
+  (parity 會把它們印到 stderr,換行後的內容落在行首就成了 workflow command)。
 - **上傳路徑不能來自 step output**:check 步驟把報告複製到 `$RUNNER_TEMP/parity-artifact/`,Upload 只認那個固定目錄。
 - **複製一個 repo 控制得到的路徑要防 symlink**:repo 可以 commit `.parity/report.json → /proc/self/environ`,
   `cp` 會把這一步的環境(含 `FIGMA_TOKEN`)複製進 artifact。只收一般檔案、檔案與所在目錄都不能是 symlink。

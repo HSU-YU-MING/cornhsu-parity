@@ -266,11 +266,46 @@ public class ActionYmlTests
         Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "report.json")));
     }
 
+    [Theory]
+    [InlineData("x\n::add-mask::secret\ny/parity.config.json", "")]
+    [InlineData("parity.config.json\r", "")]
+    [InlineData("parity.config.json", "/\n::set-output name=exit::0")]
+    [InlineData("parity.config.json", "/\r")]
+    public void A_config_or_target_with_a_line_break_is_refused_before_parity_runs(string config, string target)
+    {
+        // parity 會把 config/target 原樣印到 stderr;帶換行時,換行後的內容會出現在行首,
+        // 變成 runner 解析的 workflow command(::add-mask::、::set-output…)。目前無害,但安全性
+        // 不該靠 runner 的處理順序——在呼叫 parity 之前就拒絕,當成執行錯誤(exit 2)
+        using var dir = new TempDir();
+        dir.Write("parity.config.json", "{}");
+
+        var r = RunCheckStep(dir.Path, ".", config, target);
+
+        Assert.Equal(0, r.Exit); // 這一步照樣不讓 job 失敗,gate 在最後一步擋
+        Assert.Equal("exit=2\n", r.Output);
+        Assert.False(r.ParityCalled, "含換行的 input 不該交給 parity");
+        Assert.Contains("line break", r.Stderr);
+        Assert.DoesNotContain("::", r.Stderr); // 錯誤訊息本身不能把 input 印出來
+    }
+
+    [Fact]
+    public void A_plain_config_still_reaches_parity()
+    {
+        using var dir = new TempDir();
+        dir.Write("parity.config.json", "{}");
+
+        var r = RunCheckStep(dir.Path, ".", "parity.config.json", "/");
+
+        Assert.True(r.ParityCalled);
+        Assert.Equal("exit=1\n", r.Output);
+    }
+
     [Fact]
     public void Only_the_exit_code_is_ever_written_to_step_outputs_and_uploads_use_a_fixed_path()
     {
         // 上一條的靜態那一半。所有 runner 會解析的檔案(OUTPUT/ENV/PATH/STATE/STEP_SUMMARY,含 ${VAR} 寫法),
-        // 非註解行裡碰到的只准是這兩行:數字 exit code 與工具目錄(值是 runner 的 $HOME,不來自 input)。
+        // 非註解行裡碰到的只准是這三行:常數 exit=2(含換行的 input 被拒時)、數字 exit code、
+        // 工具目錄(值是 runner 的 $HOME,不來自 input)。
         // 第二輪審查的 mutation:別的 step 用 ${GITHUB_OUTPUT} 寫入、把 input 寫進 $GITHUB_PATH,舊的檢查都抓不到
         var touches = Yml.Split('\n')
             .Where(l => !l.TrimStart().StartsWith('#'))
@@ -280,6 +315,7 @@ public class ActionYmlTests
         Assert.Equal(
         [
             "echo \"$HOME/.dotnet/tools\" >> \"$GITHUB_PATH\"",
+            "echo \"exit=2\" >> \"$GITHUB_OUTPUT\"",
             "echo \"exit=$?\" >> \"$GITHUB_OUTPUT\"",
         ], touches);
 

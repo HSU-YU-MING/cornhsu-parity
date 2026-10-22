@@ -82,6 +82,16 @@ runs:
         PARITY_BASELINE: ${{ inputs.baseline }}
       run: |
         set +e
+        # config/target 帶換行(\n 或 \r)一律拒絕,不呼叫 parity:parity 會把它們原樣印到 stderr,
+        # 換行後的內容落在行首就成了 runner 會解析的 workflow command(::add-mask::、::set-output…)。
+        # 訊息刻意不印出 input 本身;當成執行錯誤(exit 2),照常由最後一步擋
+        case "$PARITY_CONFIG$PARITY_TARGET" in
+          *$'\n'* | *$'\r'*)
+            echo "parity action: the config or target input contains a line break; refusing to run." >&2
+            echo "exit=2" >> "$GITHUB_OUTPUT"
+            exit 0
+            ;;
+        esac
         args=(check --config "$PARITY_CONFIG" --md "$RUNNER_TEMP/parity-report.md")
         [ -n "$PARITY_TARGET" ] && args+=(--target "$PARITY_TARGET")
         [ "$PARITY_BASELINE" = "true" ] && args+=(--baseline)

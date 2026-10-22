@@ -118,6 +118,10 @@
 - **修正:`baseline list` 與 `check --baseline` 在 db 不存在時不再建出空的 db**(patch:exit code 與輸出不變)。
   唯讀的查詢會留下一個 32 KB 的空 `parity.baseline.db`;被順手 commit 之後,CI 的 `--baseline` 就一直走
   「no baseline yet」、退回一般 gate。現在只有 `baseline save` 會建檔。
+- **修正:Action 的 `config`/`target` 帶換行時直接拒跑**(patch:原本這種值本來就跑不起來)。parity 會把
+  config 與 target 原樣印到 stderr,值裡的換行讓後面的內容落在行首,成了 runner 會解析的 workflow command
+  (`::add-mask::`、`::set-output`…)。現在 check 步驟在呼叫 parity 之前就檢查換行(LF 或 CR),有就記為
+  exit 2(執行錯誤)、不呼叫 parity,錯誤訊息也不印出 input 本身。
 - **修正:Action 找舊的報告留言時看完所有分頁**(patch)。原本只看第一頁(30 則),PR 留言一多、Parity 的
   留言落到後面的頁時,每次都找不到標記、每次都貼一則新的——與「同一則原地更新、不洗版」相反。
 - **CI:離線示範除了 exit 1,也斷言報告計數**(none:只動 CI)。比照 XamlContrast 的 `jq -e` 形狀,
