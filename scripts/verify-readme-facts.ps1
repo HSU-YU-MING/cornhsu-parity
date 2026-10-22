@@ -13,7 +13,7 @@
       1. 測試條數          ← 實際跑 `dotnet test --list-tests` 數出來
       2. 累計發佈版數      ← CHANGELOG.md 裡的版本標題數量
       3. 最新版號          ← CHANGELOG.md 最上面那個版本標題
-      4. Action 的 @v pin  ← 同上，兩份 README 各兩處
+      4. Action 的 @v pin  ← 最新版號的 major（移動式 @vN），兩份 README 各兩處
 
     為什麼 2、3 對 CHANGELOG 比而不對 git tag 比：README 的版號是在**推 tag 之前**就要
     commit 的，拿「現有最新 tag」當基準的話，發版那個 commit 必紅。CHANGELOG 是這個時間點
@@ -71,6 +71,9 @@ if ($headings.Count -eq 0) {
 }
 $latestVersion = $headings[0].Groups[1].Value
 $releaseCount = $headings.Count
+# README 引用移動式 major tag（@v1、@v2…），跟著最新版號的 major 走：發新 major 時不用改這個腳本，
+# 但 README 沒跟著改 @vN 就會紅
+$actionRef = 'v' + $latestVersion.Split('.')[0]
 
 # ── 事實來源 2：實際測試條數 ─────────────────────────────────────────────
 if ($TestCount -le 0) {
@@ -115,18 +118,18 @@ $facts = @(
        Pattern = '(?<=\| 發佈 \| NuGet 共 \d+ 版\(v\d+\.\d+\.\d+ → v)\d+\.\d+\.\d+'
        Expected = $latestVersion }
 
-    # 1.0 起 README 一律引用移動式 @v1（0.x 時代是 pin 確切版本，這兩條當時對著 CHANGELOG 版號比）。
-    # 進 2.0 時把 Expected 改成 'v2'。
+    # 1.0 起 README 一律引用移動式 major tag（0.x 時代是 pin 確切版本，這兩條當時對著 CHANGELOG 版號比）。
+    # 預期值是最新版號的 major：1.x 時 @v1，2.0.0 起 @v2。
     @{ Label = 'Action @v ref (en)'; Path = $enPath; Occurrences = 2
        Pattern = '(?<=HSU-YU-MING/cornhsu-parity@)v[\d.]+'
-       Expected = 'v1' }
+       Expected = $actionRef }
     @{ Label = 'Action @v ref (zh)'; Path = $zhPath; Occurrences = 2
        Pattern = '(?<=HSU-YU-MING/cornhsu-parity@)v[\d.]+'
-       Expected = 'v1' }
+       Expected = $actionRef }
 )
 
 Write-Host ''
-Write-Host "真實情況：測試 $TestCount 條 ／ 已發佈 $releaseCount 版 ／ 最新 v$latestVersion（取自 CHANGELOG.md）"
+Write-Host "真實情況：測試 $TestCount 條 ／ 已發佈 $releaseCount 版 ／ 最新 v$latestVersion（取自 CHANGELOG.md）／ Action 引用 @$actionRef"
 Write-Host ''
 
 $problems = @()

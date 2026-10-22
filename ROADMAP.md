@@ -61,13 +61,9 @@
 - **取樣紀律**(對照 XamlContrast 憲法 8.3):實查樣本必須包含非作者的網站/設計檔——
   路線 A(8 個野生網站)與路線 B(2 個公開設計系統 Figma 檔)的 11 個發現,沒有一個
   能在自家 dogfooding 樣本上量出來。方法與結果見 docs/野生實查-*.md。
-- **2026-10-21 補測試與 README 逐段核對留下的產品端落差**(那次只動測試與文件,刻意不改程式)。
-  README 已改成照實描述現況;每修好一條,記得回頭拿掉 README 對應的限定句。2026-10-22 修掉的已從這裡移除
-  (見 CHANGELOG 未發佈區),剩下的都是會改 gate 結果或要定 semver 的,等維護者決定:
-  - **npm 的 Node 下限**:Playwright 1.63 的 driver 要 Node 20+,而 npm 通路正是拿使用者自己的 Node 跑 driver。
-    2026-10-22 已把主包 `engines.node` 改成 `>=20`、CHANGELOG 未發佈區開頭寫了「升級必做」;
-    剩下的是下一版的 semver(minor + 升級必做,或承認對 npm 通路是 major),發佈前由維護者決定
-    (見 `docs/公開介面盤點.md` §8.2、§10)。
+- ~~**2026-10-21 補測試與 README 逐段核對留下的產品端落差**~~ **已全數處理(2026-10-22)**:可直接修的併進
+  2.0.0 的修正;會改 gate 結果、讓原本接受的輸入變成錯誤、或要定 semver 的,維護者拍板走 **2.0.0**
+  (CHANGELOG 2.0.0 節的「破壞性變更」,含 npm 通路的 Node 20 下限)。
 - **Action 複製報告時,中間層目錄是 symlink 擋不住**(2026-10-22 審查):check 步驟只複製「一般檔案、
   且檔案與 `.parity` 目錄都不是 symlink」的 `<dirname(config)>/.parity/report.json`。但 config 路徑上**更上層**的
   目錄若是 repo commit 的 symlink(例如 `config: web/parity.config.json` 而 `web` → 別處),複製的就是別處的
@@ -127,6 +123,6 @@
 4. ~~接下來輪到整潔項、M5 下半 / M6。~~ 整潔項與 M5 下半已完成;M6 明文不做(理由見上)。
    **目前在做 M7 團隊儀表板外殼**(內部 M1–M4.6 完成,下一步是內部 M5:對外部署)。
    引擎面與外殼的已知盲點見上面「已知盲點 / 該補的」:auto-name 通用名假配對待更多野生樣本,
-   2026-10-21 那批產品端落差 2026-10-22 已修掉大半(`parity report` 少 Figma 連結、tokensFile 解析錯誤被吞、
-   action 漏傳 report.json、伺服器間接帶 Playwright…,見 CHANGELOG 未發佈區);還開著的是要改 gate 結果或
-   semver 的幾條(soft 落差擋 gate、Node 20 下限的 semver、登入鎖定訊息),等維護者決定。
+   2026-10-21 那批產品端落差 2026-10-22 已全數處理,要改 gate 結果或 semver 的幾條(failOn 白名單、soft 落差
+   不擋 gate、數值旗標、只給 height 的 target、reverse 報告的方向、Node 20 下限…)拍板走 **2.0.0**
+   (見 CHANGELOG 2.0.0 節);登入的帳號探測也已關掉(模擬鎖定)。

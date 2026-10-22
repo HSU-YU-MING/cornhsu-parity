@@ -1,33 +1,97 @@
 # Changelog
 
-版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節);0.x 期間為新功能升 minor、修正升 patch。
+版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.0.0 — 2026-10-22
 
-**升級必做 (upgrade required)**——升級這一版前要處理的兩件事:
+**第一個 major。** 1.1.0 之後的產品稽核(2026-10-22)找到幾條「原本被接受、卻讓 gate 靜默失效或被靜默改讀」
+的輸入,以及幾處量測與報告語意的缺口。照 1.x 的凍結規則只能先改成印警告;這一版直接改成正確的行為,下面「破壞性變更」
+逐條附遷移方式。npm 通路的 Node 下限從 18 升到 20,依 npm 慣例也算破壞,一起放進這個 major。
 
-1. **先確認 Node 版本,再重跑 `parity install-browser`**。這一版的 Microsoft.Playwright
-   從 1.61 升到 1.63:Chromium 換成 revision 1243,升級後不重跑 `parity install-browser`,`check` 等指令會
-   exit 2(`Chromium is not installed yet`)。**npm 通路(`npx cornhsu-parity`)另外需要 Node 20 以上**——
-   npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限是 20;Node 18 上連
-   `install-browser` 本身都會失敗,所以順序是**先升 Node、再裝瀏覽器**。主套件的 `engines.node` 已從
-   `>=18` 改成 `>=20`,npm 安裝時會在 Node 18 上警告。(這一版的 semver 待維護者決定:npm 生態慣例把提高
-   `engines` 下限視為 breaking;六面凍結本身沒有被破壞。)
-2. **GitHub Action 的 artifact 內部路徑改變**——只影響用 `actions/download-artifact` 讀 `parity-report`
-   的下游 workflow。artifact 名稱不變,但裡面改成根目錄直接是 `report.json` 與 `parity-report.md`;
-   1.1.0 的 artifact 內是 `<repo>/<repo>/<working-directory>/.parity/report.json` 與 `_temp/parity-report.md`
-   (上傳時以兩個檔的最近共同上層目錄為根)。**遷移:下載後改讀根目錄的 `report.json`**(例如
-   `parity report --config … --in <下載目錄>/report.json`)。這不在凍結面內(面 3 凍結的是 inputs),但照舊路徑
-   讀檔的步驟在 `v1` 前移後會靜靜讀不到檔,所以列在這裡。
+**介面凍結延續到 2.x。** 1.0.0 節的六面凍結與演進條款,自本版起照樣適用於 2.x,以本版的形狀為準
+(逐面現況見 `docs/公開介面盤點.md` 第 11 節)。六面是:`parity.config.json` schema(含容差預設值)、
+CLI 與 exit code 契約(`0` 通過 / `1` 落差超 gate / `2` 執行錯誤 / `3` 配對可信度不足)、GitHub Action
+inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演進條款:
 
-**產品 bug 修正(2026-10-22 稽核)**——每條標出 semver 判讀。會讓原本接受的輸入變成錯誤、或改變
-量測/gate 結果的修法不在這批(那幾條目前只印警告),留待維護者決定。
+1. 上述六面的介面破壞 → **major**(下一個是 3.0.0)
+2. 量測語意演進(量得更準、配對規則變化,可能需重拍基準)→ **minor**,CHANGELOG 開頭顯著標示「升級必做」
+3. 預設值調整(容差、gate 預設)→ **minor** + 顯著標示
+4. 行為完全不變的修正 → **patch**
+5. **minor 若需要重拍基準,工具必須大聲失敗並給指引**——不得靜默給錯誤結果
 
-- **修正:`gate.failOn` 裡讓 gate 靜默失效的值,載入時會印警告**(patch:只多一行 stderr,
-  載入結果與 gate 判定都不變)。`none`、未定義的數字(`"9"`)、逗號字串(`"serious, critical"`
-  會被 Enum 旗標語法讀成 7)都對不到任何落差,gate 永遠不因嚴重度失敗;`"serious, minor"`
-  會被讀成 serious。這些值仍照樣載入(收緊成 exit 2 屬於待決定的 semver 問題),但現在會在 stderr
-  印 `warning: gate.failOn value "…" never matches any diff …` 或 `… is read as "…" …`。
+**GitHub Action 改用移動式 `@v2`**(跟隨最新 2.x;之後每個 2.x 發版把 `v2` 前移)。`v1` 停在 v1.1.0,不再前移。
+
+**升級必做 (upgrade required)**——依序處理:
+
+1. **Action 改引用 `@v2`**。`v1` 停在 v1.1.0,而 v1.1.0 的 `action.yml` 在 `version` 留空時安裝**不限 major**
+   的最新版(限制 major 的修正在它之後才加)——沒填 `version` 的 `@v1` workflow 會用 1.1.0 的 action 步驟
+   跑 2.x 的工具,下面的破壞性變更一條不少地照樣生效。**遷移:改成 `uses: HSU-YU-MING/cornhsu-parity@v2`**;
+   暫時不想升的話,`@v1` 加上 `version: 1.1.0` 固定在 1.x。
+2. **先確認 Node 版本,再重跑 `parity install-browser`**。Microsoft.Playwright 從 1.61 升到 1.63:Chromium
+   換成 revision 1243,升級後不重跑 `parity install-browser`,`check` 等指令會 exit 2(`Chromium is not
+   installed yet`)。**npm 通路(`npx cornhsu-parity`)另外需要 Node 20 以上**(破壞性變更第 8 條)——Node 18
+   上連 `install-browser` 本身都會失敗,所以順序是**先升 Node、再裝瀏覽器**。
+3. **用 `actions/download-artifact` 讀報告的下游 workflow,改讀 artifact 的根目錄**。artifact 名稱預設仍是
+   `parity-report`,但裡面改成根目錄直接是 `report.json` 與 `parity-report.md`;1.1.0 的 artifact 內是
+   `<repo>/<repo>/<working-directory>/.parity/report.json` 與 `_temp/parity-report.md`(上傳時以兩個檔的最近
+   共同上層目錄為根)。**遷移:下載後改讀根目錄的 `report.json`**(例如
+   `parity report --config … --in <下載目錄>/report.json`)。這不在凍結面內(面 3 凍結的是 inputs),但照舊
+   路徑讀檔的步驟會靜靜讀不到檔,所以列在這裡。
+4. **用 `--baseline` 的專案,升級後重存一次 baseline**(`parity baseline save`)。只給 `height` 的 target
+   量測會變(破壞性變更第 4 條);舊 baseline 裡的 font-family 列,下一次比對會顯示成「已修好」一次(第 2 條)。
+   重存之後兩者都對齊。
+
+**破壞性變更**——每條附遷移方式:
+
+1. **`gate.failOn` 只收 `minor`、`medium`、`serious`、`critical`(不分大小寫),其他值載入時就 exit 2**
+   (面 1)。1.x 用 Enum 解析:`none`、數字(`"9"`、`"4"`)、逗號字串(`"serious, critical"` 被讀成 7、
+   `"serious, minor"` 被讀成 serious)、帶前後空白的值都能載入,不是讓 gate 靜默失效就是被讀成別的等級。
+   **遷移:一個陣列元素放一個等級名**(`["serious", "critical"]`);1.x 寫 `none` 想關掉嚴重度 gate 的,
+   改寫空陣列 `"failOn": []`——配對可信度的 gate(0 配對、`minMatchRate`)照常。錯誤訊息會指出是哪個值。
+2. **soft 落差(font-family)不再擋 gate,`--baseline` 也不再把它算成新增**(gate 變寬:FAIL → PASS)。
+   1.x 的 gate 沒排除 soft:`failOn` 含 `minor` 時,只有 font-family 落差的頁面分數 100/100 卻 GATE FAIL;
+   `--baseline` 模式不看 `failOn`,調整 font stack 就多一條「新增」、exit 1。soft 落差照樣列在報告與 PR
+   留言裡,只是不扣分、不擋。baseline schema 不變:新存的 baseline 不收 soft 列;舊 db 裡已存的 font-family
+   列,下一次比對顯示成「已修好」一次(不擋 gate)。**遷移:不用改設定;重存 baseline 清掉舊列**(升級必做
+   第 4 點)。依賴「字型堆疊一變就擋」的團隊,改在 review 時看報告的 soft 列——沒有替代的 gate 開關。
+3. **`snapshot --width`/`--height` 與 `serve`/`map --port` 必須是正整數,否則 exit 2**(面 2)。1.x 遇到
+   非整數靜默退回預設值(`--width 375px` 會以 1280 寬凍結手機基準),0 與負數原樣交給瀏覽器。現在在讀設定檔、
+   開瀏覽器之前就以用法錯誤結束(`--width expects a positive integer (got "375px")`)。
+   **遷移:去掉單位與小數**(`--width 375`)。
+4. **target 只給 `height`(沒給 `width`)時,`check`/`serve`/`map`/`baseline save` 照用它**(演進條款 ②
+   的量測語意變化)。1.x 在寬度沒給時把寬高一起換成設計 frame 的尺寸,`height` 被靜靜丟掉(`snapshot` 則
+   照用,兩邊量的視窗不一樣高)。現在兩個欄位各管各的軸:寬用 frame 的、高用給的。
+   **遷移:想維持 1.x 的量法就拿掉 `height`;留著的話,用 `--baseline` 的專案重存 baseline**(升級必做第 4 點)。
+5. **`report.json` 頂層多一個 `direction` 欄位;`check --reverse` 的報告不再被當成一般報告**(面 4)。
+   值是封閉集 `forward`/`reverse`,一律寫出;沒有這個欄位的舊檔讀成 `forward`,`schemaVersion` 維持 1。
+   1.x 的 reverse 報告期望/實際已對調,信封卻沒有任何標記:`parity report` 照正向重算 gate、顯示 GATE FAIL,
+   `parity push` 把它當一般 run 推上儀表板。現在 `parity report` 對 reverse 報告不做 gate(照
+   `check --reverse` 的樣子標明),`parity push` 在本機拒推(exit 2),Parity.Server 也拒收。
+   **遷移:拒收未知欄位的嚴格解析器要接受 `direction`;不要 push `check --reverse` 的報告**(它本來就不是
+   gate 用的)。
+6. **`parity report` 讀到比自己新的 `schemaVersion` 時 exit 2**(面 2、面 4)。1.x 照讀,新版加的欄位被靜靜
+   丟掉、Markdown 可能不完整。現在與 snapshot 讀端、`parity push`、Parity.Server 一致:比自己新就拒收。
+   **遷移:用寫出那份報告的 Parity 版本(或更新的版本)來 render**。
+7. **`designImage` 只接受 PNG 與 JPEG,其他格式 exit 2**(面 1 的有效值)。文件一直寫 PNG/JPG,但 1.x 實際
+   會解 ImageSharp 支援的所有格式(WebP、BMP、GIF、TIFF…)。判格式看檔案內容,不看副檔名。收窄之後,
+   ImageSharp 3.1.12 的 BigTIFF 解碼 DoS(GHSA-wmxv-xphr-5c9g,3.1 線沒有修補版)碰不到。
+   **遷移:把設計圖轉成 PNG**。
+8. **npm 通路需要 Node 20 以上**(主套件 `engines.node` 從 `>=18` 改成 `>=20`)。npm 版讓 Playwright driver
+   用你自己的 Node 跑,而 1.63 的 driver 下限是 20。NuGet 通路(`dotnet tool`)與 GitHub Action 不受影響。
+   **遷移:升到 Node 20+,再跑 `parity install-browser`**(升級必做第 2 點)。
+
+**新增**
+
+- **新增:Action 的 `artifact-name` input**(面 3 的加法)。預設 `parity-report`,與 1.x 相同。matrix 或同一次
+  執行呼叫多次時,每次給不同的名稱(例如 `parity-report-${{ matrix.site }}`):每個名稱各自一個 artifact、
+  各自一則 PR 留言(留言開頭的標記是 `<!-- parity-report:<名稱> -->`;預設名稱沿用 `<!-- parity-report -->`,
+  升級後照樣更新 PR 上原本那則)。1.x 第二次上傳撞名 409,留言也互相覆蓋。只收英數字與 `.` `_` `-`
+  (1–100 字),其他值 exit 2。同一個 job 呼叫兩次時,check 步驟會先清掉前一次留在 `$RUNNER_TEMP` 的報告,
+  check 沒跑就不上傳。
+
+**產品 bug 修正(2026-10-22 稽核)**——每條標出它單獨來看的 semver 判讀。會讓原本接受的輸入變成錯誤、
+或改變量測/gate 結果的修法,列在上面的「破壞性變更」。
+
 - **修正:npm 啟動腳本認得 win32-arm64 與 linux-arm64**(patch)。這兩個平台包 1.1.0 就有發佈,
   但啟動腳本的平台表只有 4 筆,`npx cornhsu-parity` 在這兩個平台印「沒有預先建置版本」並 exit 1。
   新增測試要求啟動腳本的平台表與 `npm/prepare.mjs` 一一對應。
@@ -35,20 +99,16 @@
   `.parity/`,Action 卻固定上傳 `<working-directory>/.parity/report.json`——`config` 指向子目錄時,
   artifact 靜靜只剩 Markdown。現在 check 步驟跑完後把設定檔目錄的 report.json 與 Markdown 複製到
   `$RUNNER_TEMP/parity-artifact/`,上傳那個固定目錄;報告本身的位置不變(之後的步驟照舊找得到)。
-  artifact 名稱不變,**內部路徑改變**(見開頭「升級必做 (upgrade required)」第 2 點的遷移方式)。上傳路徑刻意不經
+  artifact 名稱(預設值)不變,**內部路徑改變**(見開頭「升級必做 (upgrade required)」第 3 點的遷移方式)。上傳路徑刻意不經
   step output:input 值帶換行時會被寫成新的 output 行(可改寫 exit、指定上傳任意檔),這一步寫進
   `$GITHUB_OUTPUT` 的只有數字 exit code。複製時只收一般檔案、不跟 symlink——這是新的複製這一步本身要防的事:
   若單純用 cp,repo commit 一個 `.parity/report.json` → `/proc/self/environ` 之類的 symlink,就會把這一步的環境
   (含 `FIGMA_TOKEN`)複製進 artifact。1.1.0 沒有這一步(它直接上傳 `<working-directory>/.parity/report.json`),
   所以這條不是對已發佈版的安全修正。
-- **修正:`snapshot --width/--height`、`serve/map --port` 給了非整數時印警告**(patch:只多一行 stderr)。
-  1.x 一直是靜默退回預設值(`--width 375px` 會以 1280 寬凍結手機基準);現在仍退回預設值、exit code
-  不變(改成 exit 2 屬於待決定的 semver 問題),但會印 `warning: --width expects an integer (got "375px");
-  using the default 1280.`,而且在讀設定檔、開瀏覽器之前就印。
-- **修正:Action 的 `@v1` 真的鎖在 1.x**(patch)。`version` 留空時原本執行不帶範圍的
-  `dotnet tool install`,裝的是最新穩定版——2.0.0 一發佈,所有 `@v1` 的 workflow 就會裝到 2.x,
-  README 與 SECURITY.md「`@v1` 跟隨最新 1.x、介面凍結」的承諾在 CI 裡失效。現在改用浮動版號 `"1.*"`
-  (取最高的 1.x 穩定版;今天裝到的版本與之前相同)。`@v1` 從 `v1` tag 前移到本版起生效。
+- **修正:Action 只安裝自己那個 major 的工具**(patch)。`version` 留空時,v1.1.0 的 action 執行不帶範圍的
+  `dotnet tool install`,裝的是最新穩定版,不管引用的是哪個 `@v`。現在用浮動版號 `"2.*"`(取最高的 2.x
+  穩定版;NuGet 的區間寫法 `[2.0.0,3.0.0)` 會取**最低**版,不能用),`@v2` 只會裝到 2.x,3.0.0 發佈時也不會跨過去。
+  `v1` 停在 v1.1.0,沒有這個修正——見開頭「升級必做」第 1 點。
 - **修正:Parity.Server 不再間接帶著 Playwright**(未發佈的伺服器;CLI 行為與 wire 格式不變)。
   `Parity.Server.Data` 原本引用 `Parity.Engine`,把 Microsoft.Playwright 與整個 node driver(約 103 MB)
   帶進伺服器的建置產物——鐵則「雲端不跑瀏覽器」只靠測試掃型別參考把關,反射載入擋不住。現在報告契約
@@ -77,10 +137,9 @@
   不成立。現在先取 `#` 之前的部分再驗證,node-id 照 CLI 的 Markdown 報告把 `:` 換成 `-`。解析抽成
   `web/src/figma.ts`,用 Node 內建 test runner 測(`npm test`,CI 的 web-build job 也跑;需要 Node 22.6+ 的
   型別剝除,`web/package.json` 已宣告 `engines`)。
-- **修正:比自己新的報告 `schemaVersion`,`push` 在本機就擋、`report` 照讀但警告**。`push`(未發佈)
-  的本機信封檢查原本只驗 `reports` 欄位,`schemaVersion: 99` 一路送到伺服器才被 422 擋下;現在本機就
-  exit 2、不送出。`parity report`(已發佈)仍照讀、exit 0 不變(改成拒收是待決定的 semver 問題),但會在
-  stderr 警告新版加的欄位會被丟掉、Markdown 可能不完整(patch)。
+- **修正:比自己新的報告 `schemaVersion`,`push` 在本機就擋**(未發佈的 push)。本機信封檢查原本只驗
+  `reports` 欄位,`schemaVersion: 99` 一路送到伺服器才被 422 擋下;現在本機就 exit 2、不送出。
+  `parity report` 同樣改成拒收(破壞性變更第 6 條)。
 - **修正:同時設了 `figmaFileKey` 與 `designFile` 時,不再產生壞掉的 Figma 連結**(patch:只影響 Markdown
   與本機報告 UI 的連結)。`designFile` 優先於 `figmaFileKey`,設計來源其實是本機檔(snapshot 的 designId
   是 CSS selector),Markdown 與 `parity serve` 卻拿 `figmaFileKey` 組出點了就壞的 figma.com 連結——
@@ -115,9 +174,6 @@
   `"x" is a number, but token values must be strings`、`defines no tokens`(exit 2 不變);`check --md` /
   `report` 照常出報告、在 stderr 警告。tokens 檔與 `parity.config.json`、`parity.map.json` 一樣允許 `//`
   註解與尾逗號(原本會被當成「沒有 token」的檔現在讀得到)。
-- **修正:target 只給 `height` 沒給 `width` 時,警告它被忽略**(patch:只多一行 stderr,量測不變)。
-  `check`/`serve`/`map`/`baseline save` 在這種情況下照設計 frame 的寬高渲染、`height` 被靜靜丟掉
-  (`snapshot` 則照用)。改成照用 `height` 會改變量測結果(演進條款 ②),待維護者決定。
 - **修正:`baseline list` 與 `check --baseline` 在 db 不存在時不再建出空的 db**(patch:exit code 與輸出不變)。
   唯讀的查詢會留下一個 32 KB 的空 `parity.baseline.db`;被順手 commit 之後,CI 的 `--baseline` 就一直走
   「no baseline yet」、退回一般 gate。現在只有 `baseline save` 會建檔。
@@ -190,7 +246,7 @@
   - M1 期間的「非 localhost 拒啟」保險絲**已隨本次拆除**。它是「讀取端點還沒有認證、
     唯一防線只有『只聽本機』」那段期間的權宜:綁對外位址就拒絕啟動,另附一個自擔風險的
     明示逃生口。現在讀取有認證了,保險絲與逃生口一併移除,程式碼裡不再有任何繞道開關
-    ——**兩者都只存在於這個未發佈區間之內,從未對外發佈過**。伺服器仍只綁 127.0.0.1,
+    ——**兩者都只存在於 1.1.0 之後的開發過程,從未對外發佈過**。伺服器仍只綁 127.0.0.1,
     TLS 與對外網域是 M5。
   - E2E 劇本 16 關全過(401/403/404/400 各就各位);測試 217 → 220。
 - **新增:網頁外殼 M4——總覽卡與趨勢圖(刻意提前到 M3 之前:分數沒有趨勢就沒有語境)**。

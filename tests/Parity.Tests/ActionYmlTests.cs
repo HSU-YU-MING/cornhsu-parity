@@ -3,8 +3,8 @@ using System.Text.RegularExpressions;
 namespace Parity.Tests;
 
 /// <summary>
-/// 凍結面 3(GitHub Action inputs)。使用者的 workflow 以 `uses: …/cornhsu-parity@v1` 引用,
-/// v1 會被前移——刪掉或改名 input、改預設值,所有人的 CI 會在下一次前移時一起變。
+/// 凍結面 3(GitHub Action inputs)。使用者的 workflow 以 `uses: …/cornhsu-parity@v2` 引用,
+/// v2 會被前移——刪掉或改名 input、改預設值,所有人的 CI 會在下一次前移時一起變。
 /// 解析刻意只用 regex(不為測試引入 YAML 套件):action.yml 的形狀單純,格式一變這裡就大聲紅。
 /// </summary>
 public class ActionYmlTests
@@ -228,7 +228,7 @@ public class ActionYmlTests
     }
 
     [Theory]
-    [InlineData("", "tool|install|--global|Cornhsu.Parity|--version|1.*|\n")]
+    [InlineData("", "tool|install|--global|Cornhsu.Parity|--version|2.*|\n")]
     [InlineData("1.1.0", "tool|install|--global|Cornhsu.Parity|--version|1.1.0|\n")]
     public void Install_passes_the_version_or_the_floating_major_to_dotnet(string version, string expected)
     {
@@ -241,7 +241,7 @@ public class ActionYmlTests
     }
 
     [Theory]
-    [InlineData("1.*\n::error title=Parity::INJECTED")]
+    [InlineData("2.*\n::error title=Parity::INJECTED")]
     [InlineData("1.1.0\r")]
     public void A_version_with_a_line_break_is_refused_before_dotnet_prints_it(string version)
     {
@@ -507,15 +507,15 @@ public class ActionYmlTests
     [Fact]
     public void Without_a_version_the_action_installs_the_latest_release_of_its_own_major()
     {
-        // README 承諾「@v1 跟隨最新 1.x、介面凍結」。不帶範圍的 `dotnet tool install` 裝的是最新穩定版——
-        // 2.0.0 一發佈,所有 @v1 的 workflow 就會裝到 2.x。浮動版號 "1.*" 取最高的 1.x 穩定版
-        // (NuGet 的 "[1.0.0,2.0.0)" 則會取**最低**的 1.0.0,不能用)
+        // README 承諾「@v2 跟隨最新 2.x、介面凍結」。不帶範圍的 `dotnet tool install` 裝的是最新穩定版——
+        // 下一個 major 一發佈,所有 @v2 的 workflow 就會跨過去(v1.1.0 正是這樣,@v1 會裝到 2.x)。
+        // 浮動版號 "2.*" 取最高的 2.x 穩定版(NuGet 的 "[2.0.0,3.0.0)" 則會取**最低**的 2.0.0,不能用)
         var install = Step("Install Parity");
         var floating = Regex.Match(install, @"--version ""(?<major>\d+)\.\*""");
         Assert.True(floating.Success, "沒指定 version 時要用 \"<major>.*\" 鎖住 major");
         Assert.DoesNotMatch(new Regex(@"dotnet tool install --global Cornhsu\.Parity\s*$", RegexOptions.Multiline), install);
 
-        // 鎖的 major = CHANGELOG 最新發佈版的 major。發 2.0.0 時這裡會紅,提醒把 action 一起改成 "2.*"
+        // 鎖的 major = CHANGELOG 最新發佈版的 major。發 3.0.0 時這裡會紅,提醒把 action 一起改成 "3.*"
         var latest = Regex.Match(Repo.Read("CHANGELOG.md"), @"^## (?<major>\d+)\.\d+\.\d+", RegexOptions.Multiline);
         Assert.True(latest.Success, "CHANGELOG 找不到已發佈的版本標題");
         Assert.Equal(latest.Groups["major"].Value, floating.Groups["major"].Value);

@@ -11,7 +11,7 @@
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 tracks the latest 1.x (interfaces frozen since 1.0)
+- uses: HSU-YU-MING/cornhsu-parity@v2   # @v2 tracks the latest 2.x (interfaces frozen within a major)
   with:
     config: parity.config.json      # optional, defaults to parity.config.json
     target: /pricing                # optional, check only this route (omit for all)
@@ -63,11 +63,11 @@ PR comment, updating the same comment rather than adding new ones.
 
 | | |
 |---|---|
-| Releases | 27 on NuGet (v0.1.0 → v1.1.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
+| Releases | 28 on NuGet (v0.1.0 → v2.0.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **656**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **690**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -385,7 +385,7 @@ jobs:
       - run: |
           npm ci && npm run build
           npm run preview &   # e.g. serving on localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 tracks the latest 1.x
+      - uses: HSU-YU-MING/cornhsu-parity@v2   # @v2 tracks the latest 2.x
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # omit when the design source is a local JSON file
@@ -411,9 +411,14 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 `artifact-name` (default `parity-report`; letters, digits, `.`, `_`, `-`, at most 100 characters).
 
 > The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
-> nuget.org) — the latest 1.x when `version` is omitted, so `@v1` never jumps to a future 2.x,
-> or exactly the `version` you pass. This repo's own `.github/workflows/ci.yml` instead **builds from source** and runs
-> the offline demo as a self-check, so it does not depend on a published release.
+> nuget.org) — the latest 2.x when `version` is omitted, so `@v2` never jumps to a future 3.x,
+> or exactly the `version` you pass. This repo's own `.github/workflows/ci.yml` instead **builds from
+> source** and runs the offline demo as a self-check, so it does not depend on a published release.
+>
+> **Upgrading from `@v1`?** `v1` stays at 1.1.0, whose action installs the newest release of *any*
+> major when `version` is omitted — so an unpinned `@v1` workflow already runs 2.x. Switch to `@v2` and
+> work through the "upgrade required" list in the CHANGELOG's 2.0.0 entry, or set `version: 1.1.0` to
+> stay on 1.x for now.
 
 ## Report vocabulary (for anyone parsing `report.json`)
 

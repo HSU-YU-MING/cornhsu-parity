@@ -25,18 +25,21 @@ escalation.
 
 | Version | Supported |
 |---|---|
-| The latest `1.x` release | ✅ |
-| `0.x` and anything older | ❌ |
+| The latest `2.x` release | ✅ |
+| `1.x`, `0.x` and anything older | ❌ |
 
-Fixes land on the newest release only — there are no patch branches for older versions.
-Upgrading to the newest `1.x` is always the fix. The six interfaces (config, CLI and exit codes,
-Action inputs, `report.json`, the baseline database, the snapshot format) have been frozen since
-1.0 (see the CHANGELOG's 1.0.0 entry), so a 1.x upgrade does not break them. Anything else a
-release asks of you — re-installing Chromium, a newer Node for the npm channel, a changed path
-inside the uploaded artifact — is listed at the top of that release's CHANGELOG entry under
-**升級必做 (upgrade required)**. If you reference the Action as `@v1` you receive new releases
-automatically, so check that heading whenever a release ships — or pin an exact version and
-upgrade on your own schedule.
+Fixes land on the newest release only — there are no patch branches for older versions, and no
+further 1.x releases. Upgrading to the newest `2.x` is always the fix. The six interfaces (config,
+CLI and exit codes, Action inputs, `report.json`, the baseline database, the snapshot format) are
+frozen within a major — the rules are in the CHANGELOG's 1.0.0 entry and restated for 2.x in its
+2.0.0 entry — so a 2.x upgrade does not break them. Coming from 1.x, work through the 2.0.0 entry's
+**升級必做 (upgrade required)** and breaking-change lists first. Anything else a release asks of
+you — re-installing Chromium, a newer Node for the npm channel, a changed path inside the uploaded
+artifact — is listed at the top of that release's CHANGELOG entry under **升級必做 (upgrade
+required)**. If you reference the Action as `@v2` you receive new releases automatically, so check
+that heading whenever a release ships — or pin an exact version and upgrade on your own schedule.
+(`@v1` stays at 1.1.0, whose action installs the newest release of any major when `version` is
+empty; switch to `@v2`.)
 
 ## What is in scope
 
@@ -67,16 +70,16 @@ These are deliberate, documented behaviour:
 
 ## Hardening notes for users
 
-- **Reference the Action as `@v1`** (tracks the latest 1.x automatically — the interfaces are
-  frozen; new releases list anything you must do under **升級必做 (upgrade required)** in the
-  CHANGELOG), or pin an exact version (`HSU-YU-MING/cornhsu-parity@v1.0.0`) if your policy
-  requires immutable refs.
+- **Reference the Action as `@v2`** (tracks the latest 2.x automatically — the interfaces are
+  frozen within the major; new releases list anything you must do under **升級必做 (upgrade
+  required)** in the CHANGELOG), or pin an exact version (`HSU-YU-MING/cornhsu-parity@v2.0.0`) if
+  your policy requires immutable refs.
 - **Give the Figma token only `file_content:read`.** Nothing else is used. Pass it through
   `secrets`, never inline in `parity.config.json` — the config's `designToken` field takes
   `env:FIGMA_TOKEN` precisely so the value never has to sit in a committed file.
-- **Never wire the Action's `config`, `target` or `version` inputs to attacker-controlled text**
-  (a PR title, an issue body, a branch name). Those are paths and version strings; nothing that
-  arrives from outside your repository belongs in them.
+- **Never wire the Action's `config`, `target`, `version` or `artifact-name` inputs to
+  attacker-controlled text** (a PR title, an issue body, a branch name). Those are paths, version
+  strings and names; nothing that arrives from outside your repository belongs in them.
 - **`pull_request_target` gives a fork's code a write-scoped token.** Parity does not need it —
   a plain `pull_request` trigger is enough. Posting the comment will 403 on fork PRs, which the
   Action tolerates on purpose; the gate still runs.

@@ -31,8 +31,9 @@ InformationalVersion,所以本機建置顯示 `0.0.0-dev+<commit>`——一眼�
 而且 bug 回報裡直接帶著 commit。
 
 > 唯一要人手維護版號的地方是 **`CHANGELOG.md`**,而且它是「還沒推 tag 之前」的版本真相源:
-> README 裡兩處 `@vX.Y.Z` 與「發佈 N 版」的數字都對著它比(`scripts/verify-readme-facts.ps1`),
-> `release.yml` 再確認 tag 與 CHANGELOG 頂端一致。
+> README 的 `@vN`(N = CHANGELOG 最新版號的 major)、「發佈 N 版」與最新版號都對著它比
+> (`scripts/verify-readme-facts.ps1`),`release.yml` 再確認 tag 與 CHANGELOG 頂端一致。
+> 標題寫 `## 2.0.0` 或 `## 2.0.0 — 2026-10-22` 都可以(release.yml、verify 腳本與 `ActionYmlTests` 都只取開頭的版號;別加方括號)。
 
 ## 每次發布
 
@@ -40,6 +41,12 @@ InformationalVersion,所以本機建置顯示 `0.0.0-dev+<commit>`——一眼�
 # 版號由 tag 推導(release.yml 用 -p:Version 覆蓋 csproj 與 package.json 裡的佔位值)
 git tag v0.1.0
 git push origin v0.1.0
+```
+
+發完之後把移動式 major tag 前移到這一版(現在是 `v2`,見下面「2.0.0」一節):
+
+```sh
+git tag -f v2 v2.x.y && git push -f origin v2
 ```
 
 推 tag 之前先在本機跑一次文件檢查(CI 也會擋,但先跑比較快):
@@ -78,16 +85,37 @@ git tag v1 v1.0.0 && git push origin v1
 
 - [ ] README 兩份共四處 `uses: …@v0.x.y` → **`@v1`**（0.x 期間刻意 pin 版本,1.0 起才切移動式）；
       同時把 `scripts/verify-readme-facts.ps1` 的 pin 檢查改成認 `@v1`，否則它會擋下這次變更
-- [ ] 之後**每發一個 1.x**,把 `v1` 前移到最新:`git tag -f v1 v1.x.y && git push -f origin v1`
-      （`v1` 的推送**不會**觸發 release——workflow 只認三段式 `v*.*.*` tag,這是刻意的：
-      `v1` 若觸發,守門會因 tag ≠ CHANGELOG 版號而必紅一次,徒增失敗通知）
-- [ ] **發新 major(2.0.0)之前**:先確認 `v1` 指向的那個 commit,它的 `action.yml` 已經寫
-      `--version "1.*"`。這行是 1.1.0 **之後**才加的(2026-10-22)——v1.1.0 那份 `action.yml` 不帶範圍,
-      `v1` 若還停在那裡,2.0.0 一發佈,沒指定 `version` 的 `@v1` 使用者就會裝到 2.x。所以最後一個 1.x
-      若早於這個修正,**先發一個含修正的 1.x(例如 1.1.1 或 1.2.0)並把 `v1` 前移**,再發 2.0.0。
-- [ ] **發 2.0.0 時**:`action.yml` 的浮動版號 `"1.*"` 改成 `"2.*"`,再建 `v2` 移動式 tag。`v1` 停在
-      最後一個含 `"1.*"` 的 1.x,`@v1` 使用者就不會跨 major——這正是那行浮動版號存在的理由
-      (`ActionYmlTests` 會在 CHANGELOG 頂端變成 2.x 時紅燈提醒改 `"2.*"`;前一條的前置步驟它驗不到,要人工確認)。
+- [x] 1.x 期間每發一版就把 `v1` 前移(最後停在 v1.1.0)
+      （移動式 tag 的推送**不會**觸發 release——workflow 只認三段式 `v*.*.*` tag,這是刻意的：
+      `v1` 若觸發,守門會因 tag ≠ CHANGELOG 版號而必紅一次,徒增失敗通知;`v2` 同理）
+
+## 2.0.0(第一個 major)
+
+這個分支合併之後,**推 tag 就能發**——版號相關的檔案都已就位:CHANGELOG 頂端是 `## 2.0.0 — 2026-10-22`、
+兩份 README 引用 `@v2`(28 版、最新 v2.0.0)、`action.yml` 在 `version` 留空時裝 `"2.*"`、SECURITY.md 的
+支援版本表是 2.x。發版當天:
+
+- [ ] 實際發版日不是 2026-10-22 的話,改 CHANGELOG 的標題日期(只改日期,版號不動)
+- [ ] `pwsh scripts/verify-readme-facts.ps1` 綠燈(CI 也會跑)
+- [ ] 推版號 tag,等 release.yml 發完 NuGet + npm,再建移動式 `v2`:
+
+```sh
+git tag v2.0.0 && git push origin v2.0.0     # 觸發 release.yml(守門比對 CHANGELOG 頂端 = 2.0.0)
+git tag v2 v2.0.0 && git push origin v2      # @v2 的使用者從這裡開始拿到 2.x;這個推送不觸發 release
+```
+
+- [ ] 之後**每發一個 2.x**,把 `v2` 前移:`git tag -f v2 v2.x.y && git push -f origin v2`
+- [ ] **`v1` 不再前移,也不再發 1.x。** 已知副作用(2026-10-22 接受):`v1` 停在 v1.1.0,那份 `action.yml`
+      在 `version` 留空時執行不帶範圍的 `dotnet tool install`,裝的是**不限 major** 的最新版——限制 major 的
+      `"1.*"` 是 1.1.0 **之後**才加的,從沒發佈過。所以 2.0.0 一上 nuget.org,沒填 `version` 的 `@v1` workflow
+      就會用 1.1.0 的 action 步驟跑 2.x 的工具。原本的避法是先發一個含 `"1.*"` 的 1.x 並把 `v1` 前移,再發
+      2.0.0;這次決定不做(還沒有外部使用者需要過渡期),改由 CHANGELOG 2.0.0 的「升級必做」第 1 點與兩份 README
+      請使用者改用 `@v2`,或給 `version: 1.1.0` 留在 1.x。**之後不要為了這個補發 1.x。**
+
+**下一個 major(3.0.0)**:2.x 的每一版 `action.yml` 都帶 `"2.*"`,所以 `v2` 停在哪一版都不會跨 major,
+`v1` 的問題不會重演。屆時要改的:`action.yml` 的 `"2.*"` → `"3.*"`(`ActionYmlTests` 會在 CHANGELOG
+頂端變成 3.x 時紅燈)、兩份 README 的 `@v2` → `@v3`(`verify-readme-facts.ps1` 依最新版號的 major 檢查,
+同樣會紅)、SECURITY.md 的支援版本表、建 `v3` tag。
 
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
 

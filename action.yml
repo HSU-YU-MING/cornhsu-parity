@@ -19,7 +19,7 @@ inputs:
     required: false
     default: '.'
   version:
-    description: 'Cornhsu.Parity tool version (omit for the latest release of this action''s major version, e.g. the latest 1.x for @v1)'
+    description: 'Cornhsu.Parity tool version (omit for the latest release of this action''s major version, e.g. the latest 2.x for @v2)'
     required: false
     default: ''
   figma-token:
@@ -71,9 +71,10 @@ runs:
         if [ -n "$PARITY_VERSION" ]; then
           dotnet tool install --global Cornhsu.Parity --version "$PARITY_VERSION"
         else
-          # @v1 只跟隨 1.x(介面凍結的承諾):不帶範圍會裝到最新穩定版,2.0.0 一發佈就跨 major。
-          # "1.*" 取最高的 1.x 穩定版;發 2.0.0 時這行要跟著改成 "2.*"(ActionYmlTests 會提醒)
-          dotnet tool install --global Cornhsu.Parity --version "1.*"
+          # @v2 只跟隨 2.x(介面凍結的承諾):不帶範圍會裝到最新穩定版,3.0.0 一發佈就跨 major
+          # (v1.1.0 的 action.yml 就是這樣,@v1 因此會裝到 2.x——見 RELEASING.md)。
+          # "2.*" 取最高的 2.x 穩定版;發 3.0.0 時這行要跟著改成 "3.*"(ActionYmlTests 會提醒)
+          dotnet tool install --global Cornhsu.Parity --version "2.*"
         fi
         echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 

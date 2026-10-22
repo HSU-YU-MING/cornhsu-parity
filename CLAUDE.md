@@ -55,14 +55,18 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
 
 ## 發版:本 repo 特有
 
-四個 NuGet repo 裡**只有 Parity 已進 1.x**，規則跟其他三個開始分岔:
+四個 NuGet repo 裡**只有 Parity 已過 1.0**(2.0.0 起是 2.x)，規則跟其他三個開始分岔:
 
 - **六面介面凍結**(config schema／CLI 與 exit code／action inputs／`report.json`／
   baseline schema／snapshot 格式)，破壞任一面升 major。量測語意演進 = minor + CHANGELOG
-  開頭標「升級必做」。完整的**演進條款**在 CHANGELOG 的 1.0.0 節，逐項審查過程在
-  `docs/Parity 1.0 介面凍結審查.md`。
-- **每發一個 1.x 要把移動式 `v1` tag 前移**:`git tag -f v1 v1.x.y && git push -f origin v1`。
-  README 教使用者用 `@v1`，忘了前移等於使用者永遠拿不到新版。
+  開頭標「升級必做」。完整的**演進條款**在 CHANGELOG 的 1.0.0 節(2.0.0 節重申它適用於 2.x)，
+  逐項審查過程在 `docs/Parity 1.0 介面凍結審查.md`，2.0.0 之後的六面現況在 `docs/公開介面盤點.md` 第 11 節。
+- **每發一個 2.x 要把移動式 `v2` tag 前移**:`git tag -f v2 v2.x.y && git push -f origin v2`。
+  README 教使用者用 `@v2`，忘了前移等於使用者永遠拿不到新版。
+- **`v1` 停在 v1.1.0，不再前移、不再發 1.x**。那份 `action.yml` 不限 major(`@v1` 會裝到 2.x)，
+  這是 2.0.0 發版時接受的副作用(見 RELEASING.md「2.0.0」一節)——**不要為了它補發 1.x**。
+- `action.yml` 在 `version` 留空時裝 `"<major>.*"`(現在 `"2.*"`)，major 要跟 CHANGELOG 最新版一致;
+  `verify-readme-facts.ps1` 也依最新版號的 major 檢查 README 的 `@vN`。發下一個 major 時兩邊一起改。
 - `release.yml` 的觸發**刻意只認三段式 `v[0-9]*.[0-9]*.[0-9]*`，不是 `v*`**——`v1` 也符合
   `v*`，每次前移都會誤觸發一次注定失敗的 release(1.0.0／1.1.0 各踩一次，run #27/#29)。
   **不要「順手」改回 `v*`。**

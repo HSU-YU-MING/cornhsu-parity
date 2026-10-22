@@ -89,6 +89,19 @@ public class GateTests
         Assert.Null(config.GateFailReason(passing));
     }
 
+    [Fact]
+    public void An_empty_fail_on_turns_off_only_the_severity_gate()
+    {
+        // CHANGELOG 2.0.0 給 1.x「failOn: none」的遷移方式(none 在 2.0.0 是 exit 2):改寫空陣列。
+        // 嚴重度不再擋,配對可信度的 gate 照常——0 配對仍然 FAIL
+        using var dir = new TempDir();
+        var config = ParityConfig.Load(dir.Write("parity.config.json", """{ "gate": { "failOn": [] } }"""));
+
+        Assert.Empty(config.Gate.FailOn);
+        Assert.Null(config.GateFailReason(Report(designNodes: 1, matched: 1, Node("a", Diff(Severity.Critical)))));
+        Assert.NotNull(config.GateFailReason(Report(designNodes: 1, matched: 0)));
+    }
+
     // ---------- baseline 模式用的可信度檢查:與 failOn 分離 ----------
 
     [Fact]
