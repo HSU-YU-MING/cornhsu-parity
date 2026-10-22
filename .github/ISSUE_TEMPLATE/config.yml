@@ -1,0 +1,14 @@
+# 檔名的數字前綴是排序用的(GitHub 照檔名字母排表單):價值由高到低——誤判/漏判最先。
+# 檔名同時是報告裡「回報誤判」連結與 `parity bug-report` 預填網址的 template= 參數:改名要一起改
+# (IssueTemplateTests 與 ReportFeedbackLink 的測試會紅)。
+#
+# 空白 issue 關掉:三張表單涵蓋錯誤、判斷錯誤與建議;關掉空白 issue 才能確保每份回報都帶版本與
+# 重現所需的欄位。安全問題不走公開 issue,導向私下回報。
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem — report it privately
+    url: https://github.com/HSU-YU-MING/cornhsu-parity/security/advisories/new
+    about: Please do not open a public issue for a vulnerability. See SECURITY.md for what to include.
+  - name: Security policy (SECURITY.md)
+    url: https://github.com/HSU-YU-MING/cornhsu-parity/security/policy
+    about: Supported versions, what is in scope, and how reports are handled.
