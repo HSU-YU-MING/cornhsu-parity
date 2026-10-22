@@ -104,11 +104,14 @@ public class ActionYmlTests
         return string.Join("\n", m.Groups["body"].Value.Split('\n').Select(l => l.Length >= 8 ? l[8..] : l.TrimStart()));
     }
 
+    private sealed record StepRun(int Exit, string Output, string ArtifactDir, bool ParityCalled, string Stderr);
+
     /// <summary>
     /// 用 runner 的方式(bash -eo pipefail)跑「Run Parity check」那段,parity 換成 stub:
-    /// 設定檔存在就照真的 check 把報告寫到「設定檔所在目錄/.parity/report.json」、exit 1;不存在就 exit 2。
+    /// 設定檔存在就照真的 check 把報告寫到「設定檔所在目錄/.parity/report.json」與 --md、exit 1;
+    /// 不存在就什麼都不寫、exit 2。stub 被呼叫過會留下 $RUNNER_TEMP/parity-called。
     /// </summary>
-    private static (int Exit, string Output, string ArtifactDir) RunCheckStep(string workspace, string workingDirectory, string config)
+    private static StepRun RunCheckStep(string workspace, string workingDirectory, string config, string target = "")
     {
         string Unix(string p) => p.Replace('\\', '/');
         var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
@@ -116,17 +119,19 @@ public class ActionYmlTests
         File.WriteAllText(output, "");
         const string stub = """
             parity() {
-              local cfg=""
+              : > "$RUNNER_TEMP/parity-called"
+              local cfg="" md=""
               while [ $# -gt 0 ]; do
                 case "$1" in
                   --config) cfg="$2"; shift 2 ;;
-                  --md) printf 'markdown\n' > "$2"; shift 2 ;;
+                  --md) md="$2"; shift 2 ;;
                   *) shift ;;
                 esac
               done
               [ -f "$cfg" ] || return 2
               mkdir -p "$(dirname -- "$cfg")/.parity"
               printf 'report for %s' "$cfg" > "$(dirname -- "$cfg")/.parity/report.json"
+              printf 'markdown\n' > "$md"
               return 1
             }
 
@@ -145,13 +150,15 @@ public class ActionYmlTests
         psi.Environment["RUNNER_TEMP"] = Unix(runnerTemp);
         psi.Environment["GITHUB_OUTPUT"] = Unix(output);
         psi.Environment["PARITY_CONFIG"] = config;
-        psi.Environment["PARITY_TARGET"] = "";
+        psi.Environment["PARITY_TARGET"] = target;
         psi.Environment["PARITY_BASELINE"] = "false";
         using var p = System.Diagnostics.Process.Start(psi)!;
         _ = p.StandardOutput.ReadToEndAsync();
-        _ = p.StandardError.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
         Assert.True(p.WaitForExit(30_000), "bash 沒有在 30 秒內結束");
-        return (p.ExitCode, File.ReadAllText(output).Replace("\r\n", "\n"), Path.Combine(runnerTemp, "parity-artifact"));
+        return new StepRun(p.ExitCode, File.ReadAllText(output).Replace("\r\n", "\n"),
+            Path.Combine(runnerTemp, "parity-artifact"), File.Exists(Path.Combine(runnerTemp, "parity-called")),
+            stderr.GetAwaiter().GetResult());
     }
 
     [Theory]
@@ -167,12 +174,80 @@ public class ActionYmlTests
         using var dir = new TempDir();
         dir.Write(Path.Combine(workingDirectory, config), "{}");
 
-        var (exit, output, artifact) = RunCheckStep(dir.Path, workingDirectory, config);
+        var r = RunCheckStep(dir.Path, workingDirectory, config);
 
-        Assert.Equal(0, exit); // 這步本身不讓 job 失敗(gate 在最後一步才擋)
-        Assert.Equal("exit=1\n", output);
-        Assert.Equal($"report for {config}", File.ReadAllText(Path.Combine(artifact, "report.json")));
-        Assert.Equal("markdown\n", File.ReadAllText(Path.Combine(artifact, "parity-report.md")).Replace("\r\n", "\n"));
+        Assert.Equal(0, r.Exit); // 這步本身不讓 job 失敗(gate 在最後一步才擋)
+        Assert.Equal("exit=1\n", r.Output);
+        Assert.Equal($"report for {config}", File.ReadAllText(Path.Combine(r.ArtifactDir, "report.json")));
+        Assert.Equal("markdown\n", File.ReadAllText(Path.Combine(r.ArtifactDir, "parity-report.md")).Replace("\r\n", "\n"));
+    }
+
+    /// <summary>
+    /// 建 symlink。先用系統的 symbolic link;Windows 沒有開發人員模式/管理員權限時建不了,改用 Git Bash 的
+    /// 模擬 symlink(MSYS=winsymlinks:sys)——action 的步驟跑在 bash 裡,bash 的 test -L 與 cp 都認得它,
+    /// 正好是這條測試要驗的對象。
+    /// </summary>
+    private static void MakeSymlink(string link, string target)
+    {
+        try
+        {
+            File.CreateSymbolicLink(link, target);
+            return;
+        }
+        catch (Exception) when (OperatingSystem.IsWindows()) { }
+
+        var psi = new System.Diagnostics.ProcessStartInfo(BashPath()) { UseShellExecute = false, RedirectStandardError = true };
+        foreach (var a in new[] { "-c", "ln -s -- \"$1\" \"$2\"", "ln", target.Replace('\\', '/'), link.Replace('\\', '/') }) psi.ArgumentList.Add(a);
+        psi.Environment["MSYS"] = "winsymlinks:sys";
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var err = p.StandardError.ReadToEnd();
+        p.WaitForExit();
+        Assert.True(p.ExitCode == 0, $"建不了 symlink:{err}");
+    }
+
+    /// <summary>建得了 symlink 才跑(見 MakeSymlink);兩種方法都不行就標成略過,看得見。</summary>
+    public sealed class SymlinkFactAttribute : FactAttribute
+    {
+        public SymlinkFactAttribute()
+        {
+            if (!CanCreateSymlinks())
+                Skip = "這台機器建不了 symbolic link(系統的與 Git Bash 模擬的都不行);Linux / macOS 的 CI 會跑這條";
+        }
+
+        private static bool CanCreateSymlinks()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), $"parity-symlink-probe-{Guid.NewGuid():N}");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "target"), "");
+                MakeSymlink(Path.Combine(dir, "link"), Path.Combine(dir, "target"));
+                return true;
+            }
+            catch (Exception) { return false; }
+            finally { try { Directory.Delete(dir, recursive: true); } catch (IOException) { } }
+        }
+    }
+
+    [SymlinkFact]
+    public void A_report_path_the_repo_turned_into_a_symlink_is_never_copied_into_the_artifact()
+    {
+        // repo 可以 commit 一個 .parity/report.json → /proc/self/environ 的 symlink:parity 寫入失敗、symlink 留著,
+        // cp 跟著 symlink 把這一步自己的環境(含 FIGMA_TOKEN)複製進 artifact;指向 /dev/zero 則寫滿磁碟。
+        // 這裡用 workspace 外的「秘密」檔代替;設定檔不存在 → stub 什麼都不寫、exit 2,symlink 原封留著
+        using var dir = new TempDir();
+        var secret = dir.Write(Path.Combine("outside", "secret.txt"), "FIGMA_TOKEN=figd_secret");
+        var ws = Directory.CreateDirectory(dir.File("ws")).FullName;
+        Directory.CreateDirectory(Path.Combine(ws, ".parity"));
+        MakeSymlink(Path.Combine(ws, ".parity", "report.json"), secret);
+        Directory.CreateDirectory(Path.Combine(ws, "_temp"));
+        MakeSymlink(Path.Combine(ws, "_temp", "parity-report.md"), secret); // Markdown 那份比照
+
+        var r = RunCheckStep(ws, ".", "parity.config.json");
+
+        Assert.Equal("exit=2\n", r.Output);
+        Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "report.json")), "report.json 的 symlink 被跟著複製了");
+        Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "parity-report.md")), "Markdown 的 symlink 被跟著複製了");
     }
 
     [Fact]
@@ -184,11 +259,11 @@ public class ActionYmlTests
         using var dir = new TempDir();
         const string payload = "x\nexit=0\nreport<<EOF\n/home/runner/work/**/.git/config\nEOF\nskip<<exit=2\ny/parity.config.json";
 
-        var (exit, output, artifact) = RunCheckStep(dir.Path, ".", payload);
+        var r = RunCheckStep(dir.Path, ".", payload);
 
-        Assert.Equal(0, exit);
-        Assert.Equal("exit=2\n", output); // 只有 parity 真正的 exit code 一行
-        Assert.False(File.Exists(Path.Combine(artifact, "report.json")));
+        Assert.Equal(0, r.Exit);
+        Assert.Equal("exit=2\n", r.Output); // 只有一行 exit code
+        Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "report.json")));
     }
 
     [Fact]
