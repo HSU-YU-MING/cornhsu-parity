@@ -345,7 +345,7 @@ jobs:
 
 action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report` / `artifact-name`(預設 `parity-report`;只收英數字與 `.` `_` `-`,最多 100 字,不可以 `-` 開頭、不可以全是點)。
 
-> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org):沒給 `version` 時裝最新的 2.x(`@v2` 不會跳到日後的 3.x),給了就裝那一版。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
+> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org):沒給 `version` 時裝最新的 2.x(`@v2` 不會跳到日後的 3.x),給了就裝那一版。**同一個 job 裡每次呼叫都裝到同一個全域位置,後面的呼叫不能裝比前面低的版本**(`dotnet tool` 拒絕降版)——例如第一次沒給 `version` 裝到最新的 2.x,第二次給 `version: 2.0.0` 就會失敗。同一個 job 裡的呼叫請給同一個 `version`,或改用 matrix。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 >
 > **從 `@v1` 升級?** `v1` 停在 1.1.0,那一版的 action 在沒給 `version` 時會裝*任何* major 的最新版——沒固定版本的 `@v1` workflow 其實已經在跑 2.x。請改用 `@v2`,照 CHANGELOG 2.0.0 節的「升級必做」逐條處理;暫時想留在 1.x 就給 `version: 1.1.0`。
 

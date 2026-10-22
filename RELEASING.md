@@ -1,6 +1,6 @@
 # 發布 Cornhsu.Parity（NuGet + npm）
 
-用 **Trusted Publishing（OIDC）**——不需要長效 API key、不需要 repo secret。推一個 `v*` tag 就同時發佈 **NuGet（dotnet tool）與 npm（`npx`）兩個通路**。
+用 **Trusted Publishing（OIDC）**——不需要長效 API key、不需要 repo secret。推一個三段式版號 tag(`vX.Y.Z`,例如 `v2.0.1`;release.yml 只認 `v[0-9]*.[0-9]*.[0-9]*`,移動式的 `v2` 不會觸發)就同時發佈 **NuGet（dotnet tool）與 npm（`npx`）兩個通路**。
 
 ## 一次性設定
 

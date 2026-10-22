@@ -414,7 +414,10 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 
 > The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
 > nuget.org) — the latest 2.x when `version` is omitted, so `@v2` never jumps to a future 3.x,
-> or exactly the `version` you pass. This repo's own `.github/workflows/ci.yml` instead **builds from
+> or exactly the `version` you pass. **Within one job the tool is installed once per call into the same
+> global location, and a later call cannot install a lower version than an earlier one** (`dotnet tool`
+> refuses to downgrade) — e.g. a first call without `version` installs the latest 2.x, and a second call
+> with `version: 2.0.0` fails. Give every call in a job the same `version`, or use a matrix. This repo's own `.github/workflows/ci.yml` instead **builds from
 > source** and runs the offline demo as a self-check, so it does not depend on a published release.
 >
 > **Upgrading from `@v1`?** `v1` stays at 1.1.0, whose action installs the newest release of *any*
