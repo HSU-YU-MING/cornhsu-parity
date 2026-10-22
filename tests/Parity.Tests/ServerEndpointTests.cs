@@ -355,7 +355,8 @@ public class ServerEndpointTests : IAsyncLifetime
         }
 
         // 1) 不存在的 email 與錯密碼:狀態碼與訊息逐字相同(訊息層面不能拿來探測誰有帳號;
-        //    回應時間由下一條測試的假驗證對齊;剩下的探測管道是第 3 段的鎖定訊息)
+        //    回應時間由下一條測試的假驗證對齊;剩下的探測管道是第 3 段的鎖定——訊息不同,
+        //    而且鎖定後 Identity 不跑密碼驗證,回得比其他 401 快)
         var unknown = await LoginAsync(Client(), "nobody@t.local", "correct horse battery");
         var wrong = await LoginAsync(Client(), "owner@t.local", "not the password");
         Assert.Equal(HttpStatusCode.Unauthorized, unknown.Status);

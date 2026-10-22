@@ -95,8 +95,8 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   web host 開的是 ContentRoot 下的另一個,push 回 401、邀請連結回 404。現在兩邊共用同一個解析:
   `ConnectionStrings:parity` → `PARITY_SERVER_DB` → `parity-server.db`(cwd/ContentRoot)。
 - **修正:登入時不存在的 email 也跑一次密碼雜湊驗證**(未發佈的伺服器)。原本直接回 401、不跑 PBKDF2,
-  回得明顯比存在的帳號快,光看回應時間就能探測誰有帳號。鎖定訊息只有存在的帳號會出現這一半,
-  留待產品決定(ROADMAP 已知盲點)。
+  回得明顯比存在的帳號快,光看回應時間就能探測誰有帳號。還開著的探測管道是鎖定:只有存在的帳號會看到
+  `too many failed attempts`,而且鎖定後 Identity 不跑密碼驗證、回得特別快——留待產品決定(ROADMAP 已知盲點)。
 - **修正:`tokensFile` 讀不到或寫壞時說清楚是哪裡,並允許註解**(patch)。原本 `catch { return null; }`
   把檔案不存在、JSON 壞掉、值是數字、有 `//` 註解全當成「沒有 token」:`lint` 接著報
   `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位;`check --md`
