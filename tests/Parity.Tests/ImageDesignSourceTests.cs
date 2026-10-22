@@ -69,6 +69,56 @@ public class ImageDesignSourceTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    [Theory]
+    [InlineData("bmp")]
+    [InlineData("gif")]
+    [InlineData("tiff")]
+    public async Task Only_png_and_jpeg_are_decoded(string format)
+    {
+        // 決策 #7(2.0.0):designImage 一直只文件化 PNG/JPG,1.x 的 Image.LoadAsync 卻依內容自動判格式、
+        // 什麼都解(ImageSharp 3.1.12 的 BigTIFF 解碼 DoS 就從這裡進來;3.1 線沒有修補版)。
+        // 現在只註冊 PNG 與 JPEG 解碼器,其他格式給明確的錯——副檔名改成 .png 也一樣擋得住
+        var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var imgPath = Path.Combine(dir, "design.png"); // 副檔名騙不過:看內容
+            using (var img = TestImage())
+            {
+                if (format == "bmp") await img.SaveAsBmpAsync(imgPath);
+                else if (format == "gif") await img.SaveAsGifAsync(imgPath);
+                else await img.SaveAsTiffAsync(imgPath);
+            }
+            var annPath = Path.Combine(dir, "design.json");
+            await File.WriteAllTextAsync(annPath, """{ "id": "1:1", "name": "frame", "type": "Frame", "box": { "x": 0, "y": 0, "width": 10, "height": 10 } }""");
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => new ImageDesignSource(imgPath).GetFrameAsync(new DesignRef(annPath, "")));
+            Assert.Contains("PNG or JPEG", ex.Message);
+            Assert.Contains(imgPath, ex.Message);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Jpeg_is_still_decoded()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var imgPath = Path.Combine(dir, "design.jpg");
+            using (var img = TestImage()) await img.SaveAsJpegAsync(imgPath);
+            var annPath = Path.Combine(dir, "design.json");
+            await File.WriteAllTextAsync(annPath, """{ "id": "1:1", "name": "frame", "type": "Frame", "box": { "x": 0, "y": 0, "width": 100, "height": 100 } }""");
+
+            var root = await new ImageDesignSource(imgPath).GetFrameAsync(new DesignRef(annPath, ""));
+
+            Assert.NotNull(root.Fill);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     [Fact]
     public async Task Fills_missing_colors_but_keeps_explicit_and_text()
     {

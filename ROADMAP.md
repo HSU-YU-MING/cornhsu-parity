@@ -72,9 +72,6 @@
     (2026-10-22 已讓不存在的 email 也跑一次同成本的假密碼驗證,與「存在但打錯密碼」同樣慢;但**已鎖定**的帳號
     Identity 先檢查鎖定、不跑驗證,約 3–7 ms 就回,比其他 401 的 80–90 ms 快很多。)鎖定訊息與鎖定路徑的時序
     要不要統一由產品決定——`ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
-- **2026-10-22 修 bug 時刻意只做到「大聲講出來」、收緊與否待維護者決定的**(現在都印警告、exit code 與量測不變;
-  改了就是「原本接受的輸入變 exit 2」或量測語意演進,semver 要定案):
-  - ImageSharp 解碼只註冊 PNG/JPEG(擋 BigTIFF 那條 DoS;原本能用的 WebP/TIFF `designImage` 會變錯誤)。
 - **Action 的 artifact 名稱固定 `parity-report`**(2026-10-22 審查發現,待決定):同一次執行裡 matrix 或呼叫兩次 action,
   第二次上傳撞名 409;同一個 job 呼叫兩次還會共用 `$RUNNER_TEMP` 底下的暫存檔與同一則 PR 留言。修法要新增選填 input
   (例如 `artifact-name`,預設不變 = minor)或改預設名稱(比照 major)。在那之前的繞法:除了一次以外都設 `upload-report: false`。

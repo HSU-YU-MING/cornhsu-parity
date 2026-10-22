@@ -1,6 +1,9 @@
 using Parity.Engine.DesignSources.Json;
 using Parity.Engine.Model;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 
 namespace Parity.Engine.DesignSources.Image;
@@ -29,9 +32,29 @@ public sealed class ImageDesignSource(string imagePath) : IDesignSource
 
         var root = await _annotations.GetFrameAsync(reference, ct);
 
-        using var image = await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(imagePath, ct);
-        return Fill(root, image);
+        Image<Rgba32> image;
+        try
+        {
+            image = await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(PngAndJpegOnly, imagePath, ct);
+        }
+        catch (UnknownImageFormatException)
+        {
+            throw new InvalidOperationException(
+                $"designImage must be PNG or JPEG: {imagePath} is another format (export the design as PNG or JPEG).");
+        }
+        using (image)
+            return Fill(root, image);
     }
+
+    /// <summary>
+    /// 只註冊 PNG 與 JPEG 解碼器(2.0.0 起)。designImage 一直只文件化 PNG/JPG,但預設設定依內容自動判格式、
+    /// 什麼都解——ImageSharp 3.1.12 的 BigTIFF 解碼 DoS(GHSA-wmxv-xphr-5c9g)就從這裡進來,而 3.1 線沒有修補版
+    /// (4.x 授權改成建置期強制,見 CLAUDE.md)。副檔名改成 .png 的 TIFF 也一樣擋得住:判格式看的是內容。
+    /// </summary>
+    private static readonly DecoderOptions PngAndJpegOnly = new()
+    {
+        Configuration = new Configuration(new PngConfigurationModule(), new JpegConfigurationModule()),
+    };
 
     private static DesignNode Fill(DesignNode node, Image<Rgba32> image)
         => node with

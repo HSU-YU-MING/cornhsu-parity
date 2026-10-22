@@ -211,8 +211,8 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
     (wmxv,`LoadAsync` 依內容自動判格式,副檔名是 .png 的 TIFF 也會走到)與 ICC CLUT 依未驗證尺寸配置記憶體
     (gwg2)。兩者都是 DoS,輸入是使用者自己 repo 裡的檔案——在 CI 裡能改那個檔的人本來就能改 workflow,
     增量風險低。
-  - **重新評估的時機**:3.1.x 出修補版就升;或改成只註冊 PNG/JPEG 解碼器(可擋掉 TIFF 那條,但
-    原本能用的 WebP/BMP/GIF/TIFF `designImage` 會變成錯誤,是 semver 問題,待決定)。
+  - **2.0.0 起只註冊 PNG/JPEG 解碼器**(`ImageDesignSource.PngAndJpegOnly`):BigTIFF 那條(wmxv)碰不到了,
+    剩下的是 PNG/JPEG 內嵌 ICC 的 CLUT 配置(gwg2,中風險 DoS)。**重新評估的時機**:3.1.x 出修補版就升。
 - **auto-name 通用名假配對**(ROADMAP 有完整留帳):「Content」這種通用圖層名會撞到
   無關頁面的 `#content`。尺寸合理性防線(面積比 >16 拒配)只擋得住量級差很多的;
   **`auto-container`(LCA 推論)不經這道防線**。要根治得上語意層，動工前先蒐集更多野生樣本。
