@@ -86,6 +86,13 @@
 - **Action 的 artifact 名稱固定 `parity-report`**(2026-10-22 審查發現,待決定):同一次執行裡 matrix 或呼叫兩次 action,
   第二次上傳撞名 409;同一個 job 呼叫兩次還會共用 `$RUNNER_TEMP` 底下的暫存檔與同一則 PR 留言。修法要新增選填 input
   (例如 `artifact-name`,預設不變 = minor)或改預設名稱(比照 major)。在那之前的繞法:除了一次以外都設 `upload-report: false`。
+- **Action 複製報告時,中間層目錄是 symlink 擋不住**(2026-10-22 審查):check 步驟只複製「一般檔案、
+  且檔案與 `.parity` 目錄都不是 symlink」的 `<dirname(config)>/.parity/report.json`。但 config 路徑上**更上層**的
+  目錄若是 repo commit 的 symlink(例如 `config: web/parity.config.json` 而 `web` → 別處),複製的就是別處的
+  `.parity/report.json`。能碰到的只有字面上叫 `.parity/report.json` 的檔案,所以威脅範圍是:**共用的
+  self-hosted runner 上,理論上讀得到同一台機器上別的 repo 留下的報告**(報告含站點結構與截圖座標)。
+  GitHub 託管的 runner 每次都是乾淨的 VM,不受影響。要補的話:用 `realpath` 解出實際路徑,確認落在
+  `$GITHUB_WORKSPACE` 底下才複製(macOS 的 realpath 沒有 `-e`,要注意可攜性)。
 - **repo 內容在 CI log 裡的行首注入,只擋了一般輸出**(2026-10-22 審查):設計稿圖層名、Figma 節點名、selector、
   設計值、設定檔的 route 帶 `\n::warning …` 時,原樣印出就會在行首變成 workflow command。check/lint/snapshot/baseline
   的一般輸出與警告已改成經 `ConsoleText.Safe` 跳脫控制字元;**例外訊息(最外層的 `error: …`)沒有**——它可能帶
