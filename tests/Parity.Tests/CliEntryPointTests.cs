@@ -65,6 +65,7 @@ public class CliEntryPointTests
     [InlineData("baseline", "parity baseline save [--config <path>]")]
     [InlineData("init", "parity init")]
     [InlineData("install-browser", "parity install-browser [--with-deps]")]
+    [InlineData("bug-report", "parity bug-report [--config <path>] [--open]")]
     public async Task Every_subcommand_answers_help_without_doing_anything(string command, string usage)
     {
         // `snapshot --help` 曾直接覆寫基準:查用法絕不能觸發執行。空目錄當 cwd,
@@ -530,6 +531,7 @@ public class UsageMatchesParserTests
         "baseline list" => Usage.Flags.BaselineList,
         "init" => Usage.Flags.Init,
         "install-browser" => Usage.Flags.InstallBrowser,
+        "bug-report" => Usage.Flags.BugReport,
         _ => throw new ArgumentException(name),
     };
 
@@ -547,6 +549,8 @@ public class UsageMatchesParserTests
     [InlineData("baseline", "parity baseline list", "baseline list")]
     [InlineData("init --help", "parity init", "init")]
     [InlineData("install-browser --help", "parity install-browser", "install-browser")]
+    [InlineData("bug-report --help", "parity bug-report", "bug-report")]
+    [InlineData("--help", "parity bug-report", "bug-report")]
     [InlineData("--help", "parity check", "check")]
     [InlineData("--help", "parity push", "push")]
     [InlineData("--help", "parity map", "serve")]

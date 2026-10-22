@@ -24,7 +24,7 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
 push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、伺服器的拒收規則);push 寫進 job summary
 的內容。伺服器還沒有公開部署(網頁外殼的 M5),現在就凍結的話,M5 想調整 push 的介面就得等到 3.0。
 `report.json` 本身(含 `direction`)仍屬凍結面 4,不受這條例外影響。`parity push --help` 與主 help 標
-`(experimental)`;執行時不印警告。
+`(experimental)`;執行時不印警告。新增的 `parity bug-report` 同樣屬實驗性、不列入凍結。
 
 **GitHub Action 改用移動式 `@v2`**(跟隨最新 2.x;之後每個 2.x 發版把 `v2` 前移)。`v1` 停在 v1.1.0,不再前移。
 
@@ -102,6 +102,13 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
   (1–100 字,不可以 `-` 開頭、不可以全是點,例如 `.`、`..`、`-rf`),其他值 exit 2。同一個 job 呼叫兩次時,check 步驟會先清掉前一次留在 `$RUNNER_TEMP` 的報告,
   check 沒跑就不上傳。多次呼叫優先用 matrix:同一個 job 裡第一次呼叫的 gate 失敗,job 就停在那裡,第二次不會跑。
 
+- **新增:`parity bug-report`**(**實驗性**,不列入凍結)。在本機整理回報 bug 需要的資訊並印出來:Parity 版本(含
+  commit)、作業系統與架構、.NET、Playwright driver 實際用的 Node、Playwright 版本、Chromium 預期的 revision 與是否
+  已安裝、安裝通路;給 `--config` 時再加設定檔的**結構摘要**(targets 數、網址種類、設計來源類型、tolerances、
+  failOn、minMatchRate、compare)。**絕對不收**網址、route、selector、節點名稱、文字、Figma fileKey、token、檔案路徑
+  (一律遮成 `<path>`)、環境變數的內容——摘要只讀白名單欄位,整份文字送出前再過一次遮罩。最後印一個預填好的
+  GitHub issue 網址(錯誤回報範本);太長時網址只帶摘要欄位,提示把全文貼上。**不連網、不送任何資料**:預設只印網址,
+  `--open` 才交給瀏覽器開,送不送由使用者決定。
 - **新增:報告裡的回報連結**(none:Markdown 與本機 UI 不屬於凍結面)。`check --md`、`parity report` 的 Markdown 與
   Action 的 PR 留言最後一行是「Report a misjudgment」,連到誤判/漏判範本的預填網址(`issues/new?template=1-misjudgment.yml`),
   並提醒貼報告片段前先遮掉內部網址與內容;`parity serve` 的本機報告 UI 頂列也有同一個連結。只是連結:工具不連網、

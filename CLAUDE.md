@@ -71,6 +71,11 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
   `X-Parity-*` 標頭、HTTP 狀態碼、伺服器拒收規則,job summary 內容)。**何時納入凍結:Parity.Server 公開部署
   (網頁外殼 M5)的那一版**——CHANGELOG 要寫明「push 自本版起凍結」,並拿掉 `--help` 的 `(experimental)`;
   在那之前改 push 的介面走 minor。`report.json` 不受影響,一直是凍結面 4。
+- **鐵則:`parity bug-report`(與日後任何「讓使用者回報」的功能)不得自動送出任何資料。** 不連網;只在本機整理、
+  印出來給使用者看,網址只印出來(`--open` 才交給瀏覽器,送不送由使用者在 GitHub 上按)。不收網址、route、selector、
+  節點名稱、文字、Figma fileKey、token、檔案路徑(遮成 `<path>`)、環境變數內容:設定檔只經 `ConfigSummary` 的白名單
+  欄位,整份文字再過 `Redaction`。`BugReportTests` 用一份塞滿秘密的設定檔斷言輸出裡一個都沒有——改這兩個類別時它必須綠。
+  bug-report 是實驗性的,不在六面凍結內。
 - `release.yml` 的觸發**刻意只認三段式 `v[0-9]*.[0-9]*.[0-9]*`，不是 `v*`**——`v1` 也符合
   `v*`，每次前移都會誤觸發一次注定失敗的 release(1.0.0／1.1.0 各踩一次，run #27/#29)。
   **不要「順手」改回 `v*`。**

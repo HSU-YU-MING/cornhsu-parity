@@ -28,6 +28,7 @@ try
         "baseline" => await BaselineCommand.RunAsync(rest),
         "init" => InitCommand.Run(rest),
         "install-browser" => InstallBrowserCommand.Run(rest),
+        "bug-report" => BugReportCommand.Run(rest),
         "help" or "--help" or "-h" => HelpCommand.Run(),
         "version" or "--version" => VersionCommand.Run(),
         _ => UnknownCommand(command),
@@ -701,6 +702,7 @@ internal static class Usage
         public static readonly string[] BaselineList = ["--config="];
         public static readonly string[] Init = [];
         public static readonly string[] InstallBrowser = ["--with-deps"];
+        public static readonly string[] BugReport = ["--config=", "--open"];
     }
 
     public const string Check = """
@@ -788,6 +790,17 @@ internal static class Usage
               dependencies (needed on CI Linux runners).
         """;
 
+    public const string BugReport = """
+          parity bug-report [--config <path>] [--open]
+              (experimental) Collect diagnostics on this machine for a bug report and print them, plus a link that
+              opens a pre-filled GitHub issue. Nothing is sent: there is no network access, and the link is only
+              printed (--open hands it to your browser; you still review and submit the form yourself).
+              Collected: Parity version, OS and architecture, .NET, Node, Playwright and Chromium revision, install
+              channel; with --config, a structural summary (counts, source types, tolerances, gate and compare
+              settings). Never collected: URLs, routes, selectors, node names, text, Figma keys, tokens, file paths
+              (shown as <path>) or environment variable values.
+        """;
+
     /// <summary>子指令 --help:印該指令的用法,exit 0。</summary>
     public static int Print(string usage)
     {
@@ -806,7 +819,7 @@ internal static class HelpCommand
         foreach (var usage in new[]
         {
             Usage.Check, Usage.Report, Usage.Push, Usage.Snapshot, Usage.Serve, Usage.Map,
-            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser,
+            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser, Usage.BugReport,
         })
             Console.WriteLine(usage);
         Console.WriteLine("\nExit codes: 0 = pass; 1 = diffs exceed the gate threshold; 2 = execution error; " +

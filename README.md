@@ -107,6 +107,9 @@ parity lint                # Design lint: are the design file's values inside th
                            #   design-token set? (design only, no implementation)
 parity check --reverse     # Reverse view, for a designer redrawing an existing page:
                            #   how does my draft differ from what ships? (never gates)
+parity bug-report          # (experimental) Collect version / OS / Node / Chromium info and print
+                           #   it with a pre-filled GitHub issue link. Sends nothing; --config adds a
+                           #   structural summary without URLs, routes, keys, tokens or paths
 ```
 
 When working inside this repo:
