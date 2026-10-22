@@ -269,15 +269,25 @@ public class ActionYmlTests
     [Fact]
     public void Only_the_exit_code_is_ever_written_to_step_outputs_and_uploads_use_a_fixed_path()
     {
-        // 上一條的靜態那一半:寫進 $GITHUB_OUTPUT / $GITHUB_ENV 的只能是數字 exit code;
-        // 上傳路徑不能來自任何 step output(那等於讓 input 決定上傳什麼)
-        var writes = Regex.Matches(Yml, @"^.*>>\s*""?\$(GITHUB_OUTPUT|GITHUB_ENV)""?.*$", RegexOptions.Multiline)
-            .Select(m => m.Value.Trim()).ToList();
-        Assert.Equal(["echo \"exit=$?\" >> \"$GITHUB_OUTPUT\""], writes);
+        // 上一條的靜態那一半。所有 runner 會解析的檔案(OUTPUT/ENV/PATH/STATE/STEP_SUMMARY,含 ${VAR} 寫法),
+        // 非註解行裡碰到的只准是這兩行:數字 exit code 與工具目錄(值是 runner 的 $HOME,不來自 input)。
+        // 第二輪審查的 mutation:別的 step 用 ${GITHUB_OUTPUT} 寫入、把 input 寫進 $GITHUB_PATH,舊的檢查都抓不到
+        var touches = Yml.Split('\n')
+            .Where(l => !l.TrimStart().StartsWith('#'))
+            .Where(l => Regex.IsMatch(l, @"\$\{?GITHUB_(OUTPUT|ENV|PATH|STATE|STEP_SUMMARY)\}?"))
+            .Select(l => l.Trim())
+            .ToList();
+        Assert.Equal(
+        [
+            "echo \"$HOME/.dotnet/tools\" >> \"$GITHUB_PATH\"",
+            "echo \"exit=$?\" >> \"$GITHUB_OUTPUT\"",
+        ], touches);
 
-        var upload = Step("Upload report");
-        Assert.DoesNotContain("steps.", upload);
-        Assert.Contains("${{ runner.temp }}/parity-artifact", upload);
+        // 上傳路徑不能來自任何 step output 或 input(那等於讓 input 決定上傳什麼),而且整段 with: 逐行固定:
+        // 不准 `path: |` 多行、不准 `/..` 之類的尾巴、不准多掛一行 ${{ inputs.* }}
+        Assert.Matches(new Regex(
+            @"^      with:\n        name: parity-report\n(?:        #.*\n)*        path: \$\{\{ runner\.temp \}\}/parity-artifact\n        if-no-files-found: ignore\n\n",
+            RegexOptions.Multiline), Step("Upload report"));
     }
 
     [Fact]
