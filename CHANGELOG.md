@@ -195,6 +195,10 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
   驗 12 個設計節點配到 11、3 個節點有落差(5 serious + 1 條 soft 的 minor)——「工具真的會擋」與
   「擋的數量沒有莫名其妙變動」一起驗。數字以沒有 `parity.map.json` 的 checkout 為準;新增的真瀏覽器
   測試對 demo 的乾淨複本實跑、拿 ci.yml 裡的數字比對。
+- **相依:網頁外殼(`web/`)的 vite 6.4.3 → 6.4.5**(none:dev 相依,不進 NuGet/npm 套件,建置產物逐位元相同)。
+  `npm audit` 的 1 個 high 歸零:vite 開發伺服器的 GHSA-9jrq-w75r-8gcw(自訂 middleware 的跨來源腳本執行)、
+  GHSA-rq7h-c2jc-7f22(`server.fs.allow` 之外的檔案),以及它內含的 launch-editor 的 GHSA-698v-4r3x-3vcv、
+  GHSA-r825-w8mm-5pxw、GHSA-587h-7wmj-h5pm。都只影響本機 `npm run dev`;正式相依(`--omit=dev`)本來就是 0。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
