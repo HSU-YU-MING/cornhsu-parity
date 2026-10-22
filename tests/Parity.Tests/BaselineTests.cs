@@ -55,6 +55,23 @@ public class BaselineComparerTests
     }
 
     [Fact]
+    public void A_non_soft_minor_diff_still_enters_the_baseline()
+    {
+        // 審查的 M02c:把「排除 soft」寫成「排除 minor」也能通過上面幾條——soft 落差剛好都是 minor。
+        // 非 soft 的 minor(例如 1px 的 fontSize)照樣要進 baseline,否則 --baseline 永遠看不到它變嚴重
+        var node = new NodeResult("title", "1:2", "h1", "auto-text", Severity.Minor,
+        [
+            new PropDiff("fontSize", "32", "31", "px", 1, 0.5, Severity.Minor),
+            new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: true),
+        ]);
+        var report = new FidelityReport("/", "u", "d", [node], [], new ReportSummary(1, 1, 0, 1, 0, 0, 0, 2, Severity.Minor));
+
+        var record = Assert.Single(DiffRecord.FromReports([report]));
+
+        Assert.Equal(("fontSize", Severity.Minor), (record.Prop, record.Severity));
+    }
+
+    [Fact]
     public void New_diff_not_in_baseline_is_regression()
     {
         var baseline = new[] { D("btn", "color", Severity.Serious) };

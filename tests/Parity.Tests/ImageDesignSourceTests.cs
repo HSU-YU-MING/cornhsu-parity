@@ -101,6 +101,43 @@ public class ImageDesignSourceTests
     }
 
     [Fact]
+    public async Task Every_format_imagesharp_knows_besides_png_and_jpeg_is_refused()
+    {
+        // 審查的 M07e:在解碼器清單多加一個 WebP,上面那條(只測 bmp/gif/tiff)照樣通過。
+        // 這裡列舉 ImageSharp 預設設定認得的**全部**格式,除了 PNG/JPEG 之外逐一編碼、逐一確認被拒
+        var others = Configuration.Default.ImageFormats
+            .Where(f => f.Name is not ("PNG" or "JPEG"))
+            .ToList();
+        Assert.True(others.Count >= 7, $"ImageSharp 認得的格式比預期少:{string.Join(", ", others.Select(f => f.Name))}");
+
+        var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var annPath = Path.Combine(dir, "design.json");
+            await File.WriteAllTextAsync(annPath, """{ "id": "1:1", "name": "frame", "type": "Frame", "box": { "x": 0, "y": 0, "width": 10, "height": 10 } }""");
+            var accepted = new List<string>();
+            foreach (var format in others)
+            {
+                var imgPath = Path.Combine(dir, $"design-{format.Name}.png"); // 副檔名一律 .png:判格式看內容
+                using (var img = TestImage())
+                    await img.SaveAsync(imgPath, Configuration.Default.ImageFormatsManager.GetEncoder(format));
+                try
+                {
+                    await new ImageDesignSource(imgPath).GetFrameAsync(new DesignRef(annPath, ""));
+                    accepted.Add(format.Name);
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("PNG or JPEG") && ex.Message.Contains(imgPath))
+                {
+                    // 預期:明確拒絕,訊息帶路徑
+                }
+            }
+            Assert.True(accepted.Count == 0, $"這些格式被解碼了:{string.Join(", ", accepted)}");
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task Jpeg_is_still_decoded()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
