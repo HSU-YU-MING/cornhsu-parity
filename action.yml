@@ -39,7 +39,7 @@ inputs:
     required: false
     default: 'true'
   artifact-name:
-    description: 'Name of the uploaded report artifact. It also keys the PR comment: each name keeps its own comment. Give every call its own name when the action runs more than once in a workflow run (a matrix, or two calls in one job). Letters, digits, ".", "_" and "-" only, 1-100 characters'
+    description: 'Name of the uploaded report artifact. It also keys the PR comment: each name keeps its own comment. Give every call its own name when the action runs more than once in a workflow run (prefer a matrix). Letters, digits, ".", "_" and "-" only, 1-100 characters, not starting with "-" and not only dots'
     required: false
     default: 'parity-report'
 
@@ -110,9 +110,10 @@ runs:
             ;;
         esac
         # artifact-name 會成為 artifact 名稱與 PR 留言 marker 的一部分(marker 又拼進 jq 字串),
-        # 只收 [A-Za-z0-9._-]、1–100 字;bash 的 =~ 是整串比對,換行過不了。訊息同樣不印出 input
-        if ! [[ "$PARITY_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]{1,100}$ ]]; then
-          echo "parity action: artifact-name must be 1-100 characters of A-Z, a-z, 0-9, '.', '_' or '-'; refusing to run." >&2
+        # 只收 [A-Za-z0-9._-]、1–100 字;bash 的 =~ 是整串比對,換行過不了。字元集內也不收全是點的
+        # (. 與 .. 像路徑)與 - 開頭的(像旗標)。訊息同樣不印出 input
+        if ! [[ "$PARITY_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]{1,100}$ ]] || [[ "$PARITY_ARTIFACT_NAME" =~ ^\.+$ || "$PARITY_ARTIFACT_NAME" == -* ]]; then
+          echo "parity action: artifact-name must be 1-100 characters of A-Z, a-z, 0-9, '.', '_' or '-', must not start with '-' and must not be only dots; refusing to run." >&2
           echo "exit=2" >> "$GITHUB_OUTPUT"
           exit 0
         fi
@@ -154,8 +155,8 @@ runs:
       run: |
         report="$RUNNER_TEMP/parity-report.md"
         out="$RUNNER_TEMP/parity-comment.md"
-        # 名稱會拼進下面 jq 的字串:check 步驟驗過了,這裡再驗一次,不靠步驟順序
-        if ! [[ "$PARITY_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]{1,100}$ ]]; then
+        # 名稱會拼進下面 jq 的字串:check 步驟驗過了,這裡再驗一次(同一條規則),不靠步驟順序
+        if ! [[ "$PARITY_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]{1,100}$ ]] || [[ "$PARITY_ARTIFACT_NAME" =~ ^\.+$ || "$PARITY_ARTIFACT_NAME" == -* ]]; then
           echo "parity action: invalid artifact-name; not commenting." >&2
           exit 0
         fi

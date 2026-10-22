@@ -410,7 +410,7 @@ Behaviour:
 
 Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
 `baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report` /
-`artifact-name` (default `parity-report`; letters, digits, `.`, `_`, `-`, at most 100 characters).
+`artifact-name` (default `parity-report`; letters, digits, `.`, `_`, `-`, at most 100 characters, not starting with `-` and not only dots).
 
 > The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
 > nuget.org) — the latest 2.x when `version` is omitted, so `@v2` never jumps to a future 3.x,

@@ -603,6 +603,8 @@ public class ActionYmlTests
     [InlineData("parity-report", "<!-- parity-report -->")]     // 預設名稱沿用 1.x 的 marker:升級後照樣更新原本那則
     [InlineData("site-a", "<!-- parity-report:site-a -->")]
     [InlineData("web_v2.1", "<!-- parity-report:web_v2.1 -->")]
+    [InlineData(".hidden-ok", "<!-- parity-report:.hidden-ok -->")] // 點開頭但不全是點、- 不在開頭:照收
+    [InlineData("site-", "<!-- parity-report:site- -->")]
     public void Each_artifact_name_keeps_its_own_pr_comment(string artifactName, string marker)
     {
         // 審查 c:matrix 或同一個 job 呼叫兩次時,原本共用同一則留言,後一次把前一次的報告蓋掉。
@@ -641,6 +643,12 @@ public class ActionYmlTests
     [InlineData("x\n::error title=Parity::INJECTED")]
     [InlineData("parity-report\r")]
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")] // 101 字
+    // 審查第 7 條:字元集內、但當成名稱或參數有歧義的——全是點(`.`、`..` 像路徑)、以 - 開頭(像旗標)
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("...")]
+    [InlineData("-rf")]
+    [InlineData("-")]
     public void An_artifact_name_outside_the_safe_charset_is_refused(string artifactName)
     {
         // artifact-name 會拼進 PR 留言的 marker,而 marker 又拼進 jq 字串:只收 [A-Za-z0-9._-]{1,100}。
