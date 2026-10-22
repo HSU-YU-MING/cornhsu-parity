@@ -86,6 +86,11 @@
 - **Action 的 artifact 名稱固定 `parity-report`**(2026-10-22 審查發現,待決定):同一次執行裡 matrix 或呼叫兩次 action,
   第二次上傳撞名 409;同一個 job 呼叫兩次還會共用 `$RUNNER_TEMP` 底下的暫存檔與同一則 PR 留言。修法要新增選填 input
   (例如 `artifact-name`,預設不變 = minor)或改預設名稱(比照 major)。在那之前的繞法:除了一次以外都設 `upload-report: false`。
+- **repo 內容在 CI log 裡的行首注入,只擋了一般輸出**(2026-10-22 審查):設計稿圖層名、Figma 節點名、selector、
+  設計值、設定檔的 route 帶 `\n::warning …` 時,原樣印出就會在行首變成 workflow command。check/lint/snapshot/baseline
+  的一般輸出與警告已改成經 `ConsoleText.Safe` 跳脫控制字元;**例外訊息(最外層的 `error: …`)沒有**——它可能帶
+  frame 名稱、route 等設定值,而 Playwright 的例外是刻意的多行說明,一律跳脫會讓它難讀。gate 繞不過(exit code
+  與報告不受影響),危害偏低;要補的話,在最外層 catch 只對「我們自己組的訊息裡的資料」跳脫,或改成每行前綴固定字元。
 
 - ~~**gate 盲點:全部沒配到 → 0 分卻 PASS**~~ **已補**:0 配對 / 設計端 0 節點一律 GATE FAIL(附原因,baseline 模式也不豁免);另加選配 `gate.minMatchRate` 門檻。
 - ~~**Action 當消費者的流程沒實證**~~ **已實證**(2026-07-18,[parity-action-test](https://github.com/HSU-YU-MING/parity-action-test)):外部 repo 用 `@v0.2.0` 跑真 PR——✓ main 綠(PASS 路徑)✓ PR 打紅 + bot 貼還原度報告(落差/建議修法精確)✓ 再推 commit 後同一則留言原地更新不洗版。

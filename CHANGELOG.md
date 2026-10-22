@@ -129,6 +129,10 @@
 - **修正:Action 只更新 `github-actions[bot]` 自己的報告留言**(patch)。原本取「最舊的、以 marker 開頭」的留言、
   不看作者:任何人搶先貼一則以 marker 開頭的留言,bot 就會去改那則——`GITHUB_TOKEN` 改不了別人的留言(403),
   報告就永遠貼不上。
+- **修正:主控台輸出裡來自 repo 內容的字串,控制字元跳脫成字面**(patch:console 輸出不屬於凍結面)。
+  設計稿的圖層名、selector、設計值、設定檔的 route 帶換行時,原樣印出會讓後面的內容落在行首——在 GitHub
+  Actions 裡就成了 runner 會解析的 workflow command(`::warning …`)。check、lint、snapshot、baseline 的一般輸出
+  與警告改成把換行印成 `\n`(其他控制字元印成 `\uXXXX`)。gate 與報告不受影響;例外訊息尚未處理(ROADMAP)。
 - **CI:離線示範除了 exit 1,也斷言報告計數**(none:只動 CI)。比照 XamlContrast 的 `jq -e` 形狀,
   驗 12 個設計節點配到 11、3 個節點有落差(5 serious + 1 條 soft 的 minor)——「工具真的會擋」與
   「擋的數量沒有莫名其妙變動」一起驗。數字以沒有 `parity.map.json` 的 checkout 為準;新增的真瀏覽器

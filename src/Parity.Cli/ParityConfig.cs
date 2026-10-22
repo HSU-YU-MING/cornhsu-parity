@@ -163,9 +163,9 @@ public sealed class ParityConfig
         if (GatingSeverities.Any(g => string.Equals(g.ToString(), value.Trim(), StringComparison.OrdinalIgnoreCase)))
             return null;
         return GatingSeverities.Contains(parsed)
-            ? $"gate.failOn value \"{value}\" is read as \"{parsed.ToString().ToLowerInvariant()}\" " +
+            ? $"gate.failOn value \"{ConsoleText.Safe(value)}\" is read as \"{parsed.ToString().ToLowerInvariant()}\" " +
               "(only minor, medium, serious, critical are documented; list each severity as its own string)."
-            : $"gate.failOn value \"{value}\" never matches any diff, so it never fails the gate " +
+            : $"gate.failOn value \"{ConsoleText.Safe(value)}\" never matches any diff, so it never fails the gate " +
               "(use: minor, medium, serious, critical; list each severity as its own string).";
     }
 

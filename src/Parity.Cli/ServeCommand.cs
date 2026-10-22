@@ -359,7 +359,7 @@ internal static class CliOptions
     {
         if (opts.GetValueOrDefault(flag) is not { } raw) return fallback;
         if (int.TryParse(raw, out var value)) return value;
-        Console.Error.WriteLine($"\x1b[33mwarning: {flag} expects an integer (got \"{raw}\"); using the default {fallback}.\x1b[0m");
+        Console.Error.WriteLine($"\x1b[33mwarning: {flag} expects an integer (got \"{ConsoleText.Safe(raw)}\"); using the default {fallback}.\x1b[0m");
         return fallback;
     }
 }

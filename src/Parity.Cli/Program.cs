@@ -81,7 +81,7 @@ internal static class CheckCommand
 
         foreach (var (scan, report) in scans.Zip(reports))
         {
-            Console.WriteLine($"target \x1b[1m{scan.Target.Route}\x1b[0m → {report.Url}" +
+            Console.WriteLine($"target \x1b[1m{ConsoleText.Safe(scan.Target.Route)}\x1b[0m → {ConsoleText.Safe(report.Url)}" +
                 (reverse ? "\x1b[36m (reverse: expected = implementation, actual = design)\x1b[0m" : ""));
             PrintReport(report);
         }
@@ -202,11 +202,11 @@ internal static class CheckCommand
             Console.WriteLine($"fidelity trend: baseline {baseScore}/100 → now {score}/100 ({trend})");
         }
         foreach (var d in cmp.Regressions)
-            Console.WriteLine($"  \x1b[31m+ new\x1b[0m      {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+            Console.WriteLine($"  \x1b[31m+ new\x1b[0m      {ConsoleText.Safe(d.Route)} ‹{ConsoleText.Safe(d.DesignLayer)}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
         foreach (var d in cmp.Worsened)
-            Console.WriteLine($"  \x1b[33m↑ worsened\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+            Console.WriteLine($"  \x1b[33m↑ worsened\x1b[0m {ConsoleText.Safe(d.Route)} ‹{ConsoleText.Safe(d.DesignLayer)}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
         foreach (var d in cmp.Fixed)
-            Console.WriteLine($"  \x1b[32m- fixed\x1b[0m    {d.Route} ‹{d.DesignLayer}› {d.Prop}");
+            Console.WriteLine($"  \x1b[32m- fixed\x1b[0m    {ConsoleText.Safe(d.Route)} ‹{ConsoleText.Safe(d.DesignLayer)}› {d.Prop}");
 
         if (cmp.HasRegressions)
         {
@@ -226,15 +226,16 @@ internal static class CheckCommand
         }).ToList(),
     };
 
-    private static void PrintReport(FidelityReport report)
+    internal static void PrintReport(FidelityReport report)
     {
         var s = report.Summary;
         Console.WriteLine($"  matched {s.Matched}/{s.DesignNodes} design nodes; {s.NodesWithDiffs} with diffs");
 
         foreach (var node in Impact.Order(report.Nodes.Where(n => n.Diffs.Count > 0)))
         {
-            Console.WriteLine($"  \x1b[33m✘ {node.DesignLayer}\x1b[0m ‹{node.Selector}› " +
-                $"[{node.Severity.ToString().ToLowerInvariant()}] ({node.MatchedBy})");
+            // 圖層名、selector、設計值都來自 repo 內容:帶換行時跳脫成字面,不讓它在 CI 裡變成 workflow command
+            Console.WriteLine($"  \x1b[33m✘ {ConsoleText.Safe(node.DesignLayer)}\x1b[0m ‹{ConsoleText.Safe(node.Selector)}› " +
+                $"[{node.Severity.ToString().ToLowerInvariant()}] ({ConsoleText.Safe(node.MatchedBy)})");
             foreach (var diff in node.Diffs)
             {
                 var isColor = diff.Prop is "color" or "background";
@@ -243,13 +244,13 @@ internal static class CheckCommand
                     ? $"{diff.Actual}{(diff.Delta is { } de ? $" (ΔE {de})" : "")}"
                     : $"{diff.Actual}{diff.Unit}";
                 var soft = diff.Soft ? " [soft]" : "";
-                Console.WriteLine($"      {diff.Prop,-14} expected {expected}  actual {actual}{soft}");
+                Console.WriteLine($"      {diff.Prop,-14} expected {ConsoleText.Safe(expected)}  actual {ConsoleText.Safe(actual)}{soft}");
             }
         }
 
         if (report.Unmatched.Count > 0)
         {
-            Console.WriteLine($"  \x1b[90munmatched: {string.Join(", ", report.Unmatched.Select(u => $"{u.DesignLayer} ({u.Reason})"))}\x1b[0m");
+            Console.WriteLine($"  \x1b[90munmatched: {string.Join(", ", report.Unmatched.Select(u => $"{ConsoleText.Safe(u.DesignLayer)} ({ConsoleText.Safe(u.Reason)})"))}\x1b[0m");
             if (report.Unmatched.Any(u => u.Reason == "randomized-id"))
                 Console.WriteLine("  \x1b[90mhint: randomized-id = the baseline froze a selector containing a randomly generated id " +
                     "(React useId, CSS-in-JS, …). Newer baselines use structural paths that survive id regeneration — " +
@@ -408,16 +409,17 @@ internal static class LintCommand
                 total += nodes;
                 var violations = DesignLint.Run(tree, tokens, config.Tolerances.ColorDeltaE);
                 allViolations.AddRange(violations.Select(v => (t.Route, v)));
-                Console.WriteLine($"target \x1b[1m{t.Route}\x1b[0m: {nodes} nodes, {violations.Count} violation(s)");
+                Console.WriteLine($"target \x1b[1m{ConsoleText.Safe(t.Route)}\x1b[0m: {nodes} nodes, {violations.Count} violation(s)");
             }
 
             foreach (var (route, v) in allViolations)
             {
+                // 圖層名、設計值、token 名稱都來自 repo 內容(見 ConsoleText)
                 var near = v.NearestToken is null
                     ? ""
-                    : $"; nearest: \x1b[36m{v.NearestToken}\x1b[0m = {v.NearestValue}" +
+                    : $"; nearest: \x1b[36m{ConsoleText.Safe(v.NearestToken)}\x1b[0m = {ConsoleText.Safe(v.NearestValue)}" +
                       (v.Prop == "color" ? $" (ΔE {v.Distance})" : $" (off by {v.Distance})");
-                Console.WriteLine($"  \x1b[33m✘ {v.Layer}\x1b[0m {v.Prop} = {v.Value} is not a token value{near}");
+                Console.WriteLine($"  \x1b[33m✘ {ConsoleText.Safe(v.Layer)}\x1b[0m {v.Prop} = {ConsoleText.Safe(v.Value)} is not a token value{near}");
             }
 
             if (allViolations.Count > 0)
@@ -500,7 +502,7 @@ internal static class SnapshotCommand
                 anyRandomIds = true;
                 implRef = implRef with { AllowedIdAnchors = stableIds };
                 tree = await impl.CaptureAsync(implRef); // 這拍會被凍結,照拍截圖(覆寫第 1 拍的)
-                Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstableIdCount} id string(s) appeared in only " +
+                Console.WriteLine($"  \x1b[33m⚠ {ConsoleText.Safe(t.Route)}: {unstableIdCount} id string(s) appeared in only " +
                     "one of two page loads (per-load random ids) — selectors anchor on the measured " +
                     "stable-id allowlist instead; the allowlist is stored in the snapshot so " +
                     "`parity check` anchors the same way.\x1b[0m");
@@ -516,17 +518,17 @@ internal static class SnapshotCommand
                 var unstable = SnapshotStabilizer.FindUnstable(captures);
                 if (unstable.Count > 0)
                 {
-                    Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstable.Count} region(s) changed across 3 captures — " +
+                    Console.WriteLine($"  \x1b[33m⚠ {ConsoleText.Safe(t.Route)}: {unstable.Count} region(s) changed across 3 captures — " +
                         "the baseline freezes whichever state capture #1 happened to catch:\x1b[0m");
                     foreach (var u in unstable)
-                        Console.WriteLine($"      {u.Selector}  ({u.Reason})");
+                        Console.WriteLine($"      {ConsoleText.Safe(u.Selector)}  ({ConsoleText.Safe(u.Reason)})");
                     foreach (var sel in unstable.Select(u => SnapshotStabilizer.ToIgnoreSelector(u.Selector)))
                         if (!unstableBySelector.Contains(sel))
                             unstableBySelector.Add(sel);
                 }
                 else
                 {
-                    Console.WriteLine($"  \x1b[32m✓ {t.Route}: stable across 3 captures\x1b[0m");
+                    Console.WriteLine($"  \x1b[32m✓ {ConsoleText.Safe(t.Route)}: stable across 3 captures\x1b[0m");
                 }
             }
             frames.Add(SnapshotBuilder.ToFrame(tree, t.Route, t.Width ?? width, t.Height ?? height));
@@ -541,7 +543,7 @@ internal static class SnapshotCommand
                 await File.WriteAllBytesAsync(shot, png);
                 shotPaths.Add(shot);
             }
-            Console.WriteLine($"  ✓ {t.Route} → {tree.DescendantsAndSelf().Count()} node(s)");
+            Console.WriteLine($"  ✓ {ConsoleText.Safe(t.Route)} → {tree.DescendantsAndSelf().Count()} node(s)");
         }
 
         // 單 target:frame 直接當根;多 target:包一層,frame id = route(對 config 的 target.frame)
