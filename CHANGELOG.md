@@ -39,6 +39,8 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `dotnet tool install`,裝的是最新穩定版——2.0.0 一發佈,所有 `@v1` 的 workflow 就會裝到 2.x,
   README 與 SECURITY.md「`@v1` 跟隨最新 1.x、介面凍結」的承諾在 CI 裡失效。現在改用浮動版號 `"1.*"`
   (取最高的 1.x 穩定版;今天裝到的版本與之前相同)。RELEASING.md 補上發 2.0.0 時要同步改成 `"2.*"`。
+  注意:`@v1` 要等 `v1` tag 前移到含這個修正的 1.x 才生效(目前 `v1` 指向的 v1.1.0 還沒有)——發 2.0.0 之前
+  一定要先發一個含此修正的 1.x 並前移 `v1`(RELEASING.md 的 major 清單已列為前置步驟)。
 - **修正:Parity.Server 不再間接帶著 Playwright**(未發佈的伺服器;CLI 行為與 wire 格式不變)。
   `Parity.Server.Data` 原本引用 `Parity.Engine`,把 Microsoft.Playwright 與整個 node driver(約 103 MB)
   帶進伺服器的建置產物——鐵則「雲端不跑瀏覽器」只靠測試掃型別參考把關,反射載入擋不住。現在報告契約
