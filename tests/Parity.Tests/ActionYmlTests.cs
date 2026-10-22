@@ -185,6 +185,68 @@ public class ActionYmlTests
             stderr.GetAwaiter().GetResult());
     }
 
+    /// <summary>跑「Install Parity」那段,dotnet 換成 stub(把收到的參數一行一筆記下來)。</summary>
+    private static (int Exit, string DotnetCalls, string Stderr) RunInstallStep(string workspace, string version)
+    {
+        string Unix(string p) => p.Replace('\\', '/');
+        var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
+        var calls = Path.Combine(runnerTemp, "dotnet-calls");
+        const string stub = """
+            dotnet() { printf '%s|' "$@" >> "$RUNNER_TEMP/dotnet-calls"; printf '\n' >> "$RUNNER_TEMP/dotnet-calls"; }
+
+            """;
+        var script = Path.Combine(runnerTemp, "install.sh");
+        File.WriteAllText(script, stub + RunScript("Install Parity"));
+        var psi = new System.Diagnostics.ProcessStartInfo(BashPath())
+        {
+            WorkingDirectory = workspace,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var a in new[] { "--noprofile", "--norc", "-eo", "pipefail", Unix(script) }) psi.ArgumentList.Add(a);
+        psi.Environment["RUNNER_TEMP"] = Unix(runnerTemp);
+        psi.Environment["GITHUB_PATH"] = Unix(Path.Combine(runnerTemp, "github_path"));
+        psi.Environment["HOME"] = Unix(workspace);
+        psi.Environment["PARITY_VERSION"] = version;
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        _ = p.StandardOutput.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
+        Assert.True(p.WaitForExit(30_000), "bash 沒有在 30 秒內結束");
+        return (p.ExitCode, File.Exists(calls) ? File.ReadAllText(calls).Replace("\r\n", "\n") : "", stderr.GetAwaiter().GetResult());
+    }
+
+    [Theory]
+    [InlineData("", "tool|install|--global|Cornhsu.Parity|--version|1.*|\n")]
+    [InlineData("1.1.0", "tool|install|--global|Cornhsu.Parity|--version|1.1.0|\n")]
+    public void Install_passes_the_version_or_the_floating_major_to_dotnet(string version, string expected)
+    {
+        using var dir = new TempDir();
+
+        var r = RunInstallStep(dir.Path, version);
+
+        Assert.Equal(0, r.Exit);
+        Assert.Equal(expected, r.DotnetCalls);
+    }
+
+    [Theory]
+    [InlineData("1.*\n::error title=Parity::INJECTED")]
+    [InlineData("1.1.0\r")]
+    public void A_version_with_a_line_break_is_refused_before_dotnet_prints_it(string version)
+    {
+        // 驗證者實證:dotnet tool install --version $'1.*\n::error …' 的錯誤訊息會把版本原樣印出,
+        // 第二行落在行首就成了 runner 解析的 workflow command。這一步本來遇到換行就會失敗,
+        // 所以提早拒絕不改變任何行為,只是不讓 input 被印出來
+        using var dir = new TempDir();
+
+        var r = RunInstallStep(dir.Path, version);
+
+        Assert.NotEqual(0, r.Exit);
+        Assert.Equal("", r.DotnetCalls); // dotnet 沒被呼叫
+        Assert.Contains("line break", r.Stderr);
+        Assert.DoesNotContain("::", r.Stderr);
+    }
+
     [Theory]
     [InlineData(".", "parity.config.json")]
     [InlineData(".", "web/parity.config.json")]        // config 在子目錄:1.1.0 的 artifact 就漏在這裡

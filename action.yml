@@ -56,6 +56,14 @@ runs:
       env:
         PARITY_VERSION: ${{ inputs.version }}
       run: |
+        # version 帶換行一律拒絕:dotnet 的錯誤訊息會把它原樣印出,換行後的內容落在行首就成了
+        # runner 會解析的 workflow command(::error …)。帶換行的版本本來就裝不起來,提早擋不改變行為
+        case "$PARITY_VERSION" in
+          *$'\n'* | *$'\r'*)
+            echo "parity action: the version input contains a line break; refusing to install." >&2
+            exit 2
+            ;;
+        esac
         if [ -n "$PARITY_VERSION" ]; then
           dotnet tool install --global Cornhsu.Parity --version "$PARITY_VERSION"
         else
