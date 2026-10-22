@@ -38,8 +38,8 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
    `parity report --config … --in <下載目錄>/report.json`)。這不在凍結面內(面 3 凍結的是 inputs),但照舊
    路徑讀檔的步驟會靜靜讀不到檔,所以列在這裡。
 4. **用 `--baseline` 的專案,升級後重存一次 baseline**(`parity baseline save`)。只給 `height` 的 target
-   量測會變(破壞性變更第 4 條);舊 baseline 裡的 font-family 列,下一次比對會顯示成「已修好」一次(第 2 條)。
-   重存之後兩者都對齊。
+   量測會變(破壞性變更第 4 條),重存之後才對齊。1.x 存的 baseline 裡的 font-family(soft)列不會造成誤報
+   (第 2 條),重存只是把它們清掉。
 
 **破壞性變更**——每條附遷移方式:
 
@@ -51,9 +51,9 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
 2. **soft 落差(font-family)不再擋 gate,`--baseline` 也不再把它算成新增**(gate 變寬:FAIL → PASS)。
    1.x 的 gate 沒排除 soft:`failOn` 含 `minor` 時,只有 font-family 落差的頁面分數 100/100 卻 GATE FAIL;
    `--baseline` 模式不看 `failOn`,調整 font stack 就多一條「新增」、exit 1。soft 落差照樣列在報告與 PR
-   留言裡,只是不扣分、不擋。baseline schema 不變:新存的 baseline 不收 soft 列;舊 db 裡已存的 font-family
-   列,下一次比對顯示成「已修好」一次(不擋 gate)。**遷移:不用改設定;重存 baseline 清掉舊列**(升級必做
-   第 4 點)。依賴「字型堆疊一變就擋」的團隊,改在 review 時看報告的 soft 列——沒有替代的 gate 開關。
+   留言裡,只是不扣分、不擋。baseline schema 不變:新存的 baseline 不收 soft 列;1.x 存的舊 db 裡已有的
+   font-family 列,只要那條落差還在就不算「修好」(比對時拿現況全部落差的鍵來比,含 soft),真的改對了才列為
+   修好。**遷移:不用改設定;想清掉舊列就重存 baseline**(升級必做第 4 點)。依賴「字型堆疊一變就擋」的團隊,改在 review 時看報告的 soft 列——沒有替代的 gate 開關。
 3. **`snapshot --width`/`--height` 與 `serve`/`map --port` 必須是正整數,否則 exit 2**(面 2)。1.x 遇到
    非整數靜默退回預設值(`--width 375px` 會以 1280 寬凍結手機基準),0 與負數原樣交給瀏覽器。現在在讀設定檔、
    開瀏覽器之前就以用法錯誤結束(`--width expects a positive integer (got "375px")`)。

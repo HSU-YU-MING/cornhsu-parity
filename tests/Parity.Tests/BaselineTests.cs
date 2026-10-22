@@ -28,6 +28,33 @@ public class BaselineComparerTests
     }
 
     [Fact]
+    public void A_soft_row_in_an_old_baseline_is_not_fixed_while_that_diff_is_still_present()
+    {
+        // 審查實證:1.x 存的 baseline 有 soft 列(page-title · fontFamily)。2.0.0 第一版不把 soft 攤進現況,
+        // 舊列就**每一次**比對都算「修好」——PR 留言列出「🟢 Fixed: page-title · fontFamily」,同一條落差卻還在
+        // 落差表裡。Fixed 要拿全部現況落差(含 soft)的鍵來比,不寫死哪個屬性
+        static FidelityReport Report(params PropDiff[] diffs)
+            => new("/", "u", "d", [new NodeResult("title", "1:2", "h1", "auto-text", Severity.Medium, diffs)], [],
+                new ReportSummary(1, 1, 0, 1, 0, 0, 1, 0, Severity.Medium));
+        var fontSize = new PropDiff("fontSize", "32", "30", "px", 2, 0.5, Severity.Medium);
+        var fontFamily = new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: true);
+        DiffRecord[] oldBaseline =
+        [
+            D("title", "fontSize", Severity.Medium) with { Selector = "h1" },
+            D("title", "fontFamily", Severity.Minor) with { Selector = "h1" }, // 1.x 連 soft 一起存
+        ];
+
+        var stillThere = Report(fontSize, fontFamily);
+        var same = BaselineComparer.Compare(DiffRecord.FromReports([stillThere]), oldBaseline, DiffRecord.KeysOf([stillThere]));
+        Assert.Empty(same.Fixed);
+        Assert.False(same.HasRegressions);
+
+        var reallyFixed = Report(fontSize); // font stack 真的改對了才算修好
+        var repaired = BaselineComparer.Compare(DiffRecord.FromReports([reallyFixed]), oldBaseline, DiffRecord.KeysOf([reallyFixed]));
+        Assert.Equal(["fontFamily"], repaired.Fixed.Select(d => d.Prop));
+    }
+
+    [Fact]
     public void New_diff_not_in_baseline_is_regression()
     {
         var baseline = new[] { D("btn", "color", Severity.Serious) };

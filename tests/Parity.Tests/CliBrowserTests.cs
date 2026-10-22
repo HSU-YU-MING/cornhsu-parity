@@ -197,6 +197,37 @@ public class CliBrowserTests
     }
 
     [Fact]
+    public async Task A_baseline_saved_by_1x_with_soft_rows_reports_nothing_fixed_while_the_diffs_remain()
+    {
+        // 審查實證:用 1.x 存的 baseline(連 soft 的 page-title · fontFamily 一起存)連跑兩次 check --baseline,
+        // 兩次都是「fixed 1」,PR 留言列出 Fixed,同一條落差卻還在落差表裡。現況沒變,就不該有任何「修好」
+        using var dir = new TempDir();
+        foreach (var f in new[] { "design.json", "index.html", "parity.config.json", "tokens.json" })
+            File.Copy(Repo.PathOf("samples", "demo", f), dir.File(f));
+        var config = dir.File("parity.config.json");
+
+        var first = await Cli.RunAsync("check", "--config", config);
+        if (Cli.BrowserMissing(first)) { Console.WriteLine(Skipped); return; }
+        // 照 1.x 的 baseline save 存:所有落差(含 soft)攤平
+        var doc = JsonSerializer.Deserialize<Parity.Engine.ReportDocument>(
+            File.ReadAllText(dir.File(".parity", "report.json")), Parity.Engine.ReportWire.Compact)!;
+        var all = doc.Reports.SelectMany(r => r.Nodes.SelectMany(n => n.Diffs.Select(d =>
+            new Parity.Engine.DiffRecord(r.Route, n.DesignLayer, n.Selector, d.Prop, d.Severity, d.Expected, d.Actual)))).ToList();
+        Assert.Contains(all, d => d.Prop == "fontFamily");
+        await using (var store = new Parity.Storage.BaselineStore(dir.File("parity.baseline.db")))
+            await store.SaveAsync(all, new DateTime(2026, 8, 1), score: 67);
+
+        for (var run = 0; run < 2; run++)
+        {
+            var check = await Cli.RunAsync("check", "--config", config, "--baseline", "--md", dir.File($"b{run}.md"));
+            Assert.Equal(0, check.ExitCode);
+            Assert.Contains("fixed 0", check.Out);
+            Assert.DoesNotContain("- fixed", check.Out);
+            Assert.DoesNotContain("Fixed", File.ReadAllText(dir.File($"b{run}.md")));
+        }
+    }
+
+    [Fact]
     public async Task A_leftover_figma_file_key_does_not_link_a_design_file_report_to_figma()
     {
         // init 範本預設就有 figmaFileKey;改走 designFile(snapshot)時沒刪掉,設計來源其實是本機檔

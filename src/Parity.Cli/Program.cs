@@ -192,7 +192,7 @@ internal static class CheckCommand
             return fail ? 1 : 0;
         }
 
-        var cmp = BaselineComparer.Compare(current, baseline.Diffs);
+        var cmp = BaselineComparer.Compare(current, baseline.Diffs, DiffRecord.KeysOf(reports));
         WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp, baselineScore: baseline.Score);
         Console.WriteLine($"\nvs baseline — \x1b[31mnew {cmp.Regressions.Count}\x1b[0m, " +
             $"\x1b[33mworsened {cmp.Worsened.Count}\x1b[0m, \x1b[32mfixed {cmp.Fixed.Count}\x1b[0m, unchanged {cmp.Unchanged}");
