@@ -87,7 +87,7 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
   各自一則 PR 留言(留言開頭的標記是 `<!-- parity-report:<名稱> -->`;預設名稱沿用 `<!-- parity-report -->`,
   升級後照樣更新 PR 上原本那則)。1.x 第二次上傳撞名 409,留言也互相覆蓋。只收英數字與 `.` `_` `-`
   (1–100 字),其他值 exit 2。同一個 job 呼叫兩次時,check 步驟會先清掉前一次留在 `$RUNNER_TEMP` 的報告,
-  check 沒跑就不上傳。
+  check 沒跑就不上傳。多次呼叫優先用 matrix:同一個 job 裡第一次呼叫的 gate 失敗,job 就停在那裡,第二次不會跑。
 
 **產品 bug 修正(2026-10-22 稽核)**——每條標出它單獨來看的 semver 判讀。會讓原本接受的輸入變成錯誤、
 或改變量測/gate 結果的修法,列在上面的「破壞性變更」。

@@ -402,9 +402,11 @@ Behaviour:
   name `parity-report` unless you set `artifact-name`; `report.json` and `parity-report.md` at its
   root). `report.json` is picked up from `.parity/report.json` next to the config file — where
   `check` writes it — even when `config` points into a subdirectory.
-- **Running it more than once per workflow run** (a matrix, or two calls in one job): give each call
-  its own `artifact-name` (e.g. `parity-report-${{ matrix.site }}`). Each name gets its own artifact
-  and keeps its own PR comment; two calls with the same name collide on the artifact upload.
+- **Running it more than once per workflow run**: prefer a **matrix** (one job per site or config), and
+  give each call its own `artifact-name` (e.g. `parity-report-${{ matrix.site }}`). Each name gets its
+  own artifact and keeps its own PR comment; two calls with the same name collide on the artifact upload.
+  Two calls in **one job** work only while the first one passes: when its gate fails, the job stops at
+  that call's last step and the second call never runs (no report, no comment, no artifact for it).
 
 Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
 `baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report` /
