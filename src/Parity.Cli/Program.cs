@@ -450,8 +450,8 @@ internal static class SnapshotCommand
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Snapshot);
         var stabilize = opts.ContainsKey("--stabilize");
         // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
-        var width = CliOptions.IntOrDefault(opts, "--width", 1280);
-        var height = CliOptions.IntOrDefault(opts, "--height", 800);
+        var width = CliOptions.PositiveIntOrDefault(opts, "--width", 1280);
+        var height = CliOptions.PositiveIntOrDefault(opts, "--height", 800);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");

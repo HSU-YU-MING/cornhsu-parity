@@ -252,16 +252,19 @@ public class CliEntryPointTests
     }
 
     [Theory]
-    [InlineData("snapshot", "--width", "375px", "1280")]
-    [InlineData("snapshot", "--height", "tall", "800")]
-    [InlineData("serve", "--port", "http", "4321")]
-    [InlineData("map", "--port", "4321x", "4321")]
-    public async Task A_non_integer_numeric_flag_is_warned_about_before_anything_runs(
-        string command, string flag, string value, string fallback)
+    [InlineData("snapshot", "--width", "375px")]
+    [InlineData("snapshot", "--height", "tall")]
+    [InlineData("snapshot", "--width", "0")]
+    [InlineData("snapshot", "--height", "-800")]
+    [InlineData("serve", "--port", "http")]
+    [InlineData("serve", "--port", "0")]
+    [InlineData("map", "--port", "4321x")]
+    public async Task A_numeric_flag_that_is_not_a_positive_integer_is_exit_2_before_anything_runs(
+        string command, string flag, string value)
     {
-        // 1.x 既有行為:非整數時退回預設值(snapshot --width 375px 會以 1280 寬凍結基準)。
-        // 改成 exit 2 是待決定的 semver 問題;在那之前,退回預設這件事至少要大聲講出來,
-        // 而且在讀設定檔、開瀏覽器之前就講(這裡用沒有 target 的設定檔,證明順序)
+        // 決策 #5(2.0.0):1.x 非整數時靜默退回預設值(snapshot --width 375px 會以 1280 寬凍結手機基準),
+        // 0 與負數則原樣交給瀏覽器。現在都是用法錯誤,而且在讀設定檔、開瀏覽器之前就擋
+        // (這裡用沒有 target 的設定檔,證明順序:錯誤訊息不會是「沒有 target」)
         using var dir = new TempDir();
         using var noBrowsers = new TempDir();
         using var env = new EnvScope().Set("PLAYWRIGHT_BROWSERS_PATH", noBrowsers.Path);
@@ -270,8 +273,8 @@ public class CliEntryPointTests
         var r = await Cli.RunAsync(command, "--config", config, flag, value);
 
         Assert.Equal(2, r.ExitCode);
-        Assert.Contains($"warning: {flag} expects an integer (got \"{value}\"); using the default {fallback}.", r.Err);
-        Assert.Contains("the config file declares no targets.", r.Err);
+        Assert.Contains($"{flag} expects a positive integer (got \"{value}\")", r.Err);
+        Assert.DoesNotContain("declares no targets", r.Err);
     }
 
     [Fact]
