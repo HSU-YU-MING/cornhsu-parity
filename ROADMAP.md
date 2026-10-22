@@ -74,11 +74,7 @@
     要不要統一由產品決定——`ServerEndpointTests` 目前把現行行為釘成規格,決定之後改那段斷言。
 - **2026-10-22 修 bug 時刻意只做到「大聲講出來」、收緊與否待維護者決定的**(現在都印警告、exit code 與量測不變;
   改了就是「原本接受的輸入變 exit 2」或量測語意演進,semver 要定案):
-  - `gate.failOn` 收緊成只收四個等級名(`none`、數字、逗號字串改報錯)。
-  - `snapshot --width/--height`、`serve/map --port` 非整數(與 ≤ 0)改成 exit 2。
   - `parity report` 讀到比自己新的 `schemaVersion` 改成拒收(`push` 已在本機擋)。
-  - target 只給 `height` 時照用它(只補缺的那一軸)——量測會變,屬演進條款 ②。
-  - `check --reverse` 的 report.json 加方向標記(凍結面 4 加欄位),讓 `report`/`push` 分得出來。
   - ImageSharp 解碼只註冊 PNG/JPEG(擋 BigTIFF 那條 DoS;原本能用的 WebP/TIFF `designImage` 會變錯誤)。
 - **Action 的 artifact 名稱固定 `parity-report`**(2026-10-22 審查發現,待決定):同一次執行裡 matrix 或呼叫兩次 action,
   第二次上傳撞名 409;同一個 job 呼叫兩次還會共用 `$RUNNER_TEMP` 底下的暫存檔與同一則 PR 留言。修法要新增選填 input

@@ -61,9 +61,20 @@ public sealed record FidelityReport(
 /// (伺服器不准引用含擷取端的引擎)——報告契約的每一個消費者都該對同一個型別,而不是各抄一份。
 /// 兩次搬家 wire 格式都逐位元不變。
 /// </summary>
-public sealed record ReportDocument(int SchemaVersion, IReadOnlyList<FidelityReport> Reports)
+public sealed record ReportDocument(
+    int SchemaVersion,
+    IReadOnlyList<FidelityReport> Reports,
+    ReportDirection Direction = ReportDirection.Forward)
 {
     public const int CurrentSchemaVersion = 1;
 
-    public static ReportDocument Of(IReadOnlyList<FidelityReport> reports) => new(CurrentSchemaVersion, reports);
+    public static ReportDocument Of(IReadOnlyList<FidelityReport> reports, ReportDirection direction = ReportDirection.Forward)
+        => new(CurrentSchemaVersion, reports, direction);
 }
+
+/// <summary>
+/// 報告的方向(2.0.0 起寫進信封,一律寫出):<c>forward</c> = 期望是設計稿、實際是實作(一般的 check);
+/// <c>reverse</c> = <c>check --reverse</c>,期望/實際對調、不把關。封閉集。沒有這個欄位的舊檔讀成 forward。
+/// 讀端據此分辨:<c>parity report</c> 不對 reverse 報告做 gate,<c>parity push</c> 與 Parity.Server 不收它。
+/// </summary>
+public enum ReportDirection { Forward, Reverse }

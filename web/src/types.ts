@@ -64,6 +64,8 @@ export interface FidelityReport {
 export interface ReportDocument {
   schemaVersion: number
   reports: FidelityReport[]
+  /** 2.0.0 起一律寫出;舊報告沒有這個 key(= forward)。伺服器不收 reverse 報告 */
+  direction?: 'forward' | 'reverse'
 }
 
 // /api/runs 的列表項與 /api/runs/{id} 的中繼資料

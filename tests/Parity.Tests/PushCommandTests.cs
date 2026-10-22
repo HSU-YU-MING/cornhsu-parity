@@ -369,6 +369,23 @@ public class PushCommandTests
     }
 
     [Fact]
+    public async Task A_reverse_report_is_never_pushed()
+    {
+        // check --reverse 的報告期望/實際對調(給設計師看的反向檢視),推上去會被當成一般 run、污染趨勢
+        using var dir = new TempDir();
+        var reportPath = dir.Write("report.json", JsonSerializer.Serialize(
+            ReportDocument.Of([Report(Severity.Serious)]) with { Direction = ReportDirection.Reverse }, ReportWire.Indented));
+        await using var server = await FakeServer.StartAsync(201, "{}");
+        using var env = CleanEnv().Set("PARITY_TOKEN", "tok-0123456789abcdefghij");
+
+        var r = await Cli.RunAsync("push", "--server", server.Url, "--in", reportPath, "--gate-exit", "0");
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("--reverse", r.Err);
+        Assert.Empty(server.Requests);
+    }
+
+    [Fact]
     public async Task A_report_from_a_newer_parity_is_rejected_locally()
     {
         // 註解一直寫「版本不比 CLI 自己新」,實作卻只驗了 reports 欄位——v99 一路送到伺服器才被 422 擋下

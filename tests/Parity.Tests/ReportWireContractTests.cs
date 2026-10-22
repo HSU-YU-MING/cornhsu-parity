@@ -49,6 +49,26 @@ public class ReportWireContractTests
     }
 
     [Fact]
+    public void The_envelope_says_which_direction_the_report_was_written_in()
+    {
+        // 決策 #27(2.0.0):check --reverse 寫出的報告期望/實際對調,1.x 的信封卻沒有任何標記,
+        // parity report 照正向重算 gate、parity push 當一般 run 推上去。direction 一律寫出(不省略)
+        var forward = JsonSerializer.Serialize(Sample(), ReportWire.Compact);
+        var reverse = JsonSerializer.Serialize(Sample() with { Direction = ReportDirection.Reverse }, ReportWire.Compact);
+
+        Assert.EndsWith(",\"direction\":\"forward\"}", forward);
+        Assert.EndsWith(",\"direction\":\"reverse\"}", reverse);
+    }
+
+    [Fact]
+    public void A_report_written_before_direction_existed_reads_as_forward()
+    {
+        var doc = JsonSerializer.Deserialize<ReportDocument>("""{ "schemaVersion": 1, "reports": [] }""", ReportWire.Compact)!;
+
+        Assert.Equal(ReportDirection.Forward, doc.Direction);
+    }
+
+    [Fact]
     public void Null_fields_are_written_explicitly_in_both_variants()
     {
         // CLAUDE.md 地雷:刻意不設 WhenWritingNull——消費端不必判斷 key 存不存在

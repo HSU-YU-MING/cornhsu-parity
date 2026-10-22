@@ -190,6 +190,22 @@ public class ReportCommandTests
     }
 
     [Fact]
+    public async Task A_reverse_report_is_rerendered_without_a_gate_verdict()
+    {
+        // 決策 #27(2.0.0):1.x 讀 check --reverse 的報告會照正向重算 gate、顯示 GATE FAIL
+        using var dir = new TempDir();
+        var config = Setup(dir);
+        File.WriteAllText(dir.File(".parity", "report.json"), JsonSerializer.Serialize(
+            ReportDocument.Of([SampleReport()]) with { Direction = ReportDirection.Reverse }, ReportWire.Indented));
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.DoesNotContain("GATE FAIL", r.Out);
+        Assert.Contains("reverse mode", r.Out);
+    }
+
+    [Fact]
     public async Task Report_does_not_care_that_targets_or_tolerances_are_null()
     {
         // 指名欄位的 null 錯誤只在用到該區段時才丟——report 從沒碰過它們,行為(exit 0)不變

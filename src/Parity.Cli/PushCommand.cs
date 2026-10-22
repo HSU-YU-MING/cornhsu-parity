@@ -156,6 +156,11 @@ internal static class PushCommand
         if (doc?.Reports is null)
             throw new InvalidOperationException(
                 $"{path} is not a Parity report (expected the {{ schemaVersion, reports }} envelope that `parity check` writes).");
+        // check --reverse 的報告:期望/實際對調、不把關,推上去會被當成一般 run 污染趨勢
+        if (doc.Direction == ReportDirection.Reverse)
+            throw new InvalidOperationException(
+                $"{path} was written by `parity check --reverse` (expected/actual swapped, never gated) — " +
+                "it is not pushed to the dashboard. Push a report from a normal `parity check`.");
         // 比自己新的報告:這顆 CLI 讀不全(新欄位會被丟掉),而伺服器也會回 422——在本機就講清楚
         if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
             throw new InvalidOperationException(

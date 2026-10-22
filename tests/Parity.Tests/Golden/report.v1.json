@@ -106,5 +106,6 @@
         "maxSeverity": "serious"
       }
     }
-  ]
+  ],
+  "direction": "forward"
 }

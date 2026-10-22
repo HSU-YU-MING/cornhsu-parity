@@ -50,6 +50,10 @@ static int UnknownCommand(string cmd)
 
 internal static class CheckCommand
 {
+    /// <summary>reverse 報告的 Markdown 說明(check --reverse 與 parity report 重生 reverse 報告共用)。</summary>
+    internal const string ReverseNote =
+        "reverse mode: \"expected\" = the implementation, \"actual\" = the design file — the diff is for designers to read, no gating";
+
     /// <summary>parity check:讀 parity.config.json → 跑引擎 → 人看的摘要 + report.json + exit code。</summary>
     public static async Task<int> RunAsync(string[] args)
     {
@@ -90,15 +94,15 @@ internal static class CheckCommand
         var outPath = opts.GetValueOrDefault("--out")
             ?? Path.Combine(session.Config.BaseDirectory, ".parity", "report.json");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
-        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(ReportDocument.Of(reports), ReportJson.Indented));
+        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(
+            ReportDocument.Of(reports, reverse ? ReportDirection.Reverse : ReportDirection.Forward), ReportJson.Indented));
         Console.WriteLine($"report written: {outPath}");
 
         Console.WriteLine($"fidelity score: \x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
 
         if (reverse)
         {
-            WriteMarkdown(opts, session.Config, reports, gateFail: false,
-                gateNotes: ["reverse mode: \"expected\" = the implementation, \"actual\" = the design file — the diff is for designers to read, no gating"]);
+            WriteMarkdown(opts, session.Config, reports, gateFail: false, gateNotes: [ReverseNote]);
             Console.WriteLine("\n\x1b[36mreverse mode\x1b[0m: no gating, exit 0.");
             return 0;
         }
@@ -301,11 +305,13 @@ internal static class ReportCommand
                 "ignored, so the Markdown may be incomplete. Upgrade Parity to render it faithfully.\x1b[0m");
 
         var tokens = TokensFile.LoadForHints(config);
+        // check --reverse 寫出的報告期望/實際已對調:不做 gate,照 check --reverse 的樣子標明(2.0.0 起有方向欄位)
+        var reverse = doc.Direction == ReportDirection.Reverse;
         var md = MarkdownReport.Render(
             reports,
-            gateFail: config.GateFailReasons(reports).Count > 0,
+            gateFail: !reverse && config.GateFailReasons(reports).Count > 0,
             tokens: tokens,
-            gateNotes: config.MatchIntegrityFailures(reports),
+            gateNotes: reverse ? [CheckCommand.ReverseNote] : config.MatchIntegrityFailures(reports),
             figmaFileKey: config.FigmaLinkFileKey); // 與 check --md 同一條:圖層名連回 Figma 節點
 
         if (opts.GetValueOrDefault("--md") is { } mdPath)

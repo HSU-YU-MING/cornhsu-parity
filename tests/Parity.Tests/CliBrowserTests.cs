@@ -257,6 +257,9 @@ public class CliBrowserTests
         Assert.Contains("reverse mode", md);
         Assert.Contains("✅ PASS", md);
         Assert.Contains("`200` → `300`", md);
+        // 信封帶方向(2.0.0):一般的是 forward、反向的是 reverse,下游(report / push / 伺服器)據此分辨
+        Assert.Contains("\"direction\": \"forward\"", File.ReadAllText(dir.File(".parity", "report.json")));
+        Assert.Contains("\"direction\": \"reverse\"", File.ReadAllText(dir.File("rev", "report.json")));
     }
 
     [Fact]

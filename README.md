@@ -416,6 +416,7 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 - `severity` — **closed set** (spelling and membership frozen): `none` / `minor` / `medium` / `serious` / `critical`. `status`: `mismatch` / `missing`.
 - `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `randomized-id`, `size-implausible`.
 - `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`.
+- `direction` (top level, since 2.0.0) — **closed set**: `forward` (a normal `check`) / `reverse` (`check --reverse`: expected and actual swapped, never gated). Always written; files without it read as `forward`. `parity report` does not gate a reverse report, and `parity push` refuses one.
 
 ## Regression gating: baselines (M5)
 
