@@ -137,7 +137,7 @@ public class ActionYmlTests
     /// 不存在就什麼都不寫、exit 2。stub 被呼叫過會留下 $RUNNER_TEMP/parity-called。
     /// </summary>
     private static StepRun RunCheckStep(string workspace, string workingDirectory, string config, string target = "",
-        int timeoutMs = 30_000, Action? onTimeout = null, string artifactName = "parity-report")
+        int timeoutMs = 30_000, Action? onTimeout = null, string artifactName = "parity-report", bool emptyRunnerTemp = false)
     {
         string Unix(string p) => p.Replace('\\', '/');
         var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
@@ -173,7 +173,7 @@ public class ActionYmlTests
             UseShellExecute = false,
         };
         foreach (var a in new[] { "--noprofile", "--norc", "-eo", "pipefail", Unix(script) }) psi.ArgumentList.Add(a);
-        psi.Environment["RUNNER_TEMP"] = Unix(runnerTemp);
+        psi.Environment["RUNNER_TEMP"] = emptyRunnerTemp ? "" : Unix(runnerTemp);
         psi.Environment["GITHUB_OUTPUT"] = Unix(output);
         psi.Environment["PARITY_CONFIG"] = config;
         psi.Environment["PARITY_TARGET"] = target;
@@ -684,6 +684,34 @@ public class ActionYmlTests
         Assert.Equal("exit=2\n", r.Output);
         Assert.Empty(Directory.Exists(r.ArtifactDir) ? Directory.GetFiles(r.ArtifactDir) : []);
         Assert.False(File.Exists(Path.Combine(dir.Path, "_temp", "parity-report.md")), "上一次的 Markdown 還在,留言步驟會把它貼出去");
+    }
+
+    [Fact]
+    public void Every_rm_in_the_action_is_guarded_against_an_empty_runner_temp()
+    {
+        // 審查第 9 條:`rm -rf -- "$RUNNER_TEMP/parity-artifact"` 在 RUNNER_TEMP 沒設時會變成 rm -rf /parity-artifact。
+        // runner 一定會設,但刪檔的那一行不該靠這個假設:一律寫成 ${RUNNER_TEMP:?},沒設就讓這一步失敗
+        var rmLines = Yml.Split('\n').Where(l => !l.TrimStart().StartsWith('#') && Regex.IsMatch(l, @"\brm\b")).ToList();
+        Assert.NotEmpty(rmLines);
+        Assert.All(rmLines, l =>
+        {
+            Assert.DoesNotMatch(@"\$RUNNER_TEMP|\$\{RUNNER_TEMP\}", l);
+            Assert.Contains("${RUNNER_TEMP:?}", l);
+        });
+    }
+
+    [Fact]
+    public void An_empty_runner_temp_stops_the_check_step_before_it_deletes_or_runs_anything()
+    {
+        using var dir = new TempDir();
+        dir.Write("parity.config.json", "{}");
+
+        var r = RunCheckStep(dir.Path, ".", "parity.config.json", emptyRunnerTemp: true);
+
+        Assert.NotEqual(0, r.Exit);
+        Assert.Contains("RUNNER_TEMP", r.Stderr);
+        Assert.False(r.ParityCalled);
+        Assert.Equal("", r.Output);
     }
 
     [Fact]

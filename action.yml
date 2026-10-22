@@ -98,7 +98,8 @@ runs:
         set +e
         # 先清掉這個 job 前一次呼叫留下的暫存($RUNNER_TEMP 共用):這一次若在寫出報告前就失敗,
         # 不能把上一次的報告當成自己的上傳、貼到自己的留言
-        rm -rf -- "$RUNNER_TEMP/parity-artifact" "$RUNNER_TEMP/parity-report.md"
+        # ${RUNNER_TEMP:?}:沒設(或是空字串)就讓這一步失敗,絕不退化成 rm -rf /parity-artifact
+        rm -rf -- "${RUNNER_TEMP:?}/parity-artifact" "${RUNNER_TEMP:?}/parity-report.md"
         # config/target 帶換行(\n 或 \r)一律拒絕,不呼叫 parity:parity 會把它們原樣印到 stderr,
         # 換行後的內容落在行首就成了 runner 會解析的 workflow command(::add-mask::、::set-output…)。
         # 訊息刻意不印出 input 本身;當成執行錯誤(exit 2),照常由最後一步擋
