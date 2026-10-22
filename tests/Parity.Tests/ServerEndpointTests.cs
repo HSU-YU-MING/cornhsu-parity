@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -355,8 +357,7 @@ public class ServerEndpointTests : IAsyncLifetime
         }
 
         // 1) 不存在的 email 與錯密碼:狀態碼與訊息逐字相同(訊息層面不能拿來探測誰有帳號;
-        //    回應時間由下一條測試的假驗證對齊;剩下的探測管道是第 3 段的鎖定——訊息不同,
-        //    而且鎖定後 Identity 不跑密碼驗證,回得比其他 401 快)
+        //    回應時間、鎖定、並發與額度也一視同仁,見下面幾條 Lockout_* / Concurrent_* / Login_is_rate_limited_*)
         var unknown = await LoginAsync(Client(), "nobody@t.local", "correct horse battery");
         var wrong = await LoginAsync(Client(), "owner@t.local", "not the password");
         Assert.Equal(HttpStatusCode.Unauthorized, unknown.Status);
@@ -454,27 +455,169 @@ public class ServerEndpointTests : IAsyncLifetime
         public override DateTimeOffset GetUtcNow() => Now;
     }
 
-    [Fact]
-    public async Task Simulated_lockout_expires_after_the_lockout_window_and_then_counts_afresh()
-    {
-        // 與 Identity 相同的語意:鎖 DefaultLockoutTimeSpan(5 分鐘),到期後重新計數(鎖上時計數已歸零)
-        var clock = new ManualClock();
-        await using var factory = _factory.WithWebHostBuilder(b =>
-            b.ConfigureTestServices(s => s.AddSingleton<TimeProvider>(clock)));
-        async Task<string> AttemptAsync()
+    /// <summary>
+    /// 從 _factory 衍生一個 host:可換服務、可調登入額度(Parity:Login:*)。沒給額度就用產品預設
+    /// (每個 IP 每分鐘 20 次、每個 email 每分鐘 10 次)。
+    /// </summary>
+    private WebApplicationFactory<ParityServerEntryPoint> Factory(
+        Action<IServiceCollection>? services = null, int? perIp = null, int? perEmail = null)
+        => _factory.WithWebHostBuilder(b =>
         {
-            using var client = factory.CreateClient();
-            var resp = await client.PostAsync("/api/auth/login", Json(new { email = "ghost@t.local", password = "whatever it is" }));
-            return await resp.Content.ReadAsStringAsync();
-        }
+            if (perIp is { } ip) b.UseSetting("Parity:Login:PerIpPerMinute", ip.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (perEmail is { } em) b.UseSetting("Parity:Login:PerEmailPerMinute", em.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (services is not null) b.ConfigureTestServices(services);
+        });
 
-        for (var i = 0; i < 4; i++) Assert.Contains("incorrect", await AttemptAsync());
-        Assert.Contains("too many failed attempts", await AttemptAsync()); // 第 5 次觸發
+    private static async Task<(HttpStatusCode Status, string Body)> LoginAsync(
+        WebApplicationFactory<ParityServerEntryPoint> factory, string email, string password, string? clientIp = null)
+    {
+        using var client = factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = Json(new { email, password }) };
+        if (clientIp is not null) req.Headers.Add(FakeClientIp.Header, clientIp);
+        using var resp = await client.SendAsync(req);
+        return (resp.StatusCode, await resp.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>TestServer 沒有 RemoteIpAddress;測試用這個 header 指定「從哪個 IP 來」。</summary>
+    private sealed class FakeClientIp : IStartupFilter
+    {
+        public const string Header = "X-Test-Client-IP";
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+            => app =>
+            {
+                app.Use((ctx, nextMiddleware) =>
+                {
+                    if (ctx.Request.Headers.TryGetValue(Header, out var ip)) ctx.Connection.RemoteIpAddress = IPAddress.Parse(ip.ToString());
+                    return nextMiddleware(ctx);
+                });
+                next(app);
+            };
+    }
+
+    [Fact]
+    public async Task Lockout_expires_the_same_way_for_real_and_unknown_accounts_and_attempts_during_it_do_not_count()
+    {
+        // 與 Identity 相同的語意,兩種帳號一致:第 5 次失敗鎖 5 分鐘(IdentityOptions.Lockout)、鎖上時計數歸零、
+        // 鎖定中的嘗試不累計(審查的 M21d:鎖定中繼續累計,到期後就會少於 4 次失敗即再鎖)、到期後從 0 重算
+        await OwnerAsync();
+        var clock = new ManualClock();
+        await using var factory = Factory(s => s.AddSingleton<TimeProvider>(clock), perIp: 100_000, perEmail: 100_000);
+
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+        {
+            for (var i = 0; i < 4; i++) Assert.Contains("incorrect", (await LoginAsync(factory, email, $"guess {i}")).Body);
+            Assert.Contains("too many failed attempts", (await LoginAsync(factory, email, "guess 4")).Body);
+        }
         clock.Now += TimeSpan.FromMinutes(4);
-        Assert.Contains("too many failed attempts", await AttemptAsync()); // 還在鎖定窗內(且不累計)
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+            for (var i = 0; i < 5; i++) // 還在鎖定窗內:連正確密碼也不行,而且這些嘗試不算數
+                Assert.Contains("too many failed attempts", (await LoginAsync(factory, email, "correct horse battery")).Body);
         clock.Now += TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1);
-        for (var i = 0; i < 4; i++) Assert.Contains("incorrect", await AttemptAsync()); // 到期,從 0 重算
-        Assert.Contains("too many failed attempts", await AttemptAsync());
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+        {
+            for (var i = 0; i < 4; i++) Assert.Contains("incorrect", (await LoginAsync(factory, email, $"again {i}")).Body);
+            Assert.Contains("too many failed attempts", (await LoginAsync(factory, email, "again 4")).Body);
+        }
+    }
+
+    [Fact]
+    public async Task Concurrent_failures_on_one_email_are_counted_one_at_a_time_for_real_and_unknown_accounts()
+    {
+        // 審查實證(2.0.0 第一版,真伺服器):同一個 email 同時送 40 次錯誤密碼,真帳號 40 次都回 incorrect、
+        // AccessFailedCount 只加到 2(EF 的 ConcurrencyStamp 衝突讓 AccessFailedAsync 失敗,Identity 就不計數),
+        // 不存在的 email 卻是 4 次 incorrect、36 次鎖定——送一次就分得出帳號存不存在,真帳號的 5 次鎖定也被
+        // 並發繞過。現在整條登入路徑依正規化 email 序列化(審查的 M21f:拿掉序列化,這裡就紅)
+        await OwnerAsync();
+        await using var factory = Factory(perIp: 100_000, perEmail: 100_000);
+
+        async Task<string[]> BurstAsync(string email)
+            => await Task.WhenAll(Enumerable.Range(0, 40).Select(async k =>
+            {
+                var (status, body) = await LoginAsync(factory, email, $"bad {k}");
+                Assert.Equal(HttpStatusCode.Unauthorized, status);
+                return body;
+            }));
+        var realBurst = BurstAsync("owner@t.local");
+        var ghostBurst = BurstAsync("Nobody@T.local"); // 大小寫不同也是同一個鍵
+        var (real, ghost) = (await realBurst, await ghostBurst);
+
+        static (int Incorrect, int Locked) Tally(string[] bodies)
+            => (bodies.Count(b => b.Contains("incorrect")), bodies.Count(b => b.Contains("too many failed attempts")));
+        Assert.Equal((4, 36), Tally(real));
+        Assert.Equal((4, 36), Tally(ghost));
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "owner@t.local", "correct horse battery")).Body);
+    }
+
+    [Fact]
+    public async Task A_flood_of_other_emails_never_clears_an_existing_lockout()
+    {
+        // 審查實證(2.0.0 第一版):模擬鎖定記在記憶體、上限 10,000 筆、滿了整個清空——送 10,001 個不同的
+        // 假 email(64 秒)就洗掉了模擬鎖定,真帳號的鎖定卻還在。現在兩種帳號都記在 db 的同一張表,沒有容量上限
+        // (審查的 M21g)。10,001 筆直接寫表(走 HTTP 要 10,001 次 PBKDF2);之後再一次 HTTP 失敗,走一次寫入路徑
+        await OwnerAsync();
+        await using var factory = Factory(perIp: 100_000, perEmail: 100_000);
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+            for (var i = 0; i < 5; i++) await LoginAsync(factory, email, $"guess {i}");
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+            db.LoginThrottles.AddRange(Enumerable.Range(0, 10_001)
+                .Select(i => new LoginThrottle { NormalizedEmail = $"FLOOD{i}@X.INVALID", Failures = 1 }));
+            await db.SaveChangesAsync();
+        }
+        Assert.Contains("incorrect", (await LoginAsync(factory, "one-more@x.invalid", "whatever it is")).Body);
+
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "owner@t.local", "correct horse battery")).Body);
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "ghost@t.local", "whatever it is")).Body);
+    }
+
+    [Fact]
+    public void The_server_model_has_no_changes_missing_from_the_migrations()
+    {
+        // LoginThrottles 是 2.0.0 新增的 migration;模型改了卻忘了產 migration,啟動時 Migrate() 不會建表
+        using var scope = _factory.Services.CreateScope();
+        Assert.False(scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public async Task Login_is_rate_limited_per_client_ip_with_the_documented_default()
+    {
+        // 預設每個 IP 每分鐘 20 次(Parity:Login:PerIpPerMinute);別的 IP 不受影響。
+        // 這裡每次換一個 email,不碰每個 email 的額度
+        await using var factory = Factory(s => s.AddSingleton<IStartupFilter, FakeClientIp>());
+
+        for (var i = 0; i < 20; i++)
+            Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync(factory, $"ghost{i}@t.local", "whatever it is", "203.0.113.7")).Status);
+        using var client = factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = Json(new { email = "extra@t.local", password = "whatever it is" }) };
+        req.Headers.Add(FakeClientIp.Header, "203.0.113.7");
+        using var limited = await client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.NotNull(limited.Headers.RetryAfter);
+        Assert.Contains("too many login attempts", await limited.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync(factory, "extra@t.local", "whatever it is", "198.51.100.9")).Status);
+    }
+
+    [Fact]
+    public async Task Login_is_rate_limited_per_email_the_same_way_for_real_and_unknown_accounts()
+    {
+        // 預設每個 email 每分鐘 10 次(Parity:Login:PerEmailPerMinute),鍵是正規化後的 email,存在與否一視同仁:
+        // 第 11 次是 429,回應逐字相同。限額在任何查詢與密碼驗證之前就擋,沒有時序可量
+        await OwnerAsync();
+        await using var factory = Factory(perIp: 100_000);
+
+        var bodies = new List<string>();
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+        {
+            for (var i = 0; i < 10; i++)
+                Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync(factory, i % 2 == 0 ? email : email.ToUpperInvariant(), $"guess {i}")).Status);
+            var (status, body) = await LoginAsync(factory, email, "correct horse battery");
+            Assert.Equal(HttpStatusCode.TooManyRequests, status);
+            bodies.Add(body);
+        }
+        Assert.Equal(bodies[0], bodies[1]);
     }
 
     [Fact]

@@ -71,6 +71,11 @@
   self-hosted runner 上,理論上讀得到同一台機器上別的 repo 留下的報告**(報告含站點結構與截圖座標)。
   GitHub 託管的 runner 每次都是乾淨的 VM,不受影響。要補的話:用 `realpath` 解出實際路徑,確認落在
   `$GITHUB_WORKSPACE` 底下才複製(macOS 的 realpath 沒有 `-e`,要注意可攜性)。
+- **登入端點的剩餘限制**(2026-10-22,#21 審查後):存在與不存在的 email 已共用 `LoginThrottles` 表、依 email
+  序列化、IP/email 兩層額度(實測見 CHANGELOG 2.0.0)。還剩:時序差沒有歸零(同一個 email 反覆失敗時不存在的 email 慢 0–1.5 ms,原因未定位;攻擊者照「新帳號試 5 次」量分不出來);
+  **序列化只在單一行程內**(M5 若跑多個實例,要改成 db 層的鎖或交易);**反向代理後面要設 ForwardedHeaders**
+  (M5 部署時一起做,否則全體共用代理 IP 的額度);IP 額度擋不住分散式攻擊;鎖定/額度可被用來讓特定使用者暫時
+  登不進去;`LoginThrottles` 不清理(每個嘗試過的 email 一列)。
 - **repo 內容在 CI log 裡的行首注入,只擋了一般輸出**(2026-10-22 審查):設計稿圖層名、Figma 節點名、selector、
   設計值、設定檔的 route 帶 `\n::warning …` 時,原樣印出就會在行首變成 workflow command。check/lint/snapshot/baseline
   的一般輸出與警告已改成經 `ConsoleText.Safe` 跳脫控制字元;**例外訊息(最外層的 `error: …`)沒有**——它可能帶
@@ -125,4 +130,5 @@
    引擎面與外殼的已知盲點見上面「已知盲點 / 該補的」:auto-name 通用名假配對待更多野生樣本,
    2026-10-21 那批產品端落差 2026-10-22 已全數處理,要改 gate 結果或 semver 的幾條(failOn 白名單、soft 落差
    不擋 gate、數值旗標、只給 height 的 target、reverse 報告的方向、Node 20 下限…)拍板走 **2.0.0**
-   (見 CHANGELOG 2.0.0 節);登入的帳號探測也已關掉(模擬鎖定)。
+   (見 CHANGELOG 2.0.0 節);登入端點的帳號探測改成存在與否同一條路(共用節流表、序列化、額度),剩下的限制
+   見上面「已知盲點」的登入那一條。

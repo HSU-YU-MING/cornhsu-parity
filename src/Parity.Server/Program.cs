@@ -39,13 +39,22 @@ builder.Services.AddIdentityCore<AppUser>(o =>
         o.Password.RequireLowercase = false;
         o.Password.RequireDigit = false;
         o.User.RequireUniqueEmail = true;
-        o.Lockout.MaxFailedAccessAttempts = 5; // 內建暴力破解節流
+        // 暴力破解節流的門檻與時長(5 次、預設 5 分鐘)。計數與鎖定由 LoginGuard + LoginThrottles 表執行,
+        // 不走 Identity 的 AccessFailedCount——這裡只是數值的單一來源(決策 #21)
+        o.Lockout.MaxFailedAccessAttempts = 5;
     })
     .AddEntityFrameworkStores<ServerDbContext>()
     .AddSignInManager();
-// 不存在的 email 的模擬鎖定:門檻與時長跟真帳號同一份 IdentityOptions.Lockout(見 /api/auth/login)
-builder.Services.AddSingleton(sp => new UnknownEmailLockout(
-    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityOptions>>().Value.Lockout, sp.GetService<TimeProvider>() ?? TimeProvider.System));
+// 登入的額度、序列化與鎖定(見 LoginGuard):門檻與時長取自 IdentityOptions.Lockout,額度取自 Parity:Login:*
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new LoginGuard(
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityOptions>>().Value.Lockout,
+        sp.GetService<TimeProvider>() ?? TimeProvider.System,
+        config.GetValue("Parity:Login:PerIpPerMinute", LoginGuard.DefaultPerIpPerMinute),
+        config.GetValue("Parity:Login:PerEmailPerMinute", LoginGuard.DefaultPerEmailPerMinute));
+});
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddCookie(IdentityConstants.ApplicationScheme, o =>
@@ -89,33 +98,57 @@ app.MapGet("/healthz", async (ServerDbContext db) =>
 
 // ── 認證 ───────────────────────────────────────────────────────
 app.MapPost("/api/auth/login", async (
-    LoginRequest req, SignInManager<AppUser> signIn, UserManager<AppUser> users, ServerDbContext db,
-    IPasswordHasher<AppUser> hasher, UnknownEmailLockout unknownLockout) =>
+    LoginRequest req, HttpContext http, SignInManager<AppUser> signIn, UserManager<AppUser> users,
+    ServerDbContext db, IPasswordHasher<AppUser> hasher, LoginGuard guard) =>
 {
-    // 帳號存不存在,回應的訊息與時序都不能透露(決策 #21):每條失敗路徑都恰好跑一次密碼雜湊驗證
-    // (PBKDF2,數十毫秒),「被鎖」也對不存在的 email 照樣發生
+    // 帳號存不存在,回應的內容與時間都不能透露(決策 #21):存在與不存在的 email 走同一條路——
+    // 同樣的額度、同樣的序列化、同樣的查詢與寫入(LoginThrottles),每次失敗都恰好跑一次密碼雜湊驗證
+    // (PBKDF2,數十毫秒),鎖定也一視同仁
     static IResult Incorrect() => Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
     static IResult LockedOut() => Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
 
-    var email = req.Email.Trim();
-    var user = await users.FindByEmailAsync(email);
-    if (user is null)
+    var email = (req.Email ?? "").Trim();
+    var password = req.Password ?? "";
+    // 比 AspNetUsers.NormalizedEmail 的上限還長的不可能是帳號(公開資訊,不是探測管道),也不讓它進節流表
+    if (email.Length > 256)
+        return Results.Json(new { error = "email is too long." }, statusCode: 400);
+    var key = users.NormalizeEmail(email) ?? email;
+
+    // 1) 額度:任何查詢與驗證之前
+    if (!guard.TryAcquire(http.Connection.RemoteIpAddress, key, out var retryAfter))
     {
-        // 跑一次同成本的假驗證(結果丟掉),再按與真帳號相同的門檻記失敗次數
-        LoginTiming.SpendOneVerification(hasher, req.Password);
-        return unknownLockout.RecordFailure(users.NormalizeEmail(email) ?? email) ? LockedOut() : Incorrect();
+        http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Results.Json(new { error = "too many login attempts — wait a minute and try again." }, statusCode: 429);
     }
-    if (await users.IsLockedOutAsync(user))
+
+    // 2) 同一個 email 一次一個:讀計數 → 驗密碼 → 寫計數不被並發穿插
+    using var serialized = await guard.SerializeAsync(key, http.RequestAborted);
+
+    // 3) 兩種帳號都是:查使用者、查節流列、驗一次密碼、(失敗時)寫節流列
+    var user = await users.FindByEmailAsync(email);
+    var row = await db.LoginThrottles.FindAsync([key], http.RequestAborted);
+    if (guard.IsLockedOut(row))
     {
-        // Identity 對鎖定中的帳號不驗密碼、幾毫秒就回——比其他 401 快一個數量級,等於宣告「這帳號存在」。
-        // 先自己擋下,補一次同成本的驗證
-        LoginTiming.SpendOneVerification(hasher, req.Password);
+        LoginTiming.SpendOneVerification(hasher, password); // 鎖定中也付一次驗證的成本,不寫入
         return LockedOut();
     }
-    var result = await signIn.PasswordSignInAsync(user, req.Password, isPersistent: true, lockoutOnFailure: true);
-    if (result.IsLockedOut) return LockedOut(); // 這次失敗剛好觸發鎖定(密碼已驗過一次)
-    if (!result.Succeeded) return Incorrect();
-    return Results.Json(await MeAsync(user, db));
+    var ok = false;
+    if (user?.PasswordHash is null) LoginTiming.SpendOneVerification(hasher, password); // 同成本的假驗證
+    else ok = await users.CheckPasswordAsync(user, password);
+    if (!ok)
+    {
+        var lockedNow = guard.RecordFailure(db, key, row);
+        await db.SaveChangesAsync(http.RequestAborted);
+        return lockedNow ? LockedOut() : Incorrect();
+    }
+    if (row is not null)
+    {
+        db.LoginThrottles.Remove(row); // 成功登入清掉失敗計數
+        await db.SaveChangesAsync(http.RequestAborted);
+    }
+    await signIn.SignInAsync(user!, isPersistent: true);
+    return Results.Json(await MeAsync(user!, db));
 });
 
 app.MapPost("/api/auth/logout", async (SignInManager<AppUser> signIn) =>
@@ -484,64 +517,6 @@ internal static class Auth
         if (token.Length is < 20 or > 200) return null; // 護欄:不是我們發的形狀就不用查庫
         var hash = ProjectToken.Hash(token);
         return await db.Projects.FirstOrDefaultAsync(p => p.TokenHash == hash);
-    }
-}
-
-/// <summary>
-/// 不存在的 email 的「模擬鎖定」(決策 #21)。Identity 只鎖真帳號;不存在的 email 若永遠回 incorrect,
-/// 「連錯 5 次會不會變成 too many failed attempts」就是一條探測帳號的管道。這裡照 Identity 的語意
-/// (第 MaxFailedAccessAttempts 次失敗即鎖、鎖 DefaultLockoutTimeSpan、鎖定時計數歸零、鎖定中不再計數)
-/// 替不存在的 email 記帳,兩邊回應逐字相同。
-/// 只記在記憶體:伺服器重啟就歸零(真帳號的鎖定記在 db,重啟後仍在)——要利用這個差異得先能讓伺服器
-/// 重啟,不列入防線。最多記 <see cref="MaxEntries"/> 個 email,滿了先清掉鎖定已過期的,仍滿就整個清空:
-/// 灌滿它要先付上萬次密碼驗證的成本,換到的只是某個不存在的 email 晚一點被鎖。
-/// </summary>
-internal sealed class UnknownEmailLockout(LockoutOptions options, TimeProvider time)
-{
-    internal const int MaxEntries = 10_000;
-    private readonly Dictionary<string, (int Failures, DateTimeOffset? LockedUntil)> _entries = new(StringComparer.Ordinal);
-    private readonly Lock _gate = new();
-
-    /// <summary>記一次失敗;回傳這個 email 現在是否處於鎖定(原本就鎖著,或這次剛好鎖上)。</summary>
-    public bool RecordFailure(string normalizedEmail)
-    {
-        lock (_gate)
-        {
-            var now = time.GetUtcNow();
-            _entries.TryGetValue(normalizedEmail, out var entry);
-            if (entry.LockedUntil is { } until)
-            {
-                if (until > now) return true; // 鎖定中:與 Identity 相同,不再累計
-                entry = default;              // 鎖定已過期:重新計數
-            }
-            if (!_entries.ContainsKey(normalizedEmail) && _entries.Count >= MaxEntries) Prune(now);
-            entry.Failures++;
-            if (entry.Failures >= options.MaxFailedAccessAttempts)
-                entry = (0, now + options.DefaultLockoutTimeSpan);
-            _entries[normalizedEmail] = entry;
-            return entry.LockedUntil is not null;
-        }
-    }
-
-    private void Prune(DateTimeOffset now)
-    {
-        foreach (var key in _entries.Where(e => e.Value.LockedUntil is { } until && until <= now).Select(e => e.Key).ToList())
-            _entries.Remove(key);
-        if (_entries.Count >= MaxEntries) _entries.Clear();
-    }
-}
-
-/// <summary>登入失敗路徑的時序對齊(見 /api/auth/login):帳號不存在、帳號鎖定中都補一次同成本的驗證。</summary>
-internal static class LoginTiming
-{
-    private static readonly AppUser DummyUser = new() { Id = Guid.Empty, UserName = "timing@invalid", Email = "timing@invalid" };
-    private static string? _dummyHash;
-
-    public static void SpendOneVerification(IPasswordHasher<AppUser> hasher, string? password)
-    {
-        // 假雜湊只算一次(用同一個 hasher,成本設定與真帳號相同);並發時多算一次無妨
-        _dummyHash ??= hasher.HashPassword(DummyUser, Guid.NewGuid().ToString("N"));
-        _ = hasher.VerifyHashedPassword(DummyUser, _dummyHash, password ?? "");
     }
 }
 

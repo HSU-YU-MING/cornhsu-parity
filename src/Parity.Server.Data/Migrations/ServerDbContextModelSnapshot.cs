@@ -15,7 +15,7 @@ namespace Parity.Server.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>
                 {
@@ -215,6 +215,23 @@ namespace Parity.Server.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Invites");
+                });
+
+            modelBuilder.Entity("Parity.Server.Data.LoginThrottle", b =>
+                {
+                    b.Property<string>("NormalizedEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Failures")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("LockedUntil")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("NormalizedEmail");
+
+                    b.ToTable("LoginThrottles");
                 });
 
             modelBuilder.Entity("Parity.Server.Data.PageResult", b =>

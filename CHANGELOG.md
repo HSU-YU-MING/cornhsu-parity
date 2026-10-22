@@ -162,11 +162,31 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
   `PARITY_SERVER_DB`、web host 只讀 `ConnectionStrings:parity`:只設前者時 `create-project` 寫進一個檔、
   web host 開的是 ContentRoot 下的另一個,push 回 401、邀請連結回 404。現在兩邊共用同一個解析:
   `ConnectionStrings:parity` → `PARITY_SERVER_DB` → `parity-server.db`(cwd/ContentRoot)。
-- **修正:登入回應不再透露帳號存不存在**(未發佈的伺服器)。三條探測管道一起關:
-  (1) 不存在的 email 原本直接回 401、不跑 PBKDF2,回得明顯比存在的帳號快——現在跑一次同成本的假驗證;
-  (2) 只有存在的帳號連錯 5 次會看到 `too many failed attempts`——現在不存在的 email 也「模擬鎖定」,
-  門檻、時長(IdentityOptions.Lockout:5 次、5 分鐘)與訊息都與真帳號相同(記在記憶體,伺服器重啟歸零);
-  (3) 已鎖定的帳號 Identity 不驗密碼、3–7 ms 就回(其他 401 約 80–90 ms)——現在鎖定路徑也補一次同成本的驗證。
+- **修正:登入端點不再透露帳號存不存在,鎖定也繞不過**(未發佈的伺服器)。找到的探測管道:(1) 不存在的 email
+  直接回 401、不跑 PBKDF2,回得明顯比存在的帳號快;(2) 只有存在的帳號連錯 5 次會看到 `too many failed attempts`;
+  (3) 鎖定中的帳號 Identity 不驗密碼、3–7 ms 就回(其他 401 約 80–90 ms);(4) 並發:同一個 email 同時送 40 次
+  錯誤密碼,真帳號 40 次都回 incorrect、計數只加到 2(EF 的 ConcurrencyStamp 衝突讓 Identity 不計數),鎖定被繞過,
+  不存在的 email 卻是 4 次 incorrect、36 次鎖定;(5) 這一版的第一稿把不存在 email 的計數放在記憶體、上限 10,000
+  筆、滿了就清空,灌 10,001 個假 email(64 秒)就洗掉;(6) 真帳號打錯密碼多一次 db 寫入,穩定慢 1.4–2 ms。現在:
+  - 存在與不存在的 email 走同一條路:失敗次數與鎖定記在 db 的 `LoginThrottles` 表(以正規化 email 為鍵,新
+    migration),兩邊都是查使用者、查這一列、驗一次密碼、寫這一列;鎖定中也驗一次、不寫。語意照 Identity:
+    第 5 次失敗鎖 5 分鐘(`IdentityOptions.Lockout`)、鎖上時計數歸零、鎖定中不累計、成功登入清掉。真帳號不再用
+    Identity 的 AccessFailedCount/LockoutEnd。沒有容量上限,也就沒有淘汰。
+  - 同一個正規化 email 的登入在伺服器內一次只跑一個,並發下計數正確。
+  - 登入額度:每個用戶端 IP 每分鐘 20 次、每個 email 每分鐘 10 次(一分鐘滑動視窗;設定
+    `Parity:Login:PerIpPerMinute`、`Parity:Login:PerEmailPerMinute`),超過回 429 + `Retry-After`,在任何查詢
+    與密碼驗證之前擋下,存在與否一視同仁。
+  - 實測(審查者的腳本,真伺服器):額度放寬時,6 組真帳號與 6 組不存在 email 的 40 次並發都是 4 次 incorrect、
+    36 次鎖定;預設額度下,40 次並發只有 10 次進到驗證(4 incorrect、6 鎖定、30 次 429)。灌 10,001 個假 email:
+    預設額度下 2.6 秒內全部 429;額度放寬時灌完(77 秒)先前的鎖定都還在(表裡 10,299 列)。時序(額度放寬):
+    審查者的分類器(每個新帳號 5 次失敗的平均)判對 28/60,等於用猜的(原本 47/60)。
+  - **還剩下的**:時序差沒有歸零。同一個 email 反覆失敗的節奏下,不存在的 email 中位數反而慢 0–1.5 ms(6 次量測
+    有 5 次是它較慢,原因未定位;量測時機器上同時有其他建置在跑),攻擊者照「新帳號試 5 次」量則分不出來;
+    節流列存在與否(UPDATE 或 INSERT)也會影響時間,而真使用者自己打錯密碼又沒再登入成功會留下一列。序列化只在
+    單一行程內有效,多個伺服器實例共用一個 db 時要改成 db 層的鎖;IP 額度擋不住分散在很多 IP 的攻擊(email
+    額度與 5 次鎖定照常有效);部署在反向代理後面要設定 ForwardedHeaders,否則所有人共用代理那一個 IP 的額度;
+    鎖定與 email 額度可以被拿來讓特定使用者暫時登不進去(鎖定機制本來的代價);`LoginThrottles` 每個嘗試過的
+    email 一列、不清理(實測 10,330 列約 1 MB),成長速度受 IP 額度限制。範圍只到登入端點。
 - **修正:`tokensFile` 讀不到或寫壞時說清楚是哪裡,並允許註解**(patch)。原本 `catch { return null; }`
   把檔案不存在、JSON 壞掉、值是數字、有 `//` 註解全當成「沒有 token」:`lint` 接著報
   `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位;`check --md`

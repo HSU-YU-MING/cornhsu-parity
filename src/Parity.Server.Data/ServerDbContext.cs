@@ -17,6 +17,7 @@ public class ServerDbContext(DbContextOptions<ServerDbContext> options)
     public DbSet<PageResult> PageResults => Set<PageResult>();
     public DbSet<ProjectMember> Members => Set<ProjectMember>();
     public DbSet<Invite> Invites => Set<Invite>();
+    public DbSet<LoginThrottle> LoginThrottles => Set<LoginThrottle>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -46,6 +47,11 @@ public class ServerDbContext(DbContextOptions<ServerDbContext> options)
         b.Entity<AuditEntry>().HasOne(a => a.Project).WithMany()
             .HasForeignKey(a => a.ProjectId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<AuditEntry>().Property(a => a.At).HasConversion(ticks);
+
+        // 登入節流(決策 #21):鍵就是正規化 email,長度與 AspNetUsers.NormalizedEmail 一致(登入端點先擋過長的)
+        b.Entity<LoginThrottle>().HasKey(t => t.NormalizedEmail);
+        b.Entity<LoginThrottle>().Property(t => t.NormalizedEmail).HasMaxLength(256);
+        b.Entity<LoginThrottle>().Property(t => t.LockedUntil).HasConversion(ticks);
 
         // SQLite 不支援 DateTimeOffset 進 ORDER BY——存 UTC ticks(INTEGER):
         // 排序嚴格按時間(不像內建 ToBinary 轉換在不同時區偏移下排不準),換供應商也通用。
