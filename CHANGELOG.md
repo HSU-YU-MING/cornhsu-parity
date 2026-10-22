@@ -54,10 +54,13 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
    留言裡,只是不扣分、不擋。baseline schema 不變:新存的 baseline 不收 soft 列;1.x 存的舊 db 裡已有的
    font-family 列,只要那條落差還在就不算「修好」(比對時拿現況全部落差的鍵來比,含 soft),真的改對了才列為
    修好。**遷移:不用改設定;想清掉舊列就重存 baseline**(升級必做第 4 點)。依賴「字型堆疊一變就擋」的團隊,改在 review 時看報告的 soft 列——沒有替代的 gate 開關。
-3. **`snapshot --width`/`--height` 與 `serve`/`map --port` 必須是正整數,否則 exit 2**(面 2)。1.x 遇到
-   非整數靜默退回預設值(`--width 375px` 會以 1280 寬凍結手機基準),0 與負數原樣交給瀏覽器。現在在讀設定檔、
-   開瀏覽器之前就以用法錯誤結束(`--width expects a positive integer (got "375px")`)。
-   **遷移:去掉單位與小數**(`--width 375`)。
+3. **`snapshot --width`/`--height` 與 `serve`/`map --port` 必須是正整數,否則 exit 2**(面 2)。**只收十進位
+   數字,不收正負號與前後空白**:`375px`、`3.5`、`0`、`-800`,以及 1.x 接受的 `+375`、`" 375"`、`-0` 都是
+   用法錯誤;`--port` 另外只收 1–65535(1.x 與這一版的第一稿要到 bind 時才失敗)。1.x 遇到非整數靜默退回
+   預設值(`--width 375px` 會以 1280 寬凍結手機基準),0 與負數原樣交給瀏覽器。現在在讀設定檔、開瀏覽器之前就以
+   用法錯誤結束(`--width expects a positive integer (got "375px")`、
+   `--port expects an integer from 1 to 65535 (got "65536")`)。**遷移:只寫數字**(`--width 375`,不加單位、
+   正號或空白)。
 4. **target 只給 `height`(沒給 `width`)時,`check`/`serve`/`map`/`baseline save` 照用它**(演進條款 ②
    的量測語意變化)。1.x 在寬度沒給時把寬高一起換成設計 frame 的尺寸,`height` 被靜靜丟掉(`snapshot` 則
    照用,兩邊量的視窗不一樣高)。現在兩個欄位各管各的軸:寬用 frame 的、高用給的。

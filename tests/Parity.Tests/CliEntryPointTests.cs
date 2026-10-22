@@ -256,6 +256,12 @@ public class CliEntryPointTests
     [InlineData("serve", "--port", "http")]
     [InlineData("serve", "--port", "0")]
     [InlineData("map", "--port", "4321x")]
+    // 只收十進位數字:正負號與前後空白也是用法錯誤(審查的 M05b:改成 NumberStyles.Integer 時這幾條會放行)
+    [InlineData("snapshot", "--width", "+375")]
+    [InlineData("snapshot", "--width", " 375")]
+    [InlineData("snapshot", "--width", "375 ")]
+    [InlineData("snapshot", "--height", "-0")]
+    [InlineData("serve", "--port", "+4321")]
     public async Task A_numeric_flag_that_is_not_a_positive_integer_is_exit_2_before_anything_runs(
         string command, string flag, string value)
     {
@@ -271,6 +277,24 @@ public class CliEntryPointTests
 
         Assert.Equal(2, r.ExitCode);
         Assert.Contains($"{flag} expects a positive integer (got \"{value}\")", r.Err);
+        Assert.DoesNotContain("declares no targets", r.Err);
+    }
+
+    [Theory]
+    [InlineData("serve", "65536")]
+    [InlineData("map", "99999")]
+    public async Task A_port_above_65535_is_exit_2_before_anything_runs(string command, string value)
+    {
+        // 1.x 與 2.0.0 第一版:通過驗證,等到 Kestrel bind 時才失敗(ArgumentOutOfRangeException)
+        using var dir = new TempDir();
+        using var noBrowsers = new TempDir();
+        using var env = new EnvScope().Set("PLAYWRIGHT_BROWSERS_PATH", noBrowsers.Path);
+        var config = WriteConfig(dir, """{ "designFile": "design.json", "targets": [] }""");
+
+        var r = await Cli.RunAsync(command, "--config", config, "--port", value);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains($"--port expects an integer from 1 to 65535 (got \"{value}\")", r.Err);
         Assert.DoesNotContain("declares no targets", r.Err);
     }
 

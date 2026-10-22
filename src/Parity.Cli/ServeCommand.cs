@@ -25,7 +25,7 @@ internal static class ServeCommand
     {
         var opts = CliOptions.Parse(args, Usage.Flags.Serve);
         if (opts.ContainsKey("--help")) return Usage.Print(mapMode ? Usage.Map : Usage.Serve);
-        var port = CliOptions.PositiveIntOrDefault(opts, "--port", 4321);
+        var port = CliOptions.PositiveIntOrDefault(opts, "--port", 4321, max: 65535);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
@@ -355,12 +355,18 @@ internal static class CliOptions
     /// 1.x 非整數時靜默退回預設值(`snapshot --width 375px` 會以 1280 寬凍結手機基準),0 與負數則原樣
     /// 交給瀏覽器——與本類別「靜默忽略會讓查詢變事故」的原則相反,2.0.0 起收緊。
     /// </summary>
-    public static int PositiveIntOrDefault(Dictionary<string, string?> opts, string flag, int fallback)
+    /// <summary>
+    /// 正整數旗標(--width、--height、--port)。只收十進位數字:NumberStyles.None 不收正負號、前後空白、
+    /// 千分位(`+375`、` 375`、`-0` 都是用法錯誤)。<paramref name="max"/> 給了就一併檢查上限(port 是 65535)。
+    /// </summary>
+    public static int PositiveIntOrDefault(Dictionary<string, string?> opts, string flag, int fallback, int max = int.MaxValue)
     {
         if (opts.GetValueOrDefault(flag) is not { } raw) return fallback;
-        if (int.TryParse(raw, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value)
-            && value > 0)
-            return value;
+        var parsed = int.TryParse(raw, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value);
+        if (parsed && value > 0 && value <= max) return value;
+        // 純數字但超出範圍(含 int 放不下的長數字)時,說出範圍;其餘是「不是正整數」
+        if (max != int.MaxValue && raw.Length > 0 && raw.All(char.IsAsciiDigit) && (!parsed || value > 0))
+            throw new CliUsageException($"{flag} expects an integer from 1 to {max} (got \"{ConsoleText.Safe(raw)}\")");
         throw new CliUsageException($"{flag} expects a positive integer (got \"{ConsoleText.Safe(raw)}\")");
     }
 }

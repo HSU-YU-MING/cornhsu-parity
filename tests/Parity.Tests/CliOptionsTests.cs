@@ -29,6 +29,13 @@ public class CliOptionsTests
         Assert.Contains("--taget", ex.Message);
     }
 
+    [Theory]
+    [InlineData("1", 1)]
+    [InlineData("65535", 65535)]
+    [InlineData("0004321", 4321)]
+    public void Port_accepts_1_to_65535(string raw, int expected)
+        => Assert.Equal(expected, CliOptions.PositiveIntOrDefault(new() { ["--port"] = raw }, "--port", 4321, max: 65535));
+
     [Fact]
     public void Stray_positional_throws()
     {
