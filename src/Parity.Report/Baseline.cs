@@ -21,9 +21,13 @@ public sealed record DiffRecord(
     public (string Route, string Layer, string Selector, string Prop) Key
         => (Route, DesignLayer, Selector, Prop);
 
-    /// <summary>把一次掃描的所有報告攤平成落差清單(baseline 儲存與比對的輸入)。</summary>
+    /// <summary>
+    /// 把一次掃描的所有報告攤平成落差清單(baseline 儲存與比對的輸入)。soft 落差(font-family)不進來:
+    /// 它不擋 gate,也就不該在 --baseline 模式算「新增」(2.0.0 起;1.x 一起攤平)。schema 不必改——
+    /// 舊 baseline 裡已存的 soft 列,下一次比對會顯示成「fixed」一次(不影響 gate),重存 baseline 就消失。
+    /// </summary>
     public static IReadOnlyList<DiffRecord> FromReports(IEnumerable<FidelityReport> reports)
-        => reports.SelectMany(r => r.Nodes.SelectMany(n => n.Diffs.Select(d =>
+        => reports.SelectMany(r => r.Nodes.SelectMany(n => n.Diffs.Where(d => !d.Soft).Select(d =>
                 new DiffRecord(r.Route, n.DesignLayer, n.Selector, d.Prop, d.Severity, d.Expected, d.Actual))))
             .ToList();
 }

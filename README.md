@@ -216,10 +216,9 @@ Only the things that should hold no matter how the layout flows:
   produce false positives. Turn it off with `compare.position: "none"`.
 - **Typography**: size and letter-spacing are compared as numbers within `tolerances.fontSizePx`,
   line-height within `tolerances.sizePx`; weight has no tolerance — any difference is a gap
-  (under 200 apart is medium, 200 or more is serious). font-family is a **soft gap**: it costs no
-  fidelity points and the default gate (`critical`/`serious`) ignores it, but its severity is
-  `minor` — so it does fail the gate when `failOn` includes `minor`, and in `--baseline` mode a
-  new font-family gap counts as new (exit 1).
+  (under 200 apart is medium, 200 or more is serious). font-family is a **soft gap**: it is
+  reported (severity `minor`, marked soft) but costs no fidelity points and **never gates** —
+  not even when `failOn` includes `minor`, and `--baseline` mode does not count it as new.
 - **Color**: thresholded on CIEDE2000 (ΔE), not hex equality. Parsing covers modern syntax
   (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `color(display-p3 …)`).
 - **Absolute x/y is deliberately never compared**: it legitimately differs in a flexible layout,

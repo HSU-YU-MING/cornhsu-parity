@@ -10,6 +10,24 @@ public class BaselineComparerTests
         => new(route, layer, "sel", prop, sev, "expected", "actual");
 
     [Fact]
+    public void Soft_diffs_never_enter_the_baseline_or_the_comparison()
+    {
+        // 決策 #2(2.0.0):soft 落差(font-family)不擋 gate,--baseline 也一樣。1.x 把 soft 一起攤平,
+        // 調整 font stack 就讓 --baseline 多一條「新增」、exit 1
+        var node = new NodeResult("title", "1:2", "h1", "auto-text", Severity.Medium,
+        [
+            new PropDiff("fontSize", "32", "30", "px", 2, 0.5, Severity.Medium),
+            new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: true),
+        ]);
+        var report = new FidelityReport("/", "u", "d", [node], [], new ReportSummary(1, 1, 0, 1, 0, 0, 1, 1, Severity.Medium));
+
+        var records = DiffRecord.FromReports([report]);
+
+        Assert.Equal(["fontSize"], records.Select(r => r.Prop));
+        Assert.False(BaselineComparer.Compare(records, [D("title", "fontSize", Severity.Medium) with { Selector = "h1" }]).HasRegressions);
+    }
+
+    [Fact]
     public void New_diff_not_in_baseline_is_regression()
     {
         var baseline = new[] { D("btn", "color", Severity.Serious) };

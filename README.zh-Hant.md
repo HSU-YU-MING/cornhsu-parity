@@ -200,7 +200,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
   - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
 - **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
 - **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
-- **字體**:size 與 letter-spacing 依 `tolerances.fontSizePx`、line-height 依 `tolerances.sizePx` 做數值比對;weight 沒有容差,不一樣就算落差(相差不到 200 是 medium,200 以上是 serious)。font-family 是**軟落差**:不扣還原度分數,預設的 gate(`critical`/`serious`)也不看它;但它的嚴重度是 `minor`——`failOn` 含 `minor` 時照樣會擋,`--baseline` 模式下新出現的 font-family 落差也算「新增」(exit 1)
+- **字體**:size 與 letter-spacing 依 `tolerances.fontSizePx`、line-height 依 `tolerances.sizePx` 做數值比對;weight 沒有容差,不一樣就算落差(相差不到 200 是 medium,200 以上是 serious)。font-family 是**軟落差**:會列在報告裡(嚴重度 `minor`、標成 soft),但不扣還原度分數,**也永遠不擋 gate**——`failOn` 含 `minor` 時也一樣,`--baseline` 模式也不把它算「新增」
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任

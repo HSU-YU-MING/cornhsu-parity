@@ -191,7 +191,8 @@ public sealed class ParityConfig
     {
         if (MatchIntegrityFailure(report) is { } untrusted) return untrusted;
         var failOn = Gate.FailOn.Select(s => FailOnSeverities[s]).ToHashSet();
-        return report.Nodes.SelectMany(n => n.Diffs).Any(diff => failOn.Contains(diff.Severity))
+        // soft 落差(font-family)不擋 gate(2.0.0 起;與分數口徑一致——soft 也不扣分)
+        return report.Nodes.SelectMany(n => n.Diffs).Any(diff => !diff.Soft && failOn.Contains(diff.Severity))
             ? $"has {string.Join("/", Gate.FailOn)} severity diffs"
             : null;
     }

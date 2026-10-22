@@ -66,6 +66,19 @@ public class GateTests
     // ---------- 原本的 failOn 行為不變 ----------
 
     [Fact]
+    public void Soft_diffs_never_gate_even_when_fail_on_includes_their_severity()
+    {
+        // 決策 #2(2.0.0):font-family 這種 soft 落差不扣分、也不擋 gate。1.x 在 failOn 含 minor 時照樣
+        // GATE FAIL,出現「100/100 卻 GATE FAIL」的矛盾表頭
+        var config = new ParityConfig { Gate = { FailOn = ["minor"] } };
+        var soft = new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: true);
+        var hard = new PropDiff("fontSize", "32", "31", "px", 1, 0.5, Severity.Minor);
+
+        Assert.Null(config.GateFailReason(Report(designNodes: 1, matched: 1, Node("title", soft))));
+        Assert.NotNull(config.GateFailReason(Report(designNodes: 1, matched: 1, Node("title", soft, hard))));
+    }
+
+    [Fact]
     public void FailOn_severity_still_gates()
     {
         var config = new ParityConfig();

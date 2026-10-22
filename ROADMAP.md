@@ -68,9 +68,6 @@
     2026-10-22 已把主包 `engines.node` 改成 `>=20`、CHANGELOG 未發佈區開頭寫了「升級必做」;
     剩下的是下一版的 semver(minor + 升級必做,或承認對 npm 通路是 major),發佈前由維護者決定
     (見 `docs/公開介面盤點.md` §8.2、§10)。
-  - **soft 落差會擋 gate**:fontFamily 不扣分,但 `failOn` 含 `minor` 時照樣 GATE FAIL
-    (`ParityConfig.GateFailReason` 沒排除 soft),`--baseline` 也把新的 soft 落差算「新增」
-    (`DiffRecord.FromReports` 一起攤平)。修法二擇一:判定排除 soft,或正式把承諾改窄。
   - **登入的帳號探測**(未發佈):鎖定訊息(`too many failed attempts`)只有存在的帳號會出現。
     (2026-10-22 已讓不存在的 email 也跑一次同成本的假密碼驗證,與「存在但打錯密碼」同樣慢;但**已鎖定**的帳號
     Identity 先檢查鎖定、不跑驗證,約 3–7 ms 就回,比其他 401 的 80–90 ms 快很多。)鎖定訊息與鎖定路徑的時序
