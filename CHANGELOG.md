@@ -81,8 +81,10 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   套用上一條的條件(有 `designFile` 就不連)。
 - **修正:`parity push` 推超過 20 MB 的報告時,穩定拿到 413 的提示**(未發佈的 push)。Kestrel 依
   Content-Length 回 413 後在上傳途中關連線,客戶端常常只拿到 `An error occurred while sending the
-  request.`。現在超過 1 MB 的報告送 `Expect: 100-continue`(等待上限 15 秒),伺服器先回 413/401、本文
-  不送出;exit 2 不變。
+  request.`。現在超過 1 MB 的報告送 `Expect: 100-continue`,伺服器先回 413/401、本文不送出;exit 2 不變。
+  代價與保險:中間的 proxy 若既不回 100 也不回最終狀態,大報告每次最多多等 15 秒才開始送本文;
+  若它回 417 Expectation Failed,拿掉 Expect 重送一次(加 Expect 之前同樣的推送會成功,不能因此變 exit 2)。
+  `parity push --help` 寫明了這兩點。
 - **修正:npm 啟動腳本自己的錯誤改回 exit 2,訊息改成英文**(patch:修回 exit code 契約)。平台不支援、
   找不到平台包、執行檔起不來,原本都 exit 1——在 CLI 契約裡 1 是「落差超過 gate」,CI 會把「工具沒裝好」
   讀成「設計還原度不合格」。訊息原本是中文(CLI 本體 0.12.0 起全英文)。

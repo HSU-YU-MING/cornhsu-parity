@@ -723,6 +723,8 @@ internal static class Usage
               --gate-exit <code>  Pass `parity check`'s real exit code so the dashboard shows the same
                                   verdict as CI (covers custom failOn and --baseline semantics);
                                   omitted → recomputed from the config's gate settings.
+              Reports over 1 MB are sent with Expect: 100-continue so an oversized report gets a clean 413:
+              the upload waits up to 15 s for the server's go-ahead, and is resent without it on a 417.
         """;
 
     public const string Snapshot = """

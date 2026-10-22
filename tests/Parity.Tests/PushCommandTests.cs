@@ -346,6 +346,29 @@ public class PushCommandTests
     }
 
     [Fact]
+    public async Task A_proxy_that_rejects_expect_continue_gets_the_report_resent_without_it()
+    {
+        // 超過 1 MB 的報告送 Expect: 100-continue(讓 413 提示穩定出現)。不支援它的 proxy 會回 417——
+        // 修正前同樣的推送會成功,加了 Expect 之後卻變成 exit 2。收到 417 就拿掉 Expect 重送一次
+        var report = new FidelityReport("/", "http://x/", new string('x', 2 * 1024 * 1024), [], [],
+            new ReportSummary(0, 0, 0, 0, 0, 0, 0, 0, Severity.None));
+        using var dir = new TempDir();
+        var reportPath = WriteReport(dir, report);
+        await using var server = await FakeServer.StartAsync(201,
+            """{ "project": "demo", "score": 100, "gateFailed": false, "url": "/runs/r1" }""", rejectExpectContinue: true);
+        using var env = CleanEnv().Set("PARITY_TOKEN", "tok-0123456789abcdefghij");
+
+        var r = await Cli.RunAsync("push", "--server", server.Url, "--in", reportPath, "--gate-exit", "0");
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Equal(2, server.Requests.Count);
+        Assert.Equal("100-continue", server.Requests[0].Header("Expect"));
+        Assert.Null(server.Requests[1].Header("Expect"));
+        Assert.Equal(File.ReadAllText(reportPath), server.Requests[1].Body);
+        Assert.Equal("Bearer tok-0123456789abcdefghij", server.Requests[1].Header("Authorization")); // 重送的標頭一樣齊
+    }
+
+    [Fact]
     public async Task A_report_from_a_newer_parity_is_rejected_locally()
     {
         // 註解一直寫「版本不比 CLI 自己新」,實作卻只驗了 reports 欄位——v99 一路送到伺服器才被 422 擋下
@@ -380,7 +403,8 @@ public class PushCommandTests
 
         public IReadOnlyList<Captured> Requests => [.. _requests];
 
-        public static async Task<FakeServer> StartAsync(int status, string responseBody)
+        /// <param name="rejectExpectContinue">模擬不支援 Expect: 100-continue 的 proxy:帶 Expect 的請求不讀本文、直接回 417。</param>
+        public static async Task<FakeServer> StartAsync(int status, string responseBody, bool rejectExpectContinue = false)
         {
             var builder = WebApplication.CreateSlimBuilder();
             builder.Logging.ClearProviders();
@@ -389,6 +413,13 @@ public class PushCommandTests
             var fake = new FakeServer(app);
             app.Run(async ctx =>
             {
+                if (rejectExpectContinue && ctx.Request.Headers.Expect.Count > 0)
+                {
+                    fake._requests.Enqueue(new Captured(ctx.Request.Method, ctx.Request.Path,
+                        ctx.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase), ""));
+                    ctx.Response.StatusCode = StatusCodes.Status417ExpectationFailed;
+                    return;
+                }
                 using var reader = new StreamReader(ctx.Request.Body);
                 var body = await reader.ReadToEndAsync();
                 fake._requests.Enqueue(new Captured(ctx.Request.Method, ctx.Request.Path,

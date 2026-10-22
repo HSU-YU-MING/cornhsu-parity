@@ -56,25 +56,42 @@ internal static class PushCommand
         // 大報告送 Expect: 100-continue:伺服器(Kestrel 上限 20 MB)依 Content-Length 先回 413/401,
         // 本文根本不送。不這樣做的話,Kestrel 在上傳途中回 413 並關連線,客戶端常常只拿到
         // "An error occurred while sending the request.",看不到下面寫好的 413 提示(實測約一半)。
-        // 等待上限拉到 15 秒(預設 1 秒,冷啟動的伺服器來不及回,競態又回來);小報告不必等這一趟
+        // 等待上限拉到 15 秒(預設 1 秒,冷啟動的伺服器來不及回,競態又回來);小報告不必等這一趟。
+        // 代價:中間的 proxy 若不回 100 也不回最終狀態,大報告每次會多等最多 15 秒才開始送本文;
+        // 若它直接回 417 Expectation Failed,拿掉 Expect 重送一次(加 Expect 之前,同樣的推送是會成功的)
         using var http = new HttpClient(new SocketsHttpHandler { Expect100ContinueTimeout = TimeSpan.FromSeconds(15) })
         {
             Timeout = TimeSpan.FromSeconds(60),
         };
-        using var request = new HttpRequestMessage(HttpMethod.Post,
-            new Uri(new Uri(server.TrimEnd('/') + "/"), "api/runs"))
+        HttpRequestMessage BuildRequest(bool expectContinue)
         {
-            Content = new StringContent(raw, Encoding.UTF8, "application/json"),
-        };
-        if (raw.Length > 1024 * 1024) request.Headers.ExpectContinue = true;
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        if (commit is not null) request.Headers.Add("X-Parity-Commit", commit);
-        if (branch is not null) request.Headers.Add("X-Parity-Branch", branch);
-        if (actor is not null) request.Headers.Add("X-Parity-Triggered-By", actor);
-        if (repoUrl is not null) request.Headers.Add("X-Parity-Repo-Url", repoUrl);
-        if (gateFailed is not null) request.Headers.Add("X-Parity-Gate", gateFailed.Value ? "fail" : "pass");
+            var request = new HttpRequestMessage(HttpMethod.Post,
+                new Uri(new Uri(server.TrimEnd('/') + "/"), "api/runs"))
+            {
+                Content = new StringContent(raw, Encoding.UTF8, "application/json"),
+            };
+            if (expectContinue) request.Headers.ExpectContinue = true;
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            if (commit is not null) request.Headers.Add("X-Parity-Commit", commit);
+            if (branch is not null) request.Headers.Add("X-Parity-Branch", branch);
+            if (actor is not null) request.Headers.Add("X-Parity-Triggered-By", actor);
+            if (repoUrl is not null) request.Headers.Add("X-Parity-Repo-Url", repoUrl);
+            if (gateFailed is not null) request.Headers.Add("X-Parity-Gate", gateFailed.Value ? "fail" : "pass");
+            return request;
+        }
 
-        using var response = await http.SendAsync(request);
+        async Task<HttpResponseMessage> SendAsync()
+        {
+            var expect = raw.Length > 1024 * 1024;
+            using var first = BuildRequest(expect);
+            var reply = await http.SendAsync(first);
+            if (!expect || reply.StatusCode != System.Net.HttpStatusCode.ExpectationFailed) return reply;
+            reply.Dispose();
+            using var retry = BuildRequest(expectContinue: false);
+            return await http.SendAsync(retry);
+        }
+
+        using var response = await SendAsync();
         var body = await response.Content.ReadAsStringAsync();
 
         if (response.IsSuccessStatusCode)
