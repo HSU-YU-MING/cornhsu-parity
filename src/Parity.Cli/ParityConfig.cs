@@ -95,13 +95,6 @@ public sealed class ParityConfig
     private InvalidOperationException NullSection(string field, string expected)
         => new($"config {SourcePath ?? "(in memory)"}: \"{field}\" is null — it must be {expected}.");
 
-    /// <summary>
-    /// 載入時發現、但不擋載入的問題(Load 會印到 stderr)。例如 gate.failOn 裡讓 gate 靜默失效的值:
-    /// 它們從 1.0 起就被接受,收緊成報錯是 semver 問題(待決定),在那之前至少要大聲講出來。
-    /// </summary>
-    [JsonIgnore]
-    public List<string> Warnings { get; } = [];
-
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -119,8 +112,6 @@ public sealed class ParityConfig
         config.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
         config.SourcePath = path;
         config.Validate(path);
-        foreach (var w in config.Warnings)
-            Console.Error.WriteLine($"\x1b[33mwarning: {w}\x1b[0m");
         return config;
     }
 
@@ -130,13 +121,10 @@ public sealed class ParityConfig
         if (Gate.FailOn is null)
             throw NullSection("gate.failOn", "an array of severities, e.g. [\"critical\", \"serious\"] (use [] to gate on match integrity only)");
         foreach (var s in Gate.FailOn)
-        {
-            if (!Enum.TryParse<Severity>(s, ignoreCase: true, out var sev))
+            if (s is null || !FailOnSeverities.ContainsKey(s))
                 throw new InvalidOperationException(
-                    $"config {path}: gate.failOn contains \"{s}\", which is not a valid severity (use: minor, medium, serious, critical).");
-            if (FailOnWarning(s, sev) is { } warning)
-                Warnings.Add(warning);
-        }
+                    $"config {path}: gate.failOn contains \"{ConsoleText.Safe(s)}\", which is not a valid severity " +
+                    "(use: minor, medium, serious, critical — one per string).");
         if (Gate.MinMatchRate is < 0 or > 1)
             throw new InvalidOperationException(
                 $"config {path}: gate.minMatchRate must be between 0 and 1 (got: {Gate.MinMatchRate}).");
@@ -150,24 +138,18 @@ public sealed class ParityConfig
                 "fill may be omitted and sampled from the image).");
     }
 
-    private static readonly Severity[] GatingSeverities =
-        [Severity.Minor, Severity.Medium, Severity.Serious, Severity.Critical];
-
     /// <summary>
-    /// failOn 的值由 <c>Enum.TryParse</c> 解析,它另外收下 <c>none</c>、數字與逗號旗標語法
-    /// (<c>"serious, critical"</c> = 3|4 = 7)。落差的嚴重度只會是 minor–critical,所以那些值
-    /// 不是永遠對不到(gate 靜默失效),就是被讀成別的等級。
+    /// gate.failOn 的白名單(不分大小寫)——Validate 與 GateFailReason 共用這一張表。
+    /// 2.0.0 前用 <c>Enum.TryParse</c>,它另外收下 <c>none</c>、數字與逗號旗標語法(<c>"serious, critical"</c>
+    /// = 3|4 = 7):不是讓 gate 靜默失效,就是被讀成別的等級。
     /// </summary>
-    private static string? FailOnWarning(string value, Severity parsed)
+    private static readonly Dictionary<string, Severity> FailOnSeverities = new(StringComparer.OrdinalIgnoreCase)
     {
-        if (GatingSeverities.Any(g => string.Equals(g.ToString(), value.Trim(), StringComparison.OrdinalIgnoreCase)))
-            return null;
-        return GatingSeverities.Contains(parsed)
-            ? $"gate.failOn value \"{ConsoleText.Safe(value)}\" is read as \"{parsed.ToString().ToLowerInvariant()}\" " +
-              "(only minor, medium, serious, critical are documented; list each severity as its own string)."
-            : $"gate.failOn value \"{ConsoleText.Safe(value)}\" never matches any diff, so it never fails the gate " +
-              "(use: minor, medium, serious, critical; list each severity as its own string).";
-    }
+        ["minor"] = Severity.Minor,
+        ["medium"] = Severity.Medium,
+        ["serious"] = Severity.Serious,
+        ["critical"] = Severity.Critical,
+    };
 
     /// <summary>從 cwd 往上找 parity.config.json。</summary>
     public static string? FindConfigFile(string startDirectory)
@@ -208,7 +190,7 @@ public sealed class ParityConfig
     public string? GateFailReason(FidelityReport report)
     {
         if (MatchIntegrityFailure(report) is { } untrusted) return untrusted;
-        var failOn = Gate.FailOn.Select(s => Enum.Parse<Severity>(s, ignoreCase: true)).ToHashSet();
+        var failOn = Gate.FailOn.Select(s => FailOnSeverities[s]).ToHashSet();
         return report.Nodes.SelectMany(n => n.Diffs).Any(diff => failOn.Contains(diff.Severity))
             ? $"has {string.Join("/", Gate.FailOn)} severity diffs"
             : null;

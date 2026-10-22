@@ -203,17 +203,17 @@ public class ReportCommandTests
     }
 
     [Fact]
-    public async Task A_fail_on_value_that_disables_the_gate_is_warned_on_stderr()
+    public async Task A_fail_on_value_that_would_disable_the_gate_is_an_execution_error()
     {
-        // failOn: ["none"] 讓 gate 永遠不因嚴重度失敗——exit code 與判定不變(收緊待決定),但要看得到
+        // failOn: ["none"] 在 1.x 讓 gate 永遠不因嚴重度失敗、靜默 PASS;2.0.0 起是設定錯誤(exit 2)
         using var dir = new TempDir();
         var config = Setup(dir, """{ "targets": [], "gate": { "failOn": ["none"] } }""");
 
         var r = await Cli.RunAsync("report", "--config", config);
 
-        Assert.Equal(0, r.ExitCode);
-        Assert.Contains("✅ PASS", r.Out);
-        Assert.Contains("warning: gate.failOn value \"none\" never matches", r.Err);
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("gate.failOn contains \"none\"", r.Err);
+        Assert.DoesNotContain("PASS", r.Out);
     }
 
     [Fact]

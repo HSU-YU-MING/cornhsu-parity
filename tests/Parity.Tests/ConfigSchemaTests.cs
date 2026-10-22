@@ -280,39 +280,26 @@ public class ConfigSchemaTests
     }
 
     [Theory]
-    [InlineData("none")]
-    [InlineData("9")]
+    [InlineData("none")]              // 對不到任何落差:gate 永遠不因嚴重度失敗
+    [InlineData("9")]                 // 未定義的數字:同上
     [InlineData("serious, critical")] // Enum 旗標語法:3|4 = 7,不是任何嚴重度
-    public void Fail_on_values_that_can_never_match_a_diff_load_with_a_warning(string value)
+    [InlineData("serious, minor")]    // 3|1 = 3:看起來是兩個值,實際只擋 serious
+    [InlineData("4")]                 // 數字寫法:1.x 讀成 critical,從沒文件化
+    [InlineData(" critical")]         // 前後空白:1.x 的 Enum 解析會吃掉
+    public void Fail_on_accepts_only_the_four_severity_names(string value)
     {
-        // 這些值目前照樣載入(收緊成報錯是待決定的 semver 問題),但 gate 會因此靜默失效——
-        // 至少要大聲講出來,而不是讓 CI 永遠綠
-        var config = LoadJson($$"""{ "gate": { "failOn": ["{{value}}"] } }""");
-
-        var warning = Assert.Single(config.Warnings);
-        Assert.Contains($"\"{value}\"", warning);
-        Assert.Contains("never matches", warning);
-        Assert.Contains("minor, medium, serious, critical", warning);
-    }
-
-    [Theory]
-    [InlineData("serious, minor", "serious")] // 3|1 = 3:看起來是兩個值,實際只擋 serious
-    [InlineData("4", "critical")]
-    public void Fail_on_values_that_are_not_severity_names_warn_how_they_are_read(string value, string readAs)
-    {
-        var config = LoadJson($$"""{ "gate": { "failOn": ["{{value}}"] } }""");
-
-        var warning = Assert.Single(config.Warnings);
-        Assert.Contains($"\"{value}\"", warning);
-        Assert.Contains($"read as \"{readAs}\"", warning);
+        // 2.0.0:白名單。1.x 用 Enum.TryParse,上面這些值都能載入,不是讓 gate 靜默失效就是被讀成別的等級
+        var ex = Assert.Throws<InvalidOperationException>(() => LoadJson($$"""{ "gate": { "failOn": ["{{value}}"] } }"""));
+        Assert.Contains($"\"{value}\"", ex.Message);
+        Assert.Contains("minor, medium, serious, critical", ex.Message);
     }
 
     [Fact]
-    public void Documented_fail_on_values_load_without_warnings()
+    public void The_four_severity_names_load_in_any_case()
     {
         var config = LoadJson("""{ "gate": { "failOn": ["Minor", "medium", "SERIOUS", "critical"] } }""");
 
-        Assert.Empty(config.Warnings);
+        Assert.Equal(["Minor", "medium", "SERIOUS", "critical"], config.Gate.FailOn);
     }
 
     [Fact]
