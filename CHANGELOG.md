@@ -4,13 +4,21 @@
 
 ## 未發佈
 
-**升級必做:先確認 Node 版本,再重跑 `parity install-browser`**。這一版的 Microsoft.Playwright
-從 1.61 升到 1.63:Chromium 換成 revision 1243,升級後不重跑 `parity install-browser`,`check` 等指令會
-exit 2(`Chromium is not installed yet`)。**npm 通路(`npx cornhsu-parity`)另外需要 Node 20 以上**——
-npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限是 20;Node 18 上連
-`install-browser` 本身都會失敗,所以順序是**先升 Node、再裝瀏覽器**。主套件的 `engines.node` 已從
-`>=18` 改成 `>=20`,npm 安裝時會在 Node 18 上警告。(這一版的 semver 待維護者決定:npm 生態慣例把提高
-`engines` 下限視為 breaking;六面凍結本身沒有被破壞。)
+**升級必做**——升級這一版前要處理的兩件事:
+
+1. **先確認 Node 版本,再重跑 `parity install-browser`**。這一版的 Microsoft.Playwright
+   從 1.61 升到 1.63:Chromium 換成 revision 1243,升級後不重跑 `parity install-browser`,`check` 等指令會
+   exit 2(`Chromium is not installed yet`)。**npm 通路(`npx cornhsu-parity`)另外需要 Node 20 以上**——
+   npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限是 20;Node 18 上連
+   `install-browser` 本身都會失敗,所以順序是**先升 Node、再裝瀏覽器**。主套件的 `engines.node` 已從
+   `>=18` 改成 `>=20`,npm 安裝時會在 Node 18 上警告。(這一版的 semver 待維護者決定:npm 生態慣例把提高
+   `engines` 下限視為 breaking;六面凍結本身沒有被破壞。)
+2. **GitHub Action 的 artifact 內部路徑改變**——只影響用 `actions/download-artifact` 讀 `parity-report`
+   的下游 workflow。artifact 名稱不變,但裡面改成根目錄直接是 `report.json` 與 `parity-report.md`;
+   1.1.0 的 artifact 內是 `<repo>/<repo>/<working-directory>/.parity/report.json` 與 `_temp/parity-report.md`
+   (上傳時以兩個檔的最近共同上層目錄為根)。**遷移:下載後改讀根目錄的 `report.json`**(例如
+   `parity report --config … --in <下載目錄>/report.json`)。這不在凍結面內(面 3 凍結的是 inputs),但照舊路徑
+   讀檔的步驟在 `v1` 前移後會靜靜讀不到檔,所以列在這裡。
 
 **產品 bug 修正(2026-10-22 稽核)**——每條標出 semver 判讀。會讓原本接受的輸入變成錯誤、或改變
 量測/gate 結果的修法不在這批(那幾條目前只印警告),留待維護者決定。
@@ -27,8 +35,7 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
   `.parity/`,Action 卻固定上傳 `<working-directory>/.parity/report.json`——`config` 指向子目錄時,
   artifact 靜靜只剩 Markdown。現在 check 步驟跑完後把設定檔目錄的 report.json 與 Markdown 複製到
   `$RUNNER_TEMP/parity-artifact/`,上傳那個固定目錄;報告本身的位置不變(之後的步驟照舊找得到)。
-  artifact 名稱不變,內部結構變成根目錄直接是 `report.json` 與 `parity-report.md`(原本的路徑隨 runner 的
-  目錄結構而定,例如 `<repo>/<repo>/.parity/report.json`、`_temp/parity-report.md`)。上傳路徑刻意不經
+  artifact 名稱不變,**內部路徑改變**(見開頭「升級必做」第 2 點的遷移方式)。上傳路徑刻意不經
   step output:input 值帶換行時會被寫成新的 output 行(可改寫 exit、指定上傳任意檔),這一步寫進
   `$GITHUB_OUTPUT` 的只有數字 exit code。複製時只收一般檔案、不跟 symlink:repo 若 commit 了
   `.parity/report.json` → `/proc/self/environ` 之類的 symlink,原本的 cp 會把這一步的環境(含 `FIGMA_TOKEN`)
