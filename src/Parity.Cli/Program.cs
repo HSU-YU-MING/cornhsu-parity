@@ -297,12 +297,12 @@ internal static class ReportCommand
         }
         var reports = doc.Reports
             ?? throw new InvalidOperationException($"report has no `reports` field: {inPath} (re-run `parity check`)");
-        // 比自己新的報告:照讀(1.x 一直如此;改成拒收是待決定的 semver 問題),但新版加的欄位會被丟掉,
-        // 重生的 Markdown 可能不完整——講出來。stderr:stdout 是要接管線的 Markdown
+        // 比自己新的報告:拒收(2.0.0 起;與 snapshot 讀端、push、Parity.Server 一致)。1.x 照讀,
+        // 新版加的欄位被靜靜丟掉,重生的 Markdown 可能不完整
         if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
-            Console.Error.WriteLine($"\x1b[33mwarning: {inPath} has report schemaVersion {doc.SchemaVersion}, newer than " +
-                $"this Parity understands ({ReportDocument.CurrentSchemaVersion}); fields added by the newer version are " +
-                "ignored, so the Markdown may be incomplete. Upgrade Parity to render it faithfully.\x1b[0m");
+            throw new InvalidOperationException(
+                $"{inPath} has report schemaVersion {doc.SchemaVersion}, which is newer than this Parity understands " +
+                $"({ReportDocument.CurrentSchemaVersion}) — it was written by a newer Parity; render it with that version.");
 
         var tokens = TokensFile.LoadForHints(config);
         // check --reverse 寫出的報告期望/實際已對調:不做 gate,照 check --reverse 的樣子標明(2.0.0 起有方向欄位)
