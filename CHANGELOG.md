@@ -4,7 +4,7 @@
 
 ## 未發佈
 
-**升級必做**——升級這一版前要處理的兩件事:
+**升級必做 (upgrade required)**——升級這一版前要處理的兩件事:
 
 1. **先確認 Node 版本,再重跑 `parity install-browser`**。這一版的 Microsoft.Playwright
    從 1.61 升到 1.63:Chromium 換成 revision 1243,升級後不重跑 `parity install-browser`,`check` 等指令會
@@ -35,7 +35,7 @@
   `.parity/`,Action 卻固定上傳 `<working-directory>/.parity/report.json`——`config` 指向子目錄時,
   artifact 靜靜只剩 Markdown。現在 check 步驟跑完後把設定檔目錄的 report.json 與 Markdown 複製到
   `$RUNNER_TEMP/parity-artifact/`,上傳那個固定目錄;報告本身的位置不變(之後的步驟照舊找得到)。
-  artifact 名稱不變,**內部路徑改變**(見開頭「升級必做」第 2 點的遷移方式)。上傳路徑刻意不經
+  artifact 名稱不變,**內部路徑改變**(見開頭「升級必做 (upgrade required)」第 2 點的遷移方式)。上傳路徑刻意不經
   step output:input 值帶換行時會被寫成新的 output 行(可改寫 exit、指定上傳任意檔),這一步寫進
   `$GITHUB_OUTPUT` 的只有數字 exit code。複製時只收一般檔案、不跟 symlink:repo 若 commit 了
   `.parity/report.json` → `/proc/self/environ` 之類的 symlink,原本的 cp 會把這一步的環境(含 `FIGMA_TOKEN`)

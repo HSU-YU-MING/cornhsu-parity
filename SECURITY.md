@@ -31,10 +31,12 @@ escalation.
 Fixes land on the newest release only — there are no patch branches for older versions.
 Upgrading to the newest `1.x` is always the fix. The six interfaces (config, CLI and exit codes,
 Action inputs, `report.json`, the baseline database, the snapshot format) have been frozen since
-1.0 (see the CHANGELOG's 1.0.0 entry), so a 1.x upgrade does not break them. Runtime requirements
-— the Chromium revision you must re-install, or the minimum Node version for the npm channel —
-can still change in a minor release; when they do, the CHANGELOG says so under **upgrade
-required** at the top of that release, so read it before upgrading.
+1.0 (see the CHANGELOG's 1.0.0 entry), so a 1.x upgrade does not break them. Anything else a
+release asks of you — re-installing Chromium, a newer Node for the npm channel, a changed path
+inside the uploaded artifact — is listed at the top of that release's CHANGELOG entry under
+**升級必做 (upgrade required)**. If you reference the Action as `@v1` you receive new releases
+automatically, so check that heading whenever a release ships — or pin an exact version and
+upgrade on your own schedule.
 
 ## What is in scope
 
@@ -65,8 +67,9 @@ These are deliberate, documented behaviour:
 
 ## Hardening notes for users
 
-- **Reference the Action as `@v1`** (tracks the latest 1.x — the interfaces are frozen; check
-  the CHANGELOG for **upgrade required** notes), or pin an exact version (`HSU-YU-MING/cornhsu-parity@v1.0.0`) if your policy
+- **Reference the Action as `@v1`** (tracks the latest 1.x automatically — the interfaces are
+  frozen; new releases list anything you must do under **升級必做 (upgrade required)** in the
+  CHANGELOG), or pin an exact version (`HSU-YU-MING/cornhsu-parity@v1.0.0`) if your policy
   requires immutable refs.
 - **Give the Figma token only `file_content:read`.** Nothing else is used. Pass it through
   `secrets`, never inline in `parity.config.json` — the config's `designToken` field takes
