@@ -37,9 +37,10 @@
   `$RUNNER_TEMP/parity-artifact/`,上傳那個固定目錄;報告本身的位置不變(之後的步驟照舊找得到)。
   artifact 名稱不變,**內部路徑改變**(見開頭「升級必做 (upgrade required)」第 2 點的遷移方式)。上傳路徑刻意不經
   step output:input 值帶換行時會被寫成新的 output 行(可改寫 exit、指定上傳任意檔),這一步寫進
-  `$GITHUB_OUTPUT` 的只有數字 exit code。複製時只收一般檔案、不跟 symlink:repo 若 commit 了
-  `.parity/report.json` → `/proc/self/environ` 之類的 symlink,原本的 cp 會把這一步的環境(含 `FIGMA_TOKEN`)
-  複製進 artifact。
+  `$GITHUB_OUTPUT` 的只有數字 exit code。複製時只收一般檔案、不跟 symlink——這是新的複製這一步本身要防的事:
+  若單純用 cp,repo commit 一個 `.parity/report.json` → `/proc/self/environ` 之類的 symlink,就會把這一步的環境
+  (含 `FIGMA_TOKEN`)複製進 artifact。1.1.0 沒有這一步(它直接上傳 `<working-directory>/.parity/report.json`),
+  所以這條不是對已發佈版的安全修正。
 - **修正:`snapshot --width/--height`、`serve/map --port` 給了非整數時印警告**(patch:只多一行 stderr)。
   1.x 一直是靜默退回預設值(`--width 375px` 會以 1280 寬凍結手機基準);現在仍退回預設值、exit code
   不變(改成 exit 2 屬於待決定的 semver 問題),但會印 `warning: --width expects an integer (got "375px");
