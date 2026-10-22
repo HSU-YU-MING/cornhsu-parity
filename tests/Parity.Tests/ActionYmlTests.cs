@@ -453,8 +453,12 @@ public class ActionYmlTests
         Assert.Contains("GH_TOKEN: ${{ github.token }}", comment);
         var jq = Regex.Match(comment, @"--jq '(?<q>[^']*)'");
         Assert.True(jq.Success, "找不到查舊留言的 --jq");
-        Assert.Contains(".user.login == \"github-actions[bot]\"", jq.Groups["q"].Value);
-        Assert.Contains("startswith(\"<!-- parity-report -->\")", jq.Groups["q"].Value);
+        // 整段完全比對,不比子字串:驗證者的 mutation 把 and 改成 or(M3b)、讓作者條件變成死分支(M3d),
+        // 子字串都還在、測試照綠——實跑卻會去 PATCH 別人的留言。改這段 jq 時,先用 jq/gojq 對樣本實跑
+        // (別人的 marker 留言要被排除、取到 bot 最舊的那則),再更新這裡
+        Assert.Equal(
+            ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"<!-- parity-report -->\"))) | .id",
+            jq.Groups["q"].Value);
     }
 
     [Fact]
