@@ -20,7 +20,7 @@ public class ActionYmlTests
     }
 
     [Fact]
-    public void Inputs_are_the_frozen_eight_with_their_defaults_in_order()
+    public void Inputs_are_the_frozen_nine_with_their_defaults_in_order()
     {
         var inputs = Regex.Matches(TopLevelBlock("inputs"),
                 @"^  (?<name>[a-z-]+):\n(?:    (?!required:|default:).*\n)*    required: (?<req>\w+)\n    default: '(?<def>[^']*)'",
@@ -38,9 +38,10 @@ public class ActionYmlTests
             ("baseline", "false", "false"),
             ("comment", "false", "true"),
             ("upload-report", "false", "true"),
+            ("artifact-name", "false", "parity-report"), // 2.0.0 新增(審查 c)
         ], inputs);
         // 每個 input 都被上面的 pattern 吃到了(沒有漏掉一個格式不同的)
-        Assert.Equal(8, Regex.Matches(TopLevelBlock("inputs"), @"^  [a-z-]+:\s*$", RegexOptions.Multiline).Count);
+        Assert.Equal(9, Regex.Matches(TopLevelBlock("inputs"), @"^  [a-z-]+:\s*$", RegexOptions.Multiline).Count);
     }
 
     [Fact]
@@ -71,7 +72,7 @@ public class ActionYmlTests
         foreach (var (input, variable) in new[]
         {
             ("version", "PARITY_VERSION"), ("figma-token", "FIGMA_TOKEN"), ("config", "PARITY_CONFIG"),
-            ("target", "PARITY_TARGET"), ("baseline", "PARITY_BASELINE"),
+            ("target", "PARITY_TARGET"), ("baseline", "PARITY_BASELINE"), ("artifact-name", "PARITY_ARTIFACT_NAME"),
         })
             Assert.Matches(new Regex($@"^\s+{variable}: \$\{{\{{ inputs\.{Regex.Escape(input)} \}}\}}$", RegexOptions.Multiline), Yml);
     }
@@ -136,7 +137,7 @@ public class ActionYmlTests
     /// 不存在就什麼都不寫、exit 2。stub 被呼叫過會留下 $RUNNER_TEMP/parity-called。
     /// </summary>
     private static StepRun RunCheckStep(string workspace, string workingDirectory, string config, string target = "",
-        int timeoutMs = 30_000, Action? onTimeout = null)
+        int timeoutMs = 30_000, Action? onTimeout = null, string artifactName = "parity-report")
     {
         string Unix(string p) => p.Replace('\\', '/');
         var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
@@ -177,6 +178,7 @@ public class ActionYmlTests
         psi.Environment["PARITY_CONFIG"] = config;
         psi.Environment["PARITY_TARGET"] = target;
         psi.Environment["PARITY_BASELINE"] = "false";
+        psi.Environment["PARITY_ARTIFACT_NAME"] = artifactName;
         using var p = System.Diagnostics.Process.Start(psi)!;
         _ = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
@@ -471,8 +473,8 @@ public class ActionYmlTests
     public void Only_the_exit_code_is_ever_written_to_step_outputs_and_uploads_use_a_fixed_path()
     {
         // 上一條的靜態那一半。所有 runner 會解析的檔案(OUTPUT/ENV/PATH/STATE/STEP_SUMMARY,含 ${VAR} 寫法),
-        // 非註解行裡碰到的只准是這三行:常數 exit=2(含換行的 input 被拒時)、數字 exit code、
-        // 工具目錄(值是 runner 的 $HOME,不來自 input)。
+        // 非註解行裡碰到的只准是這三種:常數 exit=2(含換行的 config/target、不合法的 artifact-name 被拒時,各一行)、
+        // 數字 exit code、工具目錄(值是 runner 的 $HOME,不來自 input)。
         // 第二輪審查的 mutation:別的 step 用 ${GITHUB_OUTPUT} 寫入、把 input 寫進 $GITHUB_PATH,舊的檢查都抓不到
         var touches = Yml.Split('\n')
             .Where(l => !l.TrimStart().StartsWith('#'))
@@ -482,6 +484,7 @@ public class ActionYmlTests
         string[] allowed =
         [
             "echo \"$HOME/.dotnet/tools\" >> \"$GITHUB_PATH\"",
+            "echo \"exit=2\" >> \"$GITHUB_OUTPUT\"",
             "echo \"exit=2\" >> \"$GITHUB_OUTPUT\"",
             "echo \"exit=$?\" >> \"$GITHUB_OUTPUT\"",
         ];
@@ -493,9 +496,11 @@ public class ActionYmlTests
             + "再把它加進這條測試的 allowed;值可能來自 input 的話,改成固定值,或先擋 \\n/\\r。");
 
         // 上傳路徑不能來自任何 step output 或 input(那等於讓 input 決定上傳什麼),而且整段 with: 逐行固定:
-        // 不准 `path: |` 多行、不准 `/..` 之類的尾巴、不准多掛一行 ${{ inputs.* }}
+        // 不准 `path: |` 多行、不准 `/..` 之類的尾巴、不准多掛一行 ${{ inputs.* }}。
+        // 唯一來自 input 的是 name(artifact-name,2.0.0):with: 不經過 shell,upload-artifact 自己也驗名稱;
+        // 它刻意不進 path——名稱 `..` 會讓 path 變成整個 runner.temp
         Assert.Matches(new Regex(
-            @"^      with:\n        name: parity-report\n(?:        #.*\n)*        path: \$\{\{ runner\.temp \}\}/parity-artifact\n        if-no-files-found: ignore\n\n",
+            @"^      with:\n        name: \$\{\{ inputs\.artifact-name \}\}\n(?:        #.*\n)*        path: \$\{\{ runner\.temp \}\}/parity-artifact\n        if-no-files-found: ignore\n\n",
             RegexOptions.Multiline), Step("Upload report"));
     }
 
@@ -538,14 +543,150 @@ public class ActionYmlTests
         // 這一步用的是 github.token,留言作者一定是 github-actions[bot]
         var comment = Step("Comment report on PR");
         Assert.Contains("GH_TOKEN: ${{ github.token }}", comment);
-        var jq = Regex.Match(comment, @"--jq '(?<q>[^']*)'");
+        var jq = Regex.Match(comment, @"--jq (?<q>'.*')\)$", RegexOptions.Multiline);
         Assert.True(jq.Success, "找不到查舊留言的 --jq");
         // 整段完全比對,不比子字串:驗證者的 mutation 把 and 改成 or(M3b)、讓作者條件變成死分支(M3d),
         // 子字串都還在、測試照綠——實跑卻會去 PATCH 別人的留言。改這段 jq 時,先用 jq/gojq 對樣本實跑
-        // (別人的 marker 留言要被排除、取到 bot 最舊的那則),再更新這裡
+        // (別人的 marker 留言要被排除、別的 artifact-name 的留言要被排除、取到 bot 最舊的那則),再更新這裡。
+        // marker 由 shell 拼進單引號字串(名稱已驗過只含 [A-Za-z0-9._-]);展開後的樣子見下一條測試
         Assert.Equal(
-            ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"<!-- parity-report -->\"))) | .id",
+            "'.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"'\"$marker\"'\"))) | .id'",
             jq.Groups["q"].Value);
+    }
+
+    private sealed record CommentRun(int Exit, string GhCalls, string Body, string Stderr);
+
+    /// <summary>
+    /// 跑「Comment report on PR」那段,gh 換成 stub:每次呼叫把參數一個一行記下來(呼叫之間以 ---- 分隔);
+    /// 查舊留言(--paginate)時印出 <paramref name="existingIds"/>,當成 jq 篩完的結果。
+    /// </summary>
+    private static CommentRun RunCommentStep(string workspace, string artifactName, string existingIds, string report = "markdown\n")
+    {
+        string Unix(string p) => p.Replace('\\', '/');
+        var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
+        File.WriteAllText(Path.Combine(runnerTemp, "parity-report.md"), report);
+        foreach (var stale in new[] { "gh-calls", "parity-comment.md" }) File.Delete(Path.Combine(runnerTemp, stale));
+        const string stub = """
+            gh() {
+              printf '%s\n' "$@" >> "$RUNNER_TEMP/gh-calls"
+              printf -- '----\n' >> "$RUNNER_TEMP/gh-calls"
+              case " $* " in *" --paginate "*) printf '%s' "$GH_STUB_IDS" ;; esac
+            }
+
+            """;
+        var script = Path.Combine(runnerTemp, "comment.sh");
+        File.WriteAllText(script, stub + RunScript("Comment report on PR"));
+        var psi = new System.Diagnostics.ProcessStartInfo(BashPath())
+        {
+            WorkingDirectory = workspace,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var a in new[] { "--noprofile", "--norc", "-eo", "pipefail", Unix(script) }) psi.ArgumentList.Add(a);
+        psi.Environment["RUNNER_TEMP"] = Unix(runnerTemp);
+        psi.Environment["GITHUB_REPOSITORY"] = "owner/repo";
+        psi.Environment["PR_NUMBER"] = "7";
+        psi.Environment["GH_TOKEN"] = "unused";
+        psi.Environment["PARITY_ARTIFACT_NAME"] = artifactName;
+        psi.Environment["GH_STUB_IDS"] = existingIds;
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        _ = p.StandardOutput.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
+        Assert.True(p.WaitForExit(30_000), "bash 沒有在 30 秒內結束");
+        string ReadOrEmpty(string name) => File.Exists(Path.Combine(runnerTemp, name))
+            ? File.ReadAllText(Path.Combine(runnerTemp, name)).Replace("\r\n", "\n") : "";
+        return new CommentRun(p.ExitCode, ReadOrEmpty("gh-calls"), ReadOrEmpty("parity-comment.md"), stderr.GetAwaiter().GetResult());
+    }
+
+    [Theory]
+    [InlineData("parity-report", "<!-- parity-report -->")]     // 預設名稱沿用 1.x 的 marker:升級後照樣更新原本那則
+    [InlineData("site-a", "<!-- parity-report:site-a -->")]
+    [InlineData("web_v2.1", "<!-- parity-report:web_v2.1 -->")]
+    public void Each_artifact_name_keeps_its_own_pr_comment(string artifactName, string marker)
+    {
+        // 審查 c:matrix 或同一個 job 呼叫兩次時,原本共用同一則留言,後一次把前一次的報告蓋掉。
+        // marker 帶上 artifact-name,查舊留言與新留言都用它
+        using var dir = new TempDir();
+
+        var found = RunCommentStep(dir.Path, artifactName, "111\n222");
+        var none = RunCommentStep(dir.Path, artifactName, "");
+
+        Assert.Equal(0, found.Exit);
+        Assert.StartsWith(marker + "\n", found.Body);
+        var calls = found.GhCalls.Split("----\n", StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, calls.Length);
+        Assert.Contains(
+            $".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"{marker}\"))) | .id\n", calls[0]);
+        Assert.StartsWith("api\n-X\nPATCH\nrepos/owner/repo/issues/comments/111\n", calls[1]); // 最舊的那則
+        Assert.Contains("\nPOST\nrepos/owner/repo/issues/7/comments\n", none.GhCalls);
+    }
+
+    [Fact]
+    public void A_truncated_comment_points_at_the_artifact_by_its_name()
+    {
+        using var dir = new TempDir();
+
+        var r = RunCommentStep(dir.Path, "site-a", "", report: new string('x', 60_001));
+
+        Assert.Contains("see the site-a artifact", r.Body);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("has space")]
+    [InlineData("a/b")]
+    [InlineData("x\\")]
+    [InlineData("x\"y")]
+    [InlineData("x\n::error title=Parity::INJECTED")]
+    [InlineData("parity-report\r")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")] // 101 字
+    public void An_artifact_name_outside_the_safe_charset_is_refused(string artifactName)
+    {
+        // artifact-name 會拼進 PR 留言的 marker,而 marker 又拼進 jq 字串:只收 [A-Za-z0-9._-]{1,100}。
+        // check 步驟拒跑(exit 2,照常由最後一步擋);留言步驟自己再驗一次、不貼,不靠步驟順序
+        using var dir = new TempDir();
+        dir.Write("parity.config.json", "{}");
+
+        var check = RunCheckStep(dir.Path, ".", "parity.config.json", artifactName: artifactName);
+        var comment = RunCommentStep(dir.Path, artifactName, "111");
+
+        Assert.Equal(0, check.Exit);
+        Assert.Equal("exit=2\n", check.Output);
+        Assert.False(check.ParityCalled);
+        Assert.Contains("artifact-name", check.Stderr);
+        Assert.DoesNotContain("::", check.Stderr); // 不把 input 印出來
+        Assert.Equal(0, comment.Exit);
+        Assert.Equal("", comment.GhCalls);
+        Assert.DoesNotContain("::", comment.Stderr);
+    }
+
+    [Fact]
+    public void A_call_that_fails_before_writing_a_report_never_ships_the_previous_calls_report()
+    {
+        // 同一個 job 呼叫兩次:$RUNNER_TEMP 共用。第二次若在寫出報告前就失敗(設定檔不存在、名稱不合法…),
+        // 原本會把第一次留下的 report.json / Markdown 當成自己的上傳、貼到自己的留言
+        using var dir = new TempDir();
+        dir.Write("_temp/parity-artifact/report.json", "first call");
+        dir.Write("_temp/parity-artifact/parity-report.md", "first call");
+        dir.Write("_temp/parity-report.md", "first call");
+
+        var r = RunCheckStep(dir.Path, ".", "missing.config.json", artifactName: "second");
+
+        Assert.Equal("exit=2\n", r.Output);
+        Assert.Empty(Directory.Exists(r.ArtifactDir) ? Directory.GetFiles(r.ArtifactDir) : []);
+        Assert.False(File.Exists(Path.Combine(dir.Path, "_temp", "parity-report.md")), "上一次的 Markdown 還在,留言步驟會把它貼出去");
+    }
+
+    [Fact]
+    public void The_upload_is_skipped_when_the_check_step_never_ran()
+    {
+        // 前面的步驟(Setup .NET、Install)失敗時 check 不會跑,但 Upload 是 always():不擋的話會把同一個 job
+        // 前一次呼叫留在 $RUNNER_TEMP 的報告,用這一次的名稱上傳。check 只要跑了就一定寫 exit=…
+        Assert.Matches(new Regex(
+                @"^      if: \$\{\{ always\(\) && inputs\.upload-report == 'true' && steps\.check\.outputs\.exit != '' \}\}$",
+                RegexOptions.Multiline),
+            Step("Upload report"));
     }
 
     [Fact]

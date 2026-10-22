@@ -399,12 +399,16 @@ Behaviour:
 - **Blocks the PR**: gaps beyond `gate.failOn` → exit 1 → red PR. (**The comment is posted
   first, then the gate is enforced.**)
 - **Artifacts**: `report.json` plus the Markdown report are uploaded for download (artifact
-  name `parity-report`; `report.json` and `parity-report.md` at its root). `report.json` is picked
-  up from `.parity/report.json` next to the config file — where `check` writes it — even when
-  `config` points into a subdirectory.
+  name `parity-report` unless you set `artifact-name`; `report.json` and `parity-report.md` at its
+  root). `report.json` is picked up from `.parity/report.json` next to the config file — where
+  `check` writes it — even when `config` points into a subdirectory.
+- **Running it more than once per workflow run** (a matrix, or two calls in one job): give each call
+  its own `artifact-name` (e.g. `parity-report-${{ matrix.site }}`). Each name gets its own artifact
+  and keeps its own PR comment; two calls with the same name collide on the artifact upload.
 
 Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
-`baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report`.
+`baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report` /
+`artifact-name` (default `parity-report`; letters, digits, `.`, `_`, `-`, at most 100 characters).
 
 > The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
 > nuget.org) — the latest 1.x when `version` is omitted, so `@v1` never jumps to a future 2.x,

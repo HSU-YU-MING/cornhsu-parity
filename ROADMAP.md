@@ -68,9 +68,6 @@
     2026-10-22 已把主包 `engines.node` 改成 `>=20`、CHANGELOG 未發佈區開頭寫了「升級必做」;
     剩下的是下一版的 semver(minor + 升級必做,或承認對 npm 通路是 major),發佈前由維護者決定
     (見 `docs/公開介面盤點.md` §8.2、§10)。
-- **Action 的 artifact 名稱固定 `parity-report`**(2026-10-22 審查發現,待決定):同一次執行裡 matrix 或呼叫兩次 action,
-  第二次上傳撞名 409;同一個 job 呼叫兩次還會共用 `$RUNNER_TEMP` 底下的暫存檔與同一則 PR 留言。修法要新增選填 input
-  (例如 `artifact-name`,預設不變 = minor)或改預設名稱(比照 major)。在那之前的繞法:除了一次以外都設 `upload-report: false`。
 - **Action 複製報告時,中間層目錄是 symlink 擋不住**(2026-10-22 審查):check 步驟只複製「一般檔案、
   且檔案與 `.parity` 目錄都不是 symlink」的 `<dirname(config)>/.parity/report.json`。但 config 路徑上**更上層**的
   目錄若是 repo commit 的 symlink(例如 `config: web/parity.config.json` 而 `web` → 別處),複製的就是別處的

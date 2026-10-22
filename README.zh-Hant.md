@@ -340,9 +340,10 @@ jobs:
 行為:
 - **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
 - **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
-- **artifact**:`report.json` + Markdown 報告上傳供下載(artifact 名稱 `parity-report`,根目錄就是 `report.json` 與 `parity-report.md`)。`report.json` 從設定檔旁邊的 `.parity/report.json`(`check` 寫出的位置)取,`config` 指向子目錄時也一樣。
+- **artifact**:`report.json` + Markdown 報告上傳供下載(artifact 名稱預設 `parity-report`,可用 `artifact-name` 改;根目錄就是 `report.json` 與 `parity-report.md`)。`report.json` 從設定檔旁邊的 `.parity/report.json`(`check` 寫出的位置)取,`config` 指向子目錄時也一樣。
+- **同一次執行呼叫多次**(matrix,或同一個 job 呼叫兩次):每次給不同的 `artifact-name`(例如 `parity-report-${{ matrix.site }}`)。每個名稱各自一個 artifact、各自一則 PR 留言;名稱相同的兩次呼叫,artifact 上傳會撞名。
 
-action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
+action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report` / `artifact-name`(預設 `parity-report`;只收英數字與 `.` `_` `-`,最多 100 字)。
 
 > action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org):沒給 `version` 時裝最新的 1.x(`@v1` 不會跳到日後的 2.x),給了就裝那一版。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 
