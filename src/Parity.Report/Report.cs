@@ -64,6 +64,7 @@ public sealed record FidelityReport(
 public sealed record ReportDocument(
     int SchemaVersion,
     IReadOnlyList<FidelityReport> Reports,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(ReportDirectionConverter))]
     ReportDirection Direction = ReportDirection.Forward)
 {
     public const int CurrentSchemaVersion = 1;
@@ -78,3 +79,47 @@ public sealed record ReportDocument(
 /// 讀端據此分辨:<c>parity report</c> 不對 reverse 報告做 gate,<c>parity push</c> 與 Parity.Server 不收它。
 /// </summary>
 public enum ReportDirection { Forward, Reverse }
+
+/// <summary>
+/// direction 的讀寫(2.0.0)。只收**小寫字串** `"forward"`/`"reverse"`——Parity 一向寫小寫,大小寫不同的值
+/// 不是任何一版 Parity 寫出來的,不放寬;數字、`null`、其他字串一律拒收(<see cref="ReportContractException"/>)。
+/// 欄位缺少才讀成 forward(record 的預設值,不經過這裡)。掛在屬性上:選項裡的字串 enum 轉換器會收數字、
+/// 不分大小寫,而且屬性上的轉換器優先於選項。CLI(report、push)與 Parity.Server 都經過這一個型別。
+/// </summary>
+internal sealed class ReportDirectionConverter : System.Text.Json.Serialization.JsonConverter<ReportDirection>
+{
+    public override bool HandleNull => true;
+
+    public override ReportDirection Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+    {
+        if (reader.TokenType == System.Text.Json.JsonTokenType.String)
+        {
+            switch (reader.GetString())
+            {
+                case "forward": return ReportDirection.Forward;
+                case "reverse": return ReportDirection.Reverse;
+            }
+        }
+        var got = reader.TokenType switch
+        {
+            System.Text.Json.JsonTokenType.String => System.Text.Json.JsonSerializer.Serialize(reader.GetString()),
+            System.Text.Json.JsonTokenType.Null => "null",
+            System.Text.Json.JsonTokenType.True => "true",
+            System.Text.Json.JsonTokenType.False => "false",
+            System.Text.Json.JsonTokenType.Number => System.Text.Encoding.UTF8.GetString(reader.ValueSpan),
+            _ => reader.TokenType.ToString().ToLowerInvariant(),
+        };
+        throw new ReportContractException($"\"direction\" must be \"forward\" or \"reverse\" (got {got}).");
+    }
+
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, ReportDirection value, System.Text.Json.JsonSerializerOptions options)
+        => writer.WriteStringValue(value switch
+        {
+            ReportDirection.Forward => "forward",
+            ReportDirection.Reverse => "reverse",
+            _ => throw new ArgumentOutOfRangeException(nameof(value), value, "unknown report direction"),
+        });
+}
+
+/// <summary>report.json 違反契約(例如 direction 不是封閉集裡的值)。是 JsonException,讀端照一般解析錯誤處理。</summary>
+public sealed class ReportContractException(string message) : System.Text.Json.JsonException(message);

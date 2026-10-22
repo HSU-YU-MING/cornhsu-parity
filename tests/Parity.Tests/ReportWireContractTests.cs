@@ -68,6 +68,36 @@ public class ReportWireContractTests
         Assert.Equal(ReportDirection.Forward, doc.Direction);
     }
 
+    [Theory]
+    [InlineData("\"forward\"", ReportDirection.Forward)]
+    [InlineData("\"reverse\"", ReportDirection.Reverse)]
+    public void Direction_reads_exactly_the_two_lowercase_strings(string json, ReportDirection expected)
+    {
+        var doc = JsonSerializer.Deserialize<ReportDocument>($$"""{ "schemaVersion": 1, "reports": [], "direction": {{json}} }""", ReportWire.Compact)!;
+
+        Assert.Equal(expected, doc.Direction);
+    }
+
+    [Theory]
+    [InlineData("\"Reverse\"")]   // 大小寫不同:Parity 一律寫小寫,不放寬
+    [InlineData("\"REVERSE\"")]
+    [InlineData("\"sideways\"")]
+    [InlineData("\"\"")]
+    [InlineData("1")]             // 審查實證:字串 enum 轉換器原本也收數字(1 讀成 reverse、5 讀成未定義的值)
+    [InlineData("5")]
+    [InlineData("null")]          // 有寫但是 null ≠ 沒寫;沒寫才讀成 forward
+    [InlineData("true")]
+    public void Any_other_direction_is_refused_with_a_message_that_names_the_field(string json)
+    {
+        // 審查第 6 條:原本走字串 enum 轉換器,"Reverse"、"REVERSE" 照收、數字也收,"sideways" 則丟出泛用的
+        // JsonException——parity report 再把它說成「likely an older format」。2.0.0 直接收緊:只收 forward/reverse
+        var ex = Assert.ThrowsAny<JsonException>(() => JsonSerializer.Deserialize<ReportDocument>(
+            $$"""{ "schemaVersion": 1, "reports": [], "direction": {{json}} }""", ReportWire.Compact));
+
+        Assert.IsType<ReportContractException>(ex);
+        Assert.Contains("\"direction\" must be \"forward\" or \"reverse\"", ex.Message);
+    }
+
     [Fact]
     public void Null_fields_are_written_explicitly_in_both_variants()
     {

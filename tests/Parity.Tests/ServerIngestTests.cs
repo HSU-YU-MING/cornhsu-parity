@@ -64,6 +64,23 @@ public class ServerIngestTests
         Assert.Contains("reverse", ex.Message);
     }
 
+    [Theory]
+    [InlineData("\"Reverse\"")]
+    [InlineData("\"sideways\"")]
+    [InlineData("1")]
+    [InlineData("null")]
+    public void An_unknown_direction_is_bad_data(string direction)
+    {
+        // 審查第 6 條:伺服器與 CLI 同一套讀法(Parity.Report 的 ReportDirectionConverter)。原本 "Reverse" 與
+        // 數字 1 都讀成 reverse、5 讀成未定義的值——前者被當 reverse 拒收,後者竟當成一般 run 收下
+        var raw = SampleReportJson().Replace("\"direction\": \"forward\"", $"\"direction\": {direction}");
+        Assert.Contains($"\"direction\": {direction}", raw);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => RunIngest.Parse(raw, new RunMetadata(null, null, null), DateTimeOffset.UnixEpoch));
+        Assert.Contains("\"direction\" must be \"forward\" or \"reverse\"", ex.Message);
+    }
+
     [Fact]
     public void Newer_schema_is_a_distinct_rejection_not_bad_data()
     {

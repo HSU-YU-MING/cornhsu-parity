@@ -67,6 +67,9 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
    **遷移:想維持 1.x 的量法就拿掉 `height`;留著的話,用 `--baseline` 的專案重存 baseline**(升級必做第 4 點)。
 5. **`report.json` 頂層多一個 `direction` 欄位;`check --reverse` 的報告不再被當成一般報告**(面 4)。
    值是封閉集 `forward`/`reverse`,一律寫出;沒有這個欄位的舊檔讀成 `forward`,`schemaVersion` 維持 1。
+   讀端只收這兩個**小寫字串**:大小寫不同(`"Reverse"`)、其他字串、數字、`null` 一律拒收——`parity report`
+   與 `push` exit 2(訊息 `"direction" must be "forward" or "reverse" (got …)`),Parity.Server 回壞資料,
+   儀表板也照同一套規則讀。
    1.x 的 reverse 報告期望/實際已對調,信封卻沒有任何標記:`parity report` 照正向重算 gate、顯示 GATE FAIL,
    `parity push` 把它當一般 run 推上儀表板。現在 `parity report` 對 reverse 報告不做 gate(照
    `check --reverse` 的樣子標明),`parity push` 在本機拒推(exit 2),Parity.Server 也拒收。

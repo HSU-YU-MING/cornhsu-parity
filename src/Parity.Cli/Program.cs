@@ -290,6 +290,11 @@ internal static class ReportCommand
             doc = JsonSerializer.Deserialize<ReportDocument>(File.ReadAllText(inPath), ReportJson.Indented)
                 ?? throw new InvalidOperationException($"could not parse report: {inPath}");
         }
+        catch (ReportContractException ex)
+        {
+            // 形狀認得、但某個欄位違反契約(例如 direction 不是 forward/reverse):說出真正的原因,不要猜「舊格式」
+            throw new InvalidOperationException($"{inPath}: {ex.Message}");
+        }
         catch (JsonException)
         {
             throw new InvalidOperationException(

@@ -2,6 +2,7 @@ import type {
   AuditEntry, BranchInfo, InvitePreview, Me, MembersResponse, OverviewCard, ReportDocument,
   RunChanges, RunListItem, RunMeta, TrendPoint,
 } from './types'
+import { readDirection } from './direction'
 
 /* 同源 SPA + cookie 認證:fetch 預設帶 cookie。401 丟 Unauthorized,App 層導去登入。 */
 
@@ -32,7 +33,9 @@ const del = (url: string) => fetch(url, { method: 'DELETE' }).then(res => handle
 // 資料
 export const fetchRuns = () => get<RunListItem[]>('/api/runs')
 export const fetchRunMeta = (id: string) => get<RunMeta>(`/api/runs/${id}`)
-export const fetchRunReport = (id: string) => get<ReportDocument>(`/api/runs/${id}/report`)
+// direction 照凍結面 4 的規則讀(與伺服器同一套):不是 forward/reverse 就當壞報告,不畫
+export const fetchRunReport = (id: string) =>
+  get<ReportDocument>(`/api/runs/${id}/report`).then(doc => { readDirection(doc); return doc })
 export const fetchBranches = () => get<BranchInfo[]>('/api/branches')
 export const fetchOverview = (branch: string | null) =>
   get<OverviewCard[]>(`/api/overview${branch === null ? '' : `?branch=${encodeURIComponent(branch)}`}`)

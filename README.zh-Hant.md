@@ -354,7 +354,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 - `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
 - `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`randomized-id`、`size-implausible`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。
-- `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
+- `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
 
 ## 回歸把關:baseline(M5)
 

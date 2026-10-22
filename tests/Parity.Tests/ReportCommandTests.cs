@@ -232,6 +232,27 @@ public class ReportCommandTests
         Assert.DoesNotContain("PASS", r.Out);
     }
 
+    [Theory]
+    [InlineData("\"Reverse\"")]
+    [InlineData("\"sideways\"")]
+    [InlineData("1")]
+    public async Task An_unknown_direction_is_exit_2_with_the_real_reason(string direction)
+    {
+        // 審查第 6 條:原本 "Reverse" 照收、數字也收,"sideways" 則說成「likely an older format」
+        using var dir = new TempDir();
+        var config = Setup(dir);
+        var path = dir.File(".parity", "report.json");
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"direction\": \"forward\"", $"\"direction\": {direction}"));
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("\"direction\" must be \"forward\" or \"reverse\"", r.Err);
+        Assert.Contains(path, r.Err);
+        Assert.DoesNotContain("older format", r.Err);
+        Assert.Equal("", r.Out);
+    }
+
     [Fact]
     public async Task Newer_schema_version_is_refused()
     {
