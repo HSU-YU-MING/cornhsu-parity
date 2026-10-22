@@ -90,10 +90,34 @@ public class ActionYmlTests
     private static string BashPath()
     {
         if (!OperatingSystem.IsWindows()) return "bash";
-        foreach (var root in new[] { Environment.GetEnvironmentVariable("ProgramW6432"), Environment.GetEnvironmentVariable("ProgramFiles"), @"C:\Program Files" })
-            if (root is not null && File.Exists(Path.Combine(root, "Git", "bin", "bash.exe")))
+        return FindGitBash(Environment.GetEnvironmentVariable("PATH"),
+                [Environment.GetEnvironmentVariable("ProgramW6432"), Environment.GetEnvironmentVariable("ProgramFiles"), @"C:\Program Files"])
+            ?? throw new InvalidOperationException("找不到 Git Bash(PATH 上的 git.exe / bash.exe 或 Program Files\\Git),這條測試需要它");
+    }
+
+    /// <summary>
+    /// Windows 上找 Git Bash:① PATH 上的 git.exe 反推安裝位置(Git\cmd、Git\bin、Git\mingw64\bin 三種位置);
+    /// ② PATH 上的 bash.exe,但跳過 System32 / WindowsApps 底下那個 WSL 啟動器;③ Program Files\Git\bin。
+    /// </summary>
+    internal static string? FindGitBash(string? pathVariable, IEnumerable<string?> programFilesRoots)
+    {
+        var dirs = (pathVariable ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var dir in dirs.Where(d => File.Exists(Path.Combine(d, "git.exe"))))
+            foreach (var relative in new[] { new[] { "..", "bin" }, [], new[] { "..", "..", "bin" } })
+                if (Path.GetFullPath(Path.Combine([dir, .. relative, "bash.exe"])) is var bash && File.Exists(bash))
+                    return bash;
+
+        static bool IsWslLauncher(string dir)
+            => dir.TrimEnd('\\', '/').EndsWith("System32", StringComparison.OrdinalIgnoreCase)
+            || dir.Contains("WindowsApps", StringComparison.OrdinalIgnoreCase);
+        foreach (var dir in dirs.Where(d => !IsWslLauncher(d)))
+            if (File.Exists(Path.Combine(dir, "bash.exe")))
+                return Path.GetFullPath(Path.Combine(dir, "bash.exe"));
+
+        foreach (var root in programFilesRoots.OfType<string>())
+            if (File.Exists(Path.Combine(root, "Git", "bin", "bash.exe")))
                 return Path.Combine(root, "Git", "bin", "bash.exe");
-        throw new InvalidOperationException("找不到 Git Bash(Program Files\\Git\\bin\\bash.exe),這條測試需要它");
+        return null;
     }
 
     /// <summary>step 的 `run: |` 內容(去掉 8 格縮排)。</summary>
