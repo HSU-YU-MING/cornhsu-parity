@@ -323,6 +323,16 @@ There are three shells, and **the engine does not know that any of them exist**:
    that trends exist and so that people who never touch the tool have a place to look. You
    deploy it yourself; it is not on NuGet, and it is **still in development** (see M7 below).
 
+> **Where the dashboard keeps its data.** The web host and the admin commands (`create-project`,
+> `create-invite`) find the SQLite database the same way: `ConnectionStrings:parity` (from
+> `appsettings.json` or the `ConnectionStrings__parity` environment variable), then
+> `PARITY_SERVER_DB` (a file path), then `parity-server.db` in the working directory. This is the
+> reverse of .NET's usual "environment beats appsettings": a connection string in
+> `appsettings.json` wins over `PARITY_SERVER_DB` — to override it from the environment, set
+> `ConnectionStrings__parity`. The reason: an explicit connection string is the more specific
+> setting, and the integration tests inject one that a developer's `PARITY_SERVER_DB` must not
+> redirect.
+
 ### The iron rule: the cloud never runs a browser
 
 `Parity.Server`'s only endpoint that takes in scan results is `POST /api/runs` (its other

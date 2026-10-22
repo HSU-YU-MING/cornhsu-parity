@@ -278,6 +278,13 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
    也才讓「不碰工具的人」有地方可看。要自己部署,不上 NuGet,而且**還在開發中**
    (見下面 M7)。
 
+> **儀表板的資料放哪。** web host 與管理指令(`create-project`、`create-invite`)用同一套規則找 SQLite 資料庫:
+> 先看 `ConnectionStrings:parity`(`appsettings.json` 或環境變數 `ConnectionStrings__parity`),再看
+> `PARITY_SERVER_DB`(檔案路徑),都沒有就是工作目錄下的 `parity-server.db`。這與 .NET 慣例「環境變數蓋設定檔」
+> 相反:`appsettings.json` 裡的連線字串會勝過 `PARITY_SERVER_DB`——要從環境變數覆蓋它,請設
+> `ConnectionStrings__parity`。理由:完整的連線字串是比較明確的設定,而且整合測試注入的連線字串不能被
+> 開發機上的 `PARITY_SERVER_DB` 改道。
+
 ### 鐵則:雲端不跑瀏覽器
 
 `Parity.Server` 唯一收掃描結果的入口是 `POST /api/runs`(其他寫入端點只管登入、邀請、成員、token 與刪除 run),它收的是**已經跑完的報告**。
