@@ -273,11 +273,12 @@ public class ActionYmlTests
     /// 模擬 symlink(MSYS=winsymlinks:sys)——action 的步驟跑在 bash 裡,bash 的 test -L 與 cp 都認得它,
     /// 正好是這條測試要驗的對象。
     /// </summary>
-    private static void MakeSymlink(string link, string target)
+    private static void MakeSymlink(string link, string target, bool directory = false)
     {
         try
         {
-            File.CreateSymbolicLink(link, target);
+            if (directory) Directory.CreateSymbolicLink(link, target);
+            else File.CreateSymbolicLink(link, target);
             return;
         }
         catch (Exception) when (OperatingSystem.IsWindows()) { }
@@ -334,6 +335,23 @@ public class ActionYmlTests
         Assert.Equal("exit=2\n", r.Output);
         Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "report.json")), "report.json 的 symlink 被跟著複製了");
         Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "parity-report.md")), "Markdown 的 symlink 被跟著複製了");
+    }
+
+    [SymlinkFact]
+    public void A_parity_directory_the_repo_turned_into_a_symlink_is_never_copied_from()
+    {
+        // 檔案本身是一般檔案,但 .parity 目錄是指向 workspace 外的 symlink:test -L 只看檔案擋不住,
+        // 要連所在目錄一起看(驗證者的 mutation M1c 拿掉目錄層的檢查,原本的測試照綠)
+        using var dir = new TempDir();
+        var outside = Directory.CreateDirectory(dir.File("outside")).FullName;
+        File.WriteAllText(Path.Combine(outside, "report.json"), "FIGMA_TOKEN=figd_secret");
+        var ws = Directory.CreateDirectory(dir.File("ws")).FullName;
+        MakeSymlink(Path.Combine(ws, ".parity"), outside, directory: true);
+
+        var r = RunCheckStep(ws, ".", "parity.config.json"); // 設定檔不存在 → stub 不寫檔、exit 2
+
+        Assert.Equal("exit=2\n", r.Output);
+        Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "report.json")), "symlink 目錄裡的 report.json 被複製了");
     }
 
     [Fact]
