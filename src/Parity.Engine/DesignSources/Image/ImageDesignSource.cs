@@ -39,8 +39,13 @@ public sealed class ImageDesignSource(string imagePath) : IDesignSource
         }
         catch (UnknownImageFormatException)
         {
+            throw new InvalidOperationException(DescribeUnsupported(imagePath));
+        }
+        catch (ImageFormatException ex)
+        {
+            // 認得是 PNG/JPEG,內容卻壞了(截斷、CRC 錯):ImageSharp 的原文不帶檔名
             throw new InvalidOperationException(
-                $"designImage must be PNG or JPEG: {imagePath} is another format (export the design as PNG or JPEG).");
+                $"designImage could not be decoded: {imagePath} looks like a PNG or JPEG but is damaged ({ex.Message}). Export it again.");
         }
         using (image)
             return Fill(root, image);
@@ -55,6 +60,27 @@ public sealed class ImageDesignSource(string imagePath) : IDesignSource
     {
         Configuration = new Configuration(new PngConfigurationModule(), new JpegConfigurationModule()),
     };
+
+    /// <summary>
+    /// PNG/JPEG 解碼器都不認得這個檔時,說清楚它是什麼:空檔、認得的其他格式(只讀檔頭判斷,不解碼——
+    /// 解碼才是 DoS 的入口),或根本不是圖。
+    /// </summary>
+    private static string DescribeUnsupported(string path)
+    {
+        if (new FileInfo(path).Length == 0)
+            return $"designImage is an empty file: {path} (export the design as PNG or JPEG).";
+        IImageFormat? format = null;
+        try
+        {
+            format = SixLabors.ImageSharp.Image.DetectFormat(path);
+        }
+        catch (UnknownImageFormatException)
+        {
+        }
+        return format is null
+            ? $"designImage is not an image Parity can read: {path} (unrecognized content; export the design as PNG or JPEG)."
+            : $"designImage must be PNG or JPEG: {path} is a {format.Name} image (export the design as PNG or JPEG).";
+    }
 
     private static DesignNode Fill(DesignNode node, Image<Rgba32> image)
         => node with

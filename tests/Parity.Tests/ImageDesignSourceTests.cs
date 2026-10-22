@@ -137,6 +137,73 @@ public class ImageDesignSourceTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>審查第 9 條的錯誤訊息:寫一個 designImage 進暫存目錄,回傳 ImageDesignSource 丟出的訊息。</summary>
+    private static async Task<string> ErrorFor(Func<string, Task> writeImage)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var imgPath = Path.Combine(dir, "design.png");
+            await writeImage(imgPath);
+            var annPath = Path.Combine(dir, "design.json");
+            await File.WriteAllTextAsync(annPath, """{ "id": "1:1", "name": "frame", "type": "Frame", "box": { "x": 0, "y": 0, "width": 10, "height": 10 } }""");
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => new ImageDesignSource(imgPath).GetFrameAsync(new DesignRef(annPath, "")));
+            Assert.Contains(imgPath, ex.Message); // 每一種錯都要說是哪個檔
+            return ex.Message;
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task An_empty_file_is_called_empty_not_another_format()
+    {
+        var message = await ErrorFor(path => File.WriteAllBytesAsync(path, []));
+
+        Assert.Contains("empty", message);
+        Assert.DoesNotContain("another format", message);
+    }
+
+    [Fact]
+    public async Task A_text_file_is_called_unrecognized_not_another_format()
+    {
+        var message = await ErrorFor(path => File.WriteAllTextAsync(path, "this is not an image, just some text\n"));
+
+        Assert.Contains("not an image Parity can read", message);
+        Assert.DoesNotContain("another format", message);
+    }
+
+    [Fact]
+    public async Task A_recognized_other_format_is_named()
+    {
+        var message = await ErrorFor(async path => { using var img = TestImage(); await img.SaveAsGifAsync(path); });
+
+        Assert.Contains("must be PNG or JPEG", message);
+        Assert.Contains("is a GIF image", message);
+    }
+
+    [Theory]
+    [InlineData("png")]
+    [InlineData("jpeg")]
+    public async Task A_damaged_png_or_jpeg_names_the_file(string format)
+    {
+        // 審查實證:截斷的 PNG/JPEG 原本只印 ImageSharp 的原文(「PNG Image does not contain a data chunk.」),
+        // 不說是哪個檔
+        var message = await ErrorFor(async path =>
+        {
+            using var stream = new MemoryStream();
+            using (var img = TestImage())
+            {
+                if (format == "png") await img.SaveAsPngAsync(stream);
+                else await img.SaveAsJpegAsync(stream);
+            }
+            await File.WriteAllBytesAsync(path, stream.ToArray()[..(int)(stream.Length * 0.4)]);
+        });
+
+        Assert.Contains("damaged", message);
+    }
+
     [Fact]
     public async Task Jpeg_is_still_decoded()
     {

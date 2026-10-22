@@ -79,7 +79,7 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
    丟掉、Markdown 可能不完整。現在與 snapshot 讀端、`parity push`、Parity.Server 一致:比自己新就拒收。
    **遷移:用寫出那份報告的 Parity 版本(或更新的版本)來 render**。
 7. **`designImage` 只接受 PNG 與 JPEG,其他格式 exit 2**(面 1 的有效值)。文件一直寫 PNG/JPG,但 1.x 實際
-   會解 ImageSharp 支援的所有格式(WebP、BMP、GIF、TIFF…)。判格式看檔案內容,不看副檔名。收窄之後,
+   會解 ImageSharp 支援的所有格式(WebP、BMP、GIF、TIFF…)。判格式看檔案內容,不看副檔名;錯誤訊息一律帶檔案路徑,並分清楚是空檔、損毀的 PNG/JPEG、認得的其他格式(說出是哪一種),還是根本不是圖。收窄之後,
    ImageSharp 3.1.12 的 BigTIFF 解碼 DoS(GHSA-wmxv-xphr-5c9g,3.1 線沒有修補版)碰不到。
    **遷移:把設計圖轉成 PNG**。
 8. **npm 通路需要 Node 20 以上**(主套件 `engines.node` 從 `>=18` 改成 `>=20`)。npm 版讓 Playwright driver
