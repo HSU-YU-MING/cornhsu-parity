@@ -727,6 +727,8 @@ internal static class Usage
 
     public const string Push = """
           parity push --server <url> [--config <path>] [--in <report.json>] [--token <token>] [--commit <sha>] [--branch <name>] [--gate-exit <code>]
+              (experimental) The push command and its server protocol are not covered by the interface freeze:
+              they may change in a 2.x minor release until the Parity.Server dashboard is publicly deployed.
               Send an existing report.json to a Parity.Server dashboard (no re-scan; the server never
               runs a browser — scanning always happens where `parity check` ran).
               Token comes from the PARITY_TOKEN environment variable (a project token from the server);

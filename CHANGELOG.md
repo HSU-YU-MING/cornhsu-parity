@@ -19,6 +19,13 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
 4. 行為完全不變的修正 → **patch**
 5. **minor 若需要重拍基準,工具必須大聲失敗並給指引**——不得靜默給錯誤結果
 
+**例外:`parity push` 屬實驗性,不列入凍結。** push 子指令與伺服器協定屬實驗性,2.x 內可能在 minor 版本改變,
+伺服器正式上線時再納入凍結。範圍:push 的旗標、環境變數(`PARITY_SERVER`、`PARITY_TOKEN`)與 exit code;
+push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、伺服器的拒收規則);push 寫進 job summary
+的內容。伺服器還沒有公開部署(網頁外殼的 M5),現在就凍結的話,M5 想調整 push 的介面就得等到 3.0。
+`report.json` 本身(含 `direction`)仍屬凍結面 4,不受這條例外影響。`parity push --help` 與主 help 標
+`(experimental)`;執行時不印警告。
+
 **GitHub Action 改用移動式 `@v2`**(跟隨最新 2.x;之後每個 2.x 發版把 `v2` 前移)。`v1` 停在 v1.1.0,不再前移。
 
 **升級必做 (upgrade required)**——依序處理:
@@ -231,7 +238,7 @@ inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演�
 (其他寫入端點只管登入、邀請、成員、token 與刪除 run),不存在任何「給我 URL 我去掃」的入口;
 掃描永遠發生在本機/CI。
 
-- **新增:`parity push` 子指令**(CLI 面加法 = minor)。把既有的 report.json 送上
+- **新增:`parity push` 子指令**(**實驗性**,不列入凍結——見開頭的例外;伺服器尚未公開部署)。把既有的 report.json 送上
   Parity.Server:token 走 `PARITY_TOKEN` 環境變數(CI secret;`--token` 旗標僅供本機
   試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
   commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`;branch 先取 PR 事件的 `GITHUB_HEAD_REF`,

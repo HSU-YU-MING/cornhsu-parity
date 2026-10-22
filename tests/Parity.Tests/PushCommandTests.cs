@@ -174,6 +174,8 @@ public class PushCommandTests
         Assert.Null(req.Header("X-Parity-Triggered-By"));
         Assert.Null(req.Header("X-Parity-Repo-Url"));
         Assert.Equal("fail", req.Header("X-Parity-Gate")); // config 的預設 failOn 重算:serious → 紅
+        // push 在 2.0.0 是實驗性功能,但只在 --help 標示:執行時不印任何警告(CI log 不要變吵)
+        Assert.DoesNotContain("experimental", r.Out + r.Err, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

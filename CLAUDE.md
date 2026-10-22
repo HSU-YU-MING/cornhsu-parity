@@ -67,6 +67,10 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
   這是 2.0.0 發版時接受的副作用(見 RELEASING.md「2.0.0」一節)——**不要為了它補發 1.x**。
 - `action.yml` 在 `version` 留空時裝 `"<major>.*"`(現在 `"2.*"`)，major 要跟 CHANGELOG 最新版一致;
   `verify-readme-facts.ps1` 也依最新版號的 major 檢查 README 的 `@vN`。發下一個 major 時兩邊一起改。
+- **`parity push` 與伺服器協定是實驗性的,不在六面凍結內**(2.0.0 決定;範圍:push 的旗標、環境變數、exit code,
+  `X-Parity-*` 標頭、HTTP 狀態碼、伺服器拒收規則,job summary 內容)。**何時納入凍結:Parity.Server 公開部署
+  (網頁外殼 M5)的那一版**——CHANGELOG 要寫明「push 自本版起凍結」,並拿掉 `--help` 的 `(experimental)`;
+  在那之前改 push 的介面走 minor。`report.json` 不受影響,一直是凍結面 4。
 - `release.yml` 的觸發**刻意只認三段式 `v[0-9]*.[0-9]*.[0-9]*`，不是 `v*`**——`v1` 也符合
   `v*`，每次前移都會誤觸發一次注定失敗的 release(1.0.0／1.1.0 各踩一次，run #27/#29)。
   **不要「順手」改回 `v*`。**

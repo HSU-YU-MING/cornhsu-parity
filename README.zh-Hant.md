@@ -259,7 +259,7 @@ src/Parity.Engine/        引擎:唯一進入點 FidelityEngine
 src/Parity.Report/        報告契約:report.json 型別、ReportWire、還原度分數、baseline 比對
                           ——沒有任何套件相依,所以沒有 Playwright
 src/Parity.Cli/           dotnet tool 外殼:parity check / init / install-browser、
-                          本機報告 UI(parity serve)與 parity push
+                          本機報告 UI(parity serve)與 parity push(實驗性)
 src/Parity.Storage/       baseline 歷史(EF Core + SQLite),parity baseline 背後的儲存層
 src/Parity.Server/        團隊儀表板外殼(ASP.NET Core)——不上 NuGet
 src/Parity.Server.Data/   它的資料庫(EF Core + SQLite,第一天就走 migrations)
@@ -385,7 +385,8 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 - [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護——**明文不做**(2026-07-18 決定)。
   這跟 M7 *不是*同一件事:M7 什麼都不掃。當年否決的理由保留在 [ROADMAP.md](ROADMAP.md)。
 - [ ] **M7** 團隊儀表板外殼(`Parity.Server` + `Parity.Server.Data` + `web/`)——**進行中,
-  尚未發佈。** `parity push` 把跑完的 `report.json` 送到你自己架的伺服器;儀表板把落差
+  尚未發佈。** `parity push`(**實驗性**:伺服器尚未公開部署,指令與伺服器協定在 2.x 內可能隨 minor 版本改變,
+  伺服器正式上線時再納入凍結)把跑完的 `report.json` 送到你自己架的伺服器;儀表板把落差
   用報告裡既有的量測座標畫成工程藍圖(零截圖上傳)、依專案與 route 給總覽與分數趨勢,
   並有帳號 / 專案角色 / 邀請連結。它自己的內部 M1–M4.6 已完成,內部 M5(真的對外部署:
   TLS、網域、託管資料庫)還沒。**它只收報告,永遠不掃描**——見上面的鐵則。

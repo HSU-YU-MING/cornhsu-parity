@@ -302,7 +302,7 @@ src/Parity.Engine/        The engine; FidelityEngine is the only entry point
 src/Parity.Report/        The report contract: report.json types, ReportWire, the fidelity score,
                           baseline comparison — no package dependencies, so no Playwright
 src/Parity.Cli/           The dotnet tool shell: parity check / init / install-browser,
-                          the local report UI (parity serve) and parity push
+                          the local report UI (parity serve) and parity push (experimental)
 src/Parity.Storage/       Baseline history (EF Core + SQLite), behind parity baseline
 src/Parity.Server/        Team dashboard shell (ASP.NET Core) — not published to NuGet
 src/Parity.Server.Data/   Its database (EF Core + SQLite, migrations from day one)
@@ -470,8 +470,9 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
   declined** (2026-07-18). This is *not* what M7 is: M7 never scans anything. The reasoning is
   kept in [ROADMAP.md](ROADMAP.md).
 - [ ] **M7** Team dashboard shell (`Parity.Server` + `Parity.Server.Data` + `web/`) — **in
-  progress, not yet released.** `parity push` sends a finished `report.json` to a server you
-  host yourself; the dashboard renders the gaps as an engineering blueprint drawn from the
+  progress, not yet released.** `parity push` (**experimental**: the server is not publicly deployed
+  yet, so the command and its server protocol may change in a 2.x minor release and join the interface
+  freeze once the server ships) sends a finished `report.json` to a server you host yourself; the dashboard renders the gaps as an engineering blueprint drawn from the
   measured coordinates (no screenshot upload), an overview and score trend per project and
   route, and accounts / project roles / invite links. Its own internal M1–M4.6 are done; its
   M5 (real external deployment: TLS, a domain, a hosted database) is not. **It receives

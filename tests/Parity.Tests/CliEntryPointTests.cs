@@ -79,6 +79,23 @@ public class CliEntryPointTests
         Assert.Empty(Directory.EnumerateFileSystemEntries(dir.Path));
     }
 
+    [Theory]
+    [InlineData("help")]
+    [InlineData("push", "--help")]
+    public async Task Push_is_marked_experimental_in_the_main_help_and_its_own_help(params string[] args)
+    {
+        // 2.0.0 的使用者決定:push 子指令與伺服器協定在伺服器公開部署(網頁外殼 M5)之前屬實驗性,
+        // 不列入六面凍結——只在說明文字標示,執行時不印警告(CI log 不要變吵)
+        var r = await Cli.RunAsync(args);
+
+        Assert.Equal(0, r.ExitCode);
+        var lines = r.Out.Split('\n');
+        var usage = Array.FindIndex(lines, l => l.Contains("parity push --server <url>"));
+        Assert.True(usage >= 0, "找不到 push 的用法行");
+        Assert.Contains("(experimental)", lines[usage + 1]);
+        Assert.Contains("not covered by the interface freeze", r.Out);
+    }
+
     [Fact]
     public async Task Command_names_are_case_insensitive()
     {
