@@ -103,9 +103,11 @@
   `PARITY_SERVER_DB`、web host 只讀 `ConnectionStrings:parity`:只設前者時 `create-project` 寫進一個檔、
   web host 開的是 ContentRoot 下的另一個,push 回 401、邀請連結回 404。現在兩邊共用同一個解析:
   `ConnectionStrings:parity` → `PARITY_SERVER_DB` → `parity-server.db`(cwd/ContentRoot)。
-- **修正:登入時不存在的 email 也跑一次密碼雜湊驗證**(未發佈的伺服器)。原本直接回 401、不跑 PBKDF2,
-  回得明顯比存在的帳號快,光看回應時間就能探測誰有帳號。還開著的探測管道是鎖定:只有存在的帳號會看到
-  `too many failed attempts`,而且鎖定後 Identity 不跑密碼驗證、回得特別快——留待產品決定(ROADMAP 已知盲點)。
+- **修正:登入回應不再透露帳號存不存在**(未發佈的伺服器)。三條探測管道一起關:
+  (1) 不存在的 email 原本直接回 401、不跑 PBKDF2,回得明顯比存在的帳號快——現在跑一次同成本的假驗證;
+  (2) 只有存在的帳號連錯 5 次會看到 `too many failed attempts`——現在不存在的 email 也「模擬鎖定」,
+  門檻、時長(IdentityOptions.Lockout:5 次、5 分鐘)與訊息都與真帳號相同(記在記憶體,伺服器重啟歸零);
+  (3) 已鎖定的帳號 Identity 不驗密碼、3–7 ms 就回(其他 401 約 80–90 ms)——現在鎖定路徑也補一次同成本的驗證。
 - **修正:`tokensFile` 讀不到或寫壞時說清楚是哪裡,並允許註解**(patch)。原本 `catch { return null; }`
   把檔案不存在、JSON 壞掉、值是數字、有 `//` 註解全當成「沒有 token」:`lint` 接著報
   `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位;`check --md`

@@ -43,6 +43,9 @@ builder.Services.AddIdentityCore<AppUser>(o =>
     })
     .AddEntityFrameworkStores<ServerDbContext>()
     .AddSignInManager();
+// 不存在的 email 的模擬鎖定:門檻與時長跟真帳號同一份 IdentityOptions.Lockout(見 /api/auth/login)
+builder.Services.AddSingleton(sp => new UnknownEmailLockout(
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityOptions>>().Value.Lockout, sp.GetService<TimeProvider>() ?? TimeProvider.System));
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddCookie(IdentityConstants.ApplicationScheme, o =>
@@ -87,21 +90,31 @@ app.MapGet("/healthz", async (ServerDbContext db) =>
 // ── 認證 ───────────────────────────────────────────────────────
 app.MapPost("/api/auth/login", async (
     LoginRequest req, SignInManager<AppUser> signIn, UserManager<AppUser> users, ServerDbContext db,
-    IPasswordHasher<AppUser> hasher) =>
+    IPasswordHasher<AppUser> hasher, UnknownEmailLockout unknownLockout) =>
 {
-    var user = await users.FindByEmailAsync(req.Email.Trim());
+    // 帳號存不存在,回應的訊息與時序都不能透露(決策 #21):每條失敗路徑都恰好跑一次密碼雜湊驗證
+    // (PBKDF2,數十毫秒),「被鎖」也對不存在的 email 照樣發生
+    static IResult Incorrect() => Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
+    static IResult LockedOut() => Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
+
+    var email = req.Email.Trim();
+    var user = await users.FindByEmailAsync(email);
     if (user is null)
     {
-        // 時序對齊:存在的帳號要跑一次密碼雜湊驗證(PBKDF2,數十毫秒),不存在的若直接回,
-        // 光看回應時間就能探測誰有帳號。跑一次同成本的假驗證,結果丟掉
+        // 跑一次同成本的假驗證(結果丟掉),再按與真帳號相同的門檻記失敗次數
         LoginTiming.SpendOneVerification(hasher, req.Password);
-        return Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
+        return unknownLockout.RecordFailure(users.NormalizeEmail(email) ?? email) ? LockedOut() : Incorrect();
+    }
+    if (await users.IsLockedOutAsync(user))
+    {
+        // Identity 對鎖定中的帳號不驗密碼、幾毫秒就回——比其他 401 快一個數量級,等於宣告「這帳號存在」。
+        // 先自己擋下,補一次同成本的驗證
+        LoginTiming.SpendOneVerification(hasher, req.Password);
+        return LockedOut();
     }
     var result = await signIn.PasswordSignInAsync(user, req.Password, isPersistent: true, lockoutOnFailure: true);
-    if (result.IsLockedOut)
-        return Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
-    if (!result.Succeeded)
-        return Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
+    if (result.IsLockedOut) return LockedOut(); // 這次失敗剛好觸發鎖定(密碼已驗過一次)
+    if (!result.Succeeded) return Incorrect();
     return Results.Json(await MeAsync(user, db));
 });
 
@@ -474,7 +487,51 @@ internal static class Auth
     }
 }
 
-/// <summary>登入時「帳號不存在」那條路的時序對齊(見 /api/auth/login)。</summary>
+/// <summary>
+/// 不存在的 email 的「模擬鎖定」(決策 #21)。Identity 只鎖真帳號;不存在的 email 若永遠回 incorrect,
+/// 「連錯 5 次會不會變成 too many failed attempts」就是一條探測帳號的管道。這裡照 Identity 的語意
+/// (第 MaxFailedAccessAttempts 次失敗即鎖、鎖 DefaultLockoutTimeSpan、鎖定時計數歸零、鎖定中不再計數)
+/// 替不存在的 email 記帳,兩邊回應逐字相同。
+/// 只記在記憶體:伺服器重啟就歸零(真帳號的鎖定記在 db,重啟後仍在)——要利用這個差異得先能讓伺服器
+/// 重啟,不列入防線。最多記 <see cref="MaxEntries"/> 個 email,滿了先清掉鎖定已過期的,仍滿就整個清空:
+/// 灌滿它要先付上萬次密碼驗證的成本,換到的只是某個不存在的 email 晚一點被鎖。
+/// </summary>
+internal sealed class UnknownEmailLockout(LockoutOptions options, TimeProvider time)
+{
+    internal const int MaxEntries = 10_000;
+    private readonly Dictionary<string, (int Failures, DateTimeOffset? LockedUntil)> _entries = new(StringComparer.Ordinal);
+    private readonly Lock _gate = new();
+
+    /// <summary>記一次失敗;回傳這個 email 現在是否處於鎖定(原本就鎖著,或這次剛好鎖上)。</summary>
+    public bool RecordFailure(string normalizedEmail)
+    {
+        lock (_gate)
+        {
+            var now = time.GetUtcNow();
+            _entries.TryGetValue(normalizedEmail, out var entry);
+            if (entry.LockedUntil is { } until)
+            {
+                if (until > now) return true; // 鎖定中:與 Identity 相同,不再累計
+                entry = default;              // 鎖定已過期:重新計數
+            }
+            if (!_entries.ContainsKey(normalizedEmail) && _entries.Count >= MaxEntries) Prune(now);
+            entry.Failures++;
+            if (entry.Failures >= options.MaxFailedAccessAttempts)
+                entry = (0, now + options.DefaultLockoutTimeSpan);
+            _entries[normalizedEmail] = entry;
+            return entry.LockedUntil is not null;
+        }
+    }
+
+    private void Prune(DateTimeOffset now)
+    {
+        foreach (var key in _entries.Where(e => e.Value.LockedUntil is { } until && until <= now).Select(e => e.Key).ToList())
+            _entries.Remove(key);
+        if (_entries.Count >= MaxEntries) _entries.Clear();
+    }
+}
+
+/// <summary>登入失敗路徑的時序對齊(見 /api/auth/login):帳號不存在、帳號鎖定中都補一次同成本的驗證。</summary>
 internal static class LoginTiming
 {
     private static readonly AppUser DummyUser = new() { Id = Guid.Empty, UserName = "timing@invalid", Email = "timing@invalid" };

@@ -373,9 +373,8 @@ public class ServerEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, (await browser.GetAsync("/api/auth/me")).StatusCode);
 
         // 3) 連錯 5 次 → 鎖定:之後連正確密碼也進不去,訊息改說「稍後再試」。
-        //    注意這則訊息只有「存在的帳號」才會出現(不存在的 email 不走鎖定,永遠回 incorrect),
-        //    等於另一條帳號探測管道——這裡釘的是現行行為,不是「完全不洩漏帳號」的保證。
-        //    訊息要不要統一由產品決定(ROADMAP 已知盲點有留帳),決定後再改這段斷言
+        //    不存在的 email 也會被「模擬鎖定」,訊息與時序都一樣(見下面
+        //    Lockout_reads_the_same_and_costs_the_same_for_real_and_unknown_accounts)
         for (var i = 0; i < 5; i++)
             await LoginAsync(Client(), "owner@t.local", $"guess number {i}");
         var locked = await LoginAsync(Client(), "owner@t.local", "correct horse battery");
@@ -410,6 +409,72 @@ public class ServerEndpointTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         Assert.Equal(1, hasher.Verifications);
+    }
+
+    [Fact]
+    public async Task Lockout_reads_the_same_and_costs_the_same_for_real_and_unknown_accounts()
+    {
+        // 決策 #21(2.0.0):1.x 只有存在的帳號會被鎖、看到 too many failed attempts(不存在的 email 永遠回
+        // incorrect),而且被鎖的帳號 Identity 不驗密碼、3–7 ms 就回(其他 401 約 80–90 ms)——訊息與時序
+        // 兩條探測管道。現在不存在的 email 也模擬鎖定,每次嘗試(含鎖定之後)都恰好跑一次密碼驗證
+        await OwnerAsync(); // owner@t.local,密碼 "correct horse battery"
+        var hasher = new CountingHasher();
+        await using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureTestServices(s => s.AddSingleton<IPasswordHasher<AppUser>>(hasher)));
+
+        async Task<(HttpStatusCode Status, string Body, int Verifications)> AttemptAsync(string email, string password)
+        {
+            var before = hasher.Verifications;
+            using var client = factory.CreateClient();
+            var resp = await client.PostAsync("/api/auth/login", Json(new { email, password }));
+            return (resp.StatusCode, await resp.Content.ReadAsStringAsync(), hasher.Verifications - before);
+        }
+
+        var attempts = new List<(HttpStatusCode Status, string Body, int Verifications)>();
+        for (var i = 0; i < 5; i++)
+        {
+            attempts.Add(await AttemptAsync("owner@t.local", $"guess number {i}"));
+            attempts.Add(await AttemptAsync("nobody@t.local", $"guess number {i}"));
+        }
+        var real = await AttemptAsync("owner@t.local", "correct horse battery");
+        var unknown = await AttemptAsync("nobody@t.local", "correct horse battery");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, real.Status);
+        Assert.Contains("too many failed attempts", real.Body);
+        Assert.Equal(real.Body, unknown.Body);                    // 訊息逐字相同
+        Assert.Equal((1, 1), (real.Verifications, unknown.Verifications)); // 鎖定之後也各跑一次驗證
+        Assert.All(attempts, a => Assert.Equal(1, a.Verifications));
+        // 第 5 次(觸發鎖定的那次)兩邊也一樣
+        Assert.Equal(attempts[^2].Body, attempts[^1].Body);
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task Simulated_lockout_expires_after_the_lockout_window_and_then_counts_afresh()
+    {
+        // 與 Identity 相同的語意:鎖 DefaultLockoutTimeSpan(5 分鐘),到期後重新計數(鎖上時計數已歸零)
+        var clock = new ManualClock();
+        await using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureTestServices(s => s.AddSingleton<TimeProvider>(clock)));
+        async Task<string> AttemptAsync()
+        {
+            using var client = factory.CreateClient();
+            var resp = await client.PostAsync("/api/auth/login", Json(new { email = "ghost@t.local", password = "whatever it is" }));
+            return await resp.Content.ReadAsStringAsync();
+        }
+
+        for (var i = 0; i < 4; i++) Assert.Contains("incorrect", await AttemptAsync());
+        Assert.Contains("too many failed attempts", await AttemptAsync()); // 第 5 次觸發
+        clock.Now += TimeSpan.FromMinutes(4);
+        Assert.Contains("too many failed attempts", await AttemptAsync()); // 還在鎖定窗內(且不累計)
+        clock.Now += TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1);
+        for (var i = 0; i < 4; i++) Assert.Contains("incorrect", await AttemptAsync()); // 到期,從 0 重算
+        Assert.Contains("too many failed attempts", await AttemptAsync());
     }
 
     [Fact]
