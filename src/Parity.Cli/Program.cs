@@ -725,6 +725,7 @@ internal static class Usage
                                   omitted → recomputed from the config's gate settings.
               Reports over 1 MB are sent with Expect: 100-continue so an oversized report gets a clean 413:
               the upload waits up to 15 s for the server's go-ahead, and is resent without it on a 417.
+              Each attempt times out after 60 s, so a push can take up to about 2 minutes when it is resent.
         """;
 
     public const string Snapshot = """
