@@ -232,23 +232,20 @@ public class CliEntryPointTests
     }
 
     [Fact]
-    public async Task A_target_with_height_but_no_width_is_warned_that_height_is_ignored()
+    public async Task A_target_with_height_but_no_width_is_no_longer_warned_about()
     {
-        // check/serve/map/baseline save 只給 height 時,引擎把寬高一起換成設計 frame 的尺寸——height 被靜靜丟掉
-        // (snapshot 則照用)。改成照用 height 會改變量測結果,是待決定的語意演進;在那之前至少講出來
+        // 2.0.0 起只給 height 時照用它(引擎只補缺的寬,見 FidelityEngineTests),所以上一版加的
+        // 「height 被忽略」警告也拿掉了
         using var dir = new TempDir();
         using var noBrowsers = new TempDir();
         using var env = new EnvScope().Set("PLAYWRIGHT_BROWSERS_PATH", noBrowsers.Path);
         var config = WriteConfig(dir, """
-            { "designFile": "design.json", "targets": [
-                { "route": "/tall", "url": "./page.html", "height": 2000 },
-                { "route": "/both", "url": "./page.html", "width": 375, "height": 812 } ] }
+            { "designFile": "design.json", "targets": [{ "route": "/tall", "url": "./page.html", "height": 2000 }] }
             """);
 
         var r = await Cli.RunAsync("check", "--config", config);
 
-        Assert.Contains("warning: target \"/tall\" sets \"height\" (2000) without \"width\"", r.Err);
-        Assert.DoesNotContain("\"/both\"", r.Err); // 寬高都給的照用,不警告
+        Assert.DoesNotContain("height", r.Err);
     }
 
     [Theory]

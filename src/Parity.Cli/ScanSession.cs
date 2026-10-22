@@ -31,13 +31,6 @@ public sealed class ScanSession : IAsyncDisposable
         if (Config.Targets.Count == 0)
             throw new InvalidOperationException("the config file declares no targets.");
 
-        // 只給 height、沒給 width:引擎(FidelityEngine)在寬度是 null 時把寬高一起換成設計 frame 的尺寸,
-        // height 被靜靜丟掉(snapshot 則照用)。改成照用 height 會改變量測結果(演進條款 ②,待決定),
-        // 在那之前至少講出來。建構時印一次,serve/map 重掃不重複
-        foreach (var t in Config.Targets.Where(t => t.Height is not null && t.Width is null))
-            Console.Error.WriteLine($"\x1b[33mwarning: target \"{ConsoleText.Safe(t.Route)}\" sets \"height\" ({t.Height}) without \"width\" — " +
-                "check/serve/map/baseline save render at the design frame's size on both axes and ignore it; " +
-                "set \"width\" too to override the viewport.\x1b[0m");
 
         _designSource = CreateDesignSource(Config, refreshCache);
         _implSource = new WebImplementationSource(

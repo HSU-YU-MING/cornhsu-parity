@@ -27,15 +27,17 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
 
         // 2. 實作來源 → RenderedNode 樹;視窗大小 = frame 尺寸(規畫書:在 frame 設計寬度下渲染)
         var implRef = req.Impl;
-        if (implRef.ViewportWidth is null && (designTree.Box.W <= 0 || designTree.Box.H <= 0))
+        if (implRef.ViewportWidth is null && (designTree.Box.W <= 0 || (implRef.ViewportHeight is null && designTree.Box.H <= 0)))
             throw new InvalidOperationException(
                 $"design frame \"{designTree.Name}\" has size {designTree.Box.W}×{designTree.Box.H} — " +
                 "without a valid size there is no way to decide the render viewport (frame/designFile may be pointing at the wrong node).");
+        // 只補缺的那一軸(2.0.0 起):只給高度時寬用 frame 的、高用給的。1.x 在寬度是 null 時
+        // 把寬高一起換成 frame 尺寸,target 只寫 height 的話 height 被靜靜丟掉
         if (implRef.ViewportWidth is null)
             implRef = implRef with
             {
                 ViewportWidth = (int)Math.Ceiling(designTree.Box.W),
-                ViewportHeight = (int)Math.Ceiling(designTree.Box.H),
+                ViewportHeight = implRef.ViewportHeight ?? (int)Math.Ceiling(designTree.Box.H),
             };
         var renderedTree = await _impl.CaptureAsync(implRef, ct);
         var renderedOrigin = renderedTree.Box; // body 在頁面上的原始位置(截圖疊框要加回這個位移)

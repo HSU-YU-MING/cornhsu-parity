@@ -57,6 +57,31 @@ public class FidelityEngineTests
     }
 
     [Fact]
+    public async Task A_height_alone_overrides_only_the_height()
+    {
+        // 決策 #23(2.0.0):target 只給 height 時,1.x 的引擎把寬高一起換成 frame 尺寸,height 被靜靜丟掉。
+        // 現在只補缺的那一軸:寬用 frame 的,高用給的
+        var impl = new RecordingImpl(Body);
+        var engine = new FidelityEngine(new StubDesign(Design("f", "frame", box: new Box(0, 0, 1280, 800))), impl, EngineOptions.Default);
+
+        await engine.RunAsync(new ScanRequest(new DesignRef("d.json", "f"), new ImplRef("http://x/", null, 2000)));
+
+        Assert.Equal(1280, impl.Requested!.ViewportWidth);
+        Assert.Equal(2000, impl.Requested.ViewportHeight);
+    }
+
+    [Fact]
+    public async Task A_height_alone_still_needs_a_frame_width()
+    {
+        var engine = new FidelityEngine(new StubDesign(Design("f", "Empty", box: default)), new RecordingImpl(Body), EngineOptions.Default);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.RunAsync(new ScanRequest(new DesignRef("d.json", "f"), new ImplRef("http://x/", null, 2000))));
+
+        Assert.Contains("design frame \"Empty\" has size 0×0", ex.Message);
+    }
+
+    [Fact]
     public async Task Zero_size_frame_without_a_viewport_is_an_error_not_a_guess()
     {
         var engine = new FidelityEngine(new StubDesign(Design("f", "Empty", box: default)), new RecordingImpl(Body), EngineOptions.Default);
