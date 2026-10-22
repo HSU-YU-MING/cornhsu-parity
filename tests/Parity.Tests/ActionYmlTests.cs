@@ -135,7 +135,8 @@ public class ActionYmlTests
     /// 設定檔存在就照真的 check 把報告寫到「設定檔所在目錄/.parity/report.json」與 --md、exit 1;
     /// 不存在就什麼都不寫、exit 2。stub 被呼叫過會留下 $RUNNER_TEMP/parity-called。
     /// </summary>
-    private static StepRun RunCheckStep(string workspace, string workingDirectory, string config, string target = "")
+    private static StepRun RunCheckStep(string workspace, string workingDirectory, string config, string target = "",
+        int timeoutMs = 30_000, Action? onTimeout = null)
     {
         string Unix(string p) => p.Replace('\\', '/');
         var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
@@ -179,7 +180,15 @@ public class ActionYmlTests
         using var p = System.Diagnostics.Process.Start(psi)!;
         _ = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
-        Assert.True(p.WaitForExit(30_000), "bash 沒有在 30 秒內結束");
+        if (!p.WaitForExit(timeoutMs))
+        {
+            // 卡住的步驟不能留在機器上:先讓呼叫端解開卡點(例如替等著讀 FIFO 的 cp 接上寫入端,
+            // 讓它自己結束——Windows 上 Git Bash 的子行程不一定會被 Kill(entireProcessTree) 一起帶走,
+            // 留下來的 cp 會握著 testhost 的輸出管線,整個 dotnet test 跟著卡住),再殺整棵行程樹
+            onTimeout?.Invoke();
+            if (!p.WaitForExit(5_000)) p.Kill(entireProcessTree: true);
+            Assert.Fail($"bash 沒有在 {timeoutMs / 1000} 秒內結束(卡住了)");
+        }
         return new StepRun(p.ExitCode, File.ReadAllText(output).Replace("\r\n", "\n"),
             Path.Combine(runnerTemp, "parity-artifact"), File.Exists(Path.Combine(runnerTemp, "parity-called")),
             stderr.GetAwaiter().GetResult());
@@ -352,6 +361,60 @@ public class ActionYmlTests
 
         Assert.Equal("exit=2\n", r.Output);
         Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "report.json")), "symlink 目錄裡的 report.json 被複製了");
+    }
+
+    /// <summary>用 bash 的 mkfifo 建具名管線(Linux/macOS 原生;Windows 的 Git Bash 也有 MSYS 版的)。</summary>
+    private static bool TryMakeFifo(string path)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(BashPath()) { UseShellExecute = false, RedirectStandardError = true };
+            foreach (var a in new[] { "-c", "mkfifo -- \"$1\"", "mkfifo", path.Replace('\\', '/') }) psi.ArgumentList.Add(a);
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            p.StandardError.ReadToEnd();
+            return p.WaitForExit(10_000) && p.ExitCode == 0;
+        }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>替卡在 FIFO 讀取端的行程接上寫入端(寫一個位元組就關),讓它自己結束;5 秒內接不上就放棄。</summary>
+    private static void FeedFifo(string path)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(BashPath()) { UseShellExecute = false };
+        foreach (var a in new[] { "-c", "printf x > \"$1\"", "feed", path.Replace('\\', '/') }) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        if (!p.WaitForExit(5_000)) p.Kill(entireProcessTree: true);
+    }
+
+    /// <summary>建得了 FIFO 才跑;建不了就標成略過,看得見。</summary>
+    public sealed class FifoFactAttribute : FactAttribute
+    {
+        public FifoFactAttribute()
+        {
+            var probe = Path.Combine(Path.GetTempPath(), $"parity-fifo-probe-{Guid.NewGuid():N}");
+            try
+            {
+                if (!TryMakeFifo(probe)) Skip = "這台機器的 bash 建不了 FIFO(mkfifo);Linux / macOS 的 CI 會跑這條";
+            }
+            finally { try { File.Delete(probe); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+        }
+    }
+
+    [FifoFact]
+    public void A_fifo_the_repo_left_at_the_report_path_does_not_hang_the_step()
+    {
+        // 只收一般檔案(-f)也擋掉 FIFO 與裝置檔:cp 從沒有寫入端的 FIFO 讀,會卡到 job 逾時。
+        // 驗證者的 mutation M1d 把 -f 改成 -e,原本沒有測試抓得到
+        using var dir = new TempDir();
+        Directory.CreateDirectory(dir.File(".parity"));
+        Assert.True(TryMakeFifo(dir.File(".parity", "report.json")), "建不了 FIFO");
+
+        var fifo = dir.File(".parity", "report.json");
+        var r = RunCheckStep(dir.Path, ".", "parity.config.json", timeoutMs: 15_000, // 設定檔不存在 → stub exit 2
+            onTimeout: () => FeedFifo(fifo));
+
+        Assert.Equal("exit=2\n", r.Output);
+        Assert.False(File.Exists(Path.Combine(r.ArtifactDir, "report.json")));
     }
 
     [Fact]

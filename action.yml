@@ -112,7 +112,8 @@ runs:
         # 報告本身也不搬:使用者之後照預設路徑讀它的步驟照舊找得到。
         # 只複製一般檔案、不跟 symlink:repo 可以 commit 一個 .parity/report.json → /proc/self/environ,
         # parity 寫入失敗時 symlink 留著,cp 就會把這一步自己的環境(含 FIGMA_TOKEN)複製進 artifact
-        # (指向 /dev/zero 則寫滿磁碟)。.parity 目錄本身是 symlink 也一樣不收
+        # (指向 /dev/zero 則寫滿磁碟)。.parity 目錄本身是 symlink 也一樣不收。
+        # -f 不能換成 -e:-f 同時擋掉 FIFO 與裝置檔——cp 從沒有寫入端的 FIFO 讀會卡到 job 逾時
         artifact="$RUNNER_TEMP/parity-artifact"
         mkdir -p "$artifact"
         copy_plain() {
