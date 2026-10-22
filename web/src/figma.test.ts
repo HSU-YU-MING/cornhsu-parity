@@ -19,7 +19,10 @@ test('node-id 照 CLI 的 Markdown 報告:冒號換成連字號再編碼', () =>
 })
 
 test('designFile / snapshot 來源(本機絕對路徑)沒有連結', () => {
-  assert.equal(figmaUrl('D:\site\parity.snapshot.json#/', '#hero'), null)
+  // String.raw:一般字串裡的 \s、\p 是跳脫,實際會變成 'D:siteparity…',測不到 Windows 路徑
+  const windowsPath = String.raw`D:\site\parity.snapshot.json#/`
+  assert.ok(windowsPath.includes('\\'))
+  assert.equal(figmaUrl(windowsPath, '#hero'), null)
   assert.equal(figmaUrl('/home/ci/site/design.json#', 'body > h1'), null)
 })
 

@@ -67,7 +67,8 @@ npm 版讓 Playwright driver 用你自己的 Node 跑,而 1.63 的 driver 下限
 - **修正:儀表板的 Figma 深連結真的會出現**(未發佈的網頁外殼;M4.5 #5 原本完全失效)。引擎寫的
   `designReference` 是 `<fileKey>#<frame>`,前端卻拿整串比對 `^[A-Za-z0-9]{15,}$`,裡面有 `#` 所以永遠
   不成立。現在先取 `#` 之前的部分再驗證,node-id 照 CLI 的 Markdown 報告把 `:` 換成 `-`。解析抽成
-  `web/src/figma.ts`,用 Node 內建 test runner 測(`npm test`,CI 的 web-build job 也跑)。
+  `web/src/figma.ts`,用 Node 內建 test runner 測(`npm test`,CI 的 web-build job 也跑;需要 Node 22.6+ 的
+  型別剝除,`web/package.json` 已宣告 `engines`)。
 - **修正:比自己新的報告 `schemaVersion`,`push` 在本機就擋、`report` 照讀但警告**。`push`(未發佈)
   的本機信封檢查原本只驗 `reports` 欄位,`schemaVersion: 99` 一路送到伺服器才被 422 擋下;現在本機就
   exit 2、不送出。`parity report`(已發佈)仍照讀、exit 0 不變(改成拒收是待決定的 semver 問題),但會在
