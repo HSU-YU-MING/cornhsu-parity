@@ -15,8 +15,11 @@ using Parity.Server.Data;
 ///   「讀計數 → 驗密碼 → 寫計數」不會被並發穿插。只在單一行程內有效(現在的部署是單一行程 + SQLite)。</item>
 /// <item>計數與鎖定記在 db 的 <see cref="LoginThrottle"/>:存在與不存在的 email 同一張表、同一套讀寫。</item>
 /// </list>
-/// 反向代理後面部署時,要先設定 ForwardedHeaders 讓 RemoteIpAddress 是真正的用戶端,
-/// 否則所有人共用代理那一個 IP 的額度。
+/// **反向代理後面部署時的後果**:預設設定下 RemoteIpAddress 是代理的位址、X-Forwarded-For 不算數,所有人共用
+/// 同一個 IP 額度——任何一個人用亂數 email 每分鐘打 20 次,所有人(包括密碼正確的人)都 429。
+/// 零改碼的開關:環境變數 <c>ASPNETCORE_FORWARDEDHEADERS_ENABLED=true</c>(ASP.NET Core 內建,採信
+/// X-Forwarded-For)。**只能在信任的代理後面開**:否則任何人都能偽造來源 IP、繞過 IP 額度。
+/// 兩種情形都有測試(ServerEndpointTests 的 Behind_a_proxy… 與 With_ASPNETCORE_FORWARDEDHEADERS_ENABLED…)。
 /// </summary>
 internal sealed class LoginGuard : IDisposable
 {

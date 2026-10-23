@@ -600,6 +600,49 @@ public class ServerEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync(factory, "extra@t.local", "whatever it is", "198.51.100.9")).Status);
     }
 
+    /// <summary>經過反向代理的請求:每個都從同一個位址進來,X-Forwarded-For 才是真正的用戶端。</summary>
+    private static async Task<(HttpStatusCode Status, string Body)> LoginViaProxyAsync(
+        WebApplicationFactory<ParityServerEntryPoint> factory, string email, string password, string forwardedFor)
+    {
+        using var client = factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = Json(new { email, password }) };
+        req.Headers.Add("X-Forwarded-For", forwardedFor);
+        using var resp = await client.SendAsync(req);
+        return (resp.StatusCode, await resp.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Behind_a_proxy_without_forwarded_headers_one_client_can_lock_everyone_out_of_login()
+    {
+        // 驗證者實證(真伺服器):預設設定下伺服器看到的是代理的位址,X-Forwarded-For 不算數——有人用亂數 email
+        // 打滿每個 IP 每分鐘 20 次,所有人(包括密碼正確的人)都 429。這條把「後果」釘住,文件照這個寫
+        await OwnerAsync();
+        await using var factory = Factory();
+
+        for (var i = 0; i < 20; i++)
+            await LoginViaProxyAsync(factory, $"junk{i}@x.invalid", "whatever it is", "203.0.113.66");
+        var victim = await LoginViaProxyAsync(factory, "owner@t.local", "correct horse battery", "198.51.100.7");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, victim.Status);
+    }
+
+    [Fact]
+    public async Task With_ASPNETCORE_FORWARDEDHEADERS_ENABLED_each_forwarded_client_has_its_own_budget()
+    {
+        // 零改碼的開關:環境變數 ASPNETCORE_FORWARDEDHEADERS_ENABLED=true(設定鍵 FORWARDEDHEADERS_ENABLED)讓
+        // ASP.NET Core 採信 X-Forwarded-For。只能在**信任的**反向代理後面開——否則任何人都能偽造來源 IP
+        await OwnerAsync();
+        await using var factory = _factory.WithWebHostBuilder(b => b.UseSetting("FORWARDEDHEADERS_ENABLED", "true"));
+
+        for (var i = 0; i < 20; i++)
+            await LoginViaProxyAsync(factory, $"junk{i}@x.invalid", "whatever it is", "203.0.113.66");
+        var attacker = await LoginViaProxyAsync(factory, "junk-more@x.invalid", "whatever it is", "203.0.113.66");
+        var victim = await LoginViaProxyAsync(factory, "owner@t.local", "correct horse battery", "198.51.100.7");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, attacker.Status);
+        Assert.Equal(HttpStatusCode.OK, victim.Status);
+    }
+
     [Fact]
     public async Task Login_is_rate_limited_per_email_the_same_way_for_real_and_unknown_accounts()
     {

@@ -26,8 +26,9 @@
   現況:內部 M1–M4.6 完成(收報告 / 落差詳情藍圖 / 總覽與趨勢 / 帳號角色邀請 /
   工作流結締組織 / 防禦層),內部 M5(真的對外部署:TLS、網域、託管資料庫,
   屆時 SQLite 要換供應商、migrations 重生)未動。M5 的待辦另有:**`parity push` 與伺服器協定正式納入凍結**
-  (2.0.0 起標為實驗性,上線那一版在 CHANGELOG 寫明、拿掉 `--help` 的 `(experimental)`);反向代理後面要設
-  ForwardedHeaders(登入額度按用戶端 IP);多實例部署時登入序列化要改成 db 層(見已知盲點的登入那一條)。
+  (2.0.0 起標為實驗性,上線那一版在 CHANGELOG 寫明、拿掉 `--help` 的 `(experimental)`);**反向代理後面一定要設
+  `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`**(零改碼;只在信任的代理後面開)——不設的話伺服器只看到代理的位址,
+  任何一個人每分鐘打 20 次就讓所有人登不進去(驗證者實測);多實例部署時登入序列化要改成 db 層(見已知盲點的登入那一條)。
   **若哪天真的要做 M6,那是另一個決定,要重新過上面那三條理由——不能用 M7 已經上線
   當作理由順勢帶過。**
 - **WPF adapter(`WpfImplementationSource`,規畫書 4.5)**:動工時優先評估引用姊妹專案的
@@ -75,8 +76,9 @@
   `$GITHUB_WORKSPACE` 底下才複製(macOS 的 realpath 沒有 `-e`,要注意可攜性)。
 - **登入端點的剩餘限制**(2026-10-22,#21 審查後):存在與不存在的 email 已共用 `LoginThrottles` 表、依 email
   序列化、IP/email 兩層額度(實測見 CHANGELOG 2.0.0)。還剩:時序差沒有歸零(同一個 email 反覆失敗時不存在的 email 慢 0–1.5 ms,原因未定位;攻擊者照「新帳號試 5 次」量分不出來);
-  **序列化只在單一行程內**(M5 若跑多個實例,要改成 db 層的鎖或交易);**反向代理後面要設 ForwardedHeaders**
-  (M5 部署時一起做,否則全體共用代理 IP 的額度);IP 額度擋不住分散式攻擊;鎖定/額度可被用來讓特定使用者暫時
+  **序列化只在單一行程內**(M5 若跑多個實例,要改成 db 層的鎖或交易);**反向代理後面不設
+  `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` 的話,一個人就能讓所有人 429**(全體共用代理那一個 IP 的額度;
+  開關只能在信任的代理後面開,否則來源 IP 可偽造);IP 額度擋不住分散式攻擊;鎖定/額度可被用來讓特定使用者暫時
   登不進去;`LoginThrottles` 不清理(每個嘗試過的 email 一列)。
 - **repo 內容在 CI log 裡的行首注入,只擋了一般輸出**(2026-10-22 審查):設計稿圖層名、Figma 節點名、selector、
   設計值、設定檔的 route 帶 `\n::warning …` 時,原樣印出就會在行首變成 workflow command。check/lint/snapshot/baseline
