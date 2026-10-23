@@ -109,6 +109,15 @@ internal sealed class KeyedGate
 
     private readonly Dictionary<string, Slot> _slots = new(StringComparer.Ordinal);
 
+    /// <summary>目前還留著的 slot 數(有人持有或等待的 key)。測試用:全部放掉之後必須是 0。</summary>
+    internal int Count
+    {
+        get
+        {
+            lock (_slots) return _slots.Count;
+        }
+    }
+
     public async Task<IDisposable> EnterAsync(string key, CancellationToken ct)
     {
         Slot slot;
