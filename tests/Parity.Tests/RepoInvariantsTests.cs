@@ -61,6 +61,24 @@ public class RepoInvariantsTests
         Assert.All(uses, r => Assert.Matches("^[0-9a-f]{40}$", r));
     }
 
+    [Theory]
+    [InlineData(".github/workflows/ci.yml")]
+    [InlineData(".github/workflows/release.yml")]
+    [InlineData("action.yml")]
+    public void Every_action_is_pinned_to_a_commit_sha(string file)
+    {
+        // 移動式 tag(@v7)可以被改指到任何 commit,包括上游被入侵之後的那一個;釘 40 碼 SHA 才是審過的那一份。
+        // action.yml 尤其要釘:它跑在使用者的 runner 上。版本寫在行尾註解(# v7.0.1),
+        // dependabot 的 github-actions 更新會連同註解一起改
+        var uses = Regex.Matches(Read(file.Split('/')), @"^\s*(?:-\s+)?uses:\s*(?<ref>\S+)", RegexOptions.Multiline)
+            .Select(m => m.Groups["ref"].Value)
+            .ToList();
+
+        Assert.NotEmpty(uses);
+        var unpinned = uses.Where(u => !u.StartsWith("./", StringComparison.Ordinal) && !Regex.IsMatch(u, "@[0-9a-f]{40}$")).ToList();
+        Assert.True(unpinned.Count == 0, $"{file} 有沒釘 commit SHA 的 uses:{string.Join(", ", unpinned)}");
+    }
+
     [Fact]
     public void Version_fields_stay_placeholders_because_the_tag_is_the_source_of_truth()
     {

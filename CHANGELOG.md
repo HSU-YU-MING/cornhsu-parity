@@ -265,6 +265,10 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
   XMP／IPTC(取樣只用像素),解碼後也不留 ICC 設定檔。ImageSharp 3.1.12 的 ICC CLUT 記憶體配置(GHSA-gwg2-r3hj-4w44,
   3.1 線沒有修補版)要讀設定檔內容才會觸發:Parity 原本就不讀,現在設計圖上也沒有可讀的。改動前後解碼出的像素
   逐位元相同(測試以帶 ICC、EXIF、Adobe APP14、tRNS 的 PNG/JPEG 鎖住)。
+- **安全:Action 與 CI 呼叫的 `actions/*` 改釘 commit SHA**(patch:行為不變)。`action.yml` 的 `setup-dotnet`、
+  `upload-artifact`,以及 ci.yml／release.yml 的 `checkout`、`setup-dotnet`、`setup-node`、`upload-artifact` 原本跟著
+  移動式 tag(`@v7` 等):上游的 tag 一被改指,跑的就是別的程式碼——action.yml 跑在使用者的 runner 上。現在釘
+  40 碼 SHA,行尾註解標版本(`# v7.0.1`);`NuGet/login` 原本就有釘。新增測試要求這三個檔的每個 `uses:` 都是 commit SHA。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
