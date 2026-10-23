@@ -222,6 +222,8 @@ public class CliBrowserTests
             var check = await Cli.RunAsync("check", "--config", config, "--baseline", "--md", dir.File($"b{run}.md"));
             Assert.Equal(0, check.ExitCode);
             Assert.Contains("fixed 0", check.Out);
+            Assert.Contains("ignored 1", check.Out); // soft 列另計,baseline 的每一列都有去處
+            Assert.Contains("ignored 1", File.ReadAllText(dir.File($"b{run}.md")));
             Assert.DoesNotContain("- fixed", check.Out);
             Assert.DoesNotContain("Fixed", File.ReadAllText(dir.File($"b{run}.md")));
         }

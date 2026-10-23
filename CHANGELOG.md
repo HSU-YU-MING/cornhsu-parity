@@ -46,7 +46,8 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
    路徑讀檔的步驟會靜靜讀不到檔,所以列在這裡。
 4. **用 `--baseline` 的專案,升級後重存一次 baseline**(`parity baseline save`)。只給 `height` 的 target
    量測會變(破壞性變更第 4 條),重存之後才對齊。1.x 存的 baseline 裡的 font-family(soft)列不會造成誤報
-   (第 2 條),重存只是把它們清掉。
+   (第 2 條),比對結果把它們另計為 `ignored N`(baseline 的每一列都有去處:fixed + worsened + unchanged +
+   ignored = 列數);重存 baseline 就不再有這些列。
 
 **破壞性變更**——每條附遷移方式:
 
@@ -59,7 +60,7 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
    1.x 的 gate 沒排除 soft:`failOn` 含 `minor` 時,只有 font-family 落差的頁面分數 100/100 卻 GATE FAIL;
    `--baseline` 模式不看 `failOn`,調整 font stack 就多一條「新增」、exit 1。soft 落差照樣列在報告與 PR
    留言裡,只是不扣分、不擋。baseline schema 不變:新存的 baseline 不收 soft 列;1.x 存的舊 db 裡已有的
-   font-family 列,只要那條落差還在就不算「修好」(比對時拿現況全部落差的鍵來比,含 soft),真的改對了才列為
+   font-family 列,只要那條落差還在就不算「修好」(比對時拿現況全部落差的鍵來比,含 soft),另計為 `ignored`,真的改對了才列為
    修好。**遷移:不用改設定;想清掉舊列就重存 baseline**(升級必做第 4 點)。依賴「字型堆疊一變就擋」的團隊,改在 review 時看報告的 soft 列——沒有替代的 gate 開關。
 3. **`snapshot --width`/`--height` 與 `serve`/`map --port` 必須是正整數,否則 exit 2**(面 2)。**只收十進位
    數字,不收正負號與前後空白**:`375px`、`3.5`、`0`、`-800`,以及 1.x 接受的 `+375`、`" 375"`、`-0` 都是

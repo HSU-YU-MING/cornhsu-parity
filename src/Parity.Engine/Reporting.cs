@@ -215,7 +215,8 @@ public static class MarkdownReport
         if (baseline is not null)
         {
             sb.AppendLine($"vs baseline: 🔴 new **{baseline.Regressions.Count}**, " +
-                $"🟠 worsened **{baseline.Worsened.Count}**, 🟢 fixed **{baseline.Fixed.Count}**, ⚪ unchanged {baseline.Unchanged}");
+                $"🟠 worsened **{baseline.Worsened.Count}**, 🟢 fixed **{baseline.Fixed.Count}**, ⚪ unchanged {baseline.Unchanged}" +
+                (baseline.Ignored > 0 ? $", ignored {baseline.Ignored} (soft diffs a 1.x baseline saved — re-save the baseline to drop them)" : ""));
             sb.AppendLine();
             AppendChangeList(sb, "🔴 New diffs", baseline.Regressions);
             AppendChangeList(sb, "🟠 Worsened", baseline.Worsened);

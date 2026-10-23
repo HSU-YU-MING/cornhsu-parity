@@ -47,6 +47,9 @@ public class BaselineComparerTests
         var stillThere = Report(fontSize, fontFamily);
         var same = BaselineComparer.Compare(DiffRecord.FromReports([stillThere]), oldBaseline, DiffRecord.KeysOf([stillThere]));
         Assert.Empty(same.Fixed);
+        // 驗證者:baseline 有 2 列,結果卻是 fixed 0、unchanged 1——soft 那列不在任何計數裡。另計 ignored,總數對得起來
+        Assert.Equal(1, same.Ignored);
+        Assert.Equal(oldBaseline.Length, same.Fixed.Count + same.Worsened.Count + same.Unchanged + same.Ignored);
         Assert.False(same.HasRegressions);
 
         var reallyFixed = Report(fontSize); // font stack 真的改對了才算修好

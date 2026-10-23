@@ -46,7 +46,9 @@ public sealed record BaselineComparison(
     IReadOnlyList<DiffRecord> Regressions, // 現在有、baseline 沒有 → 新落差
     IReadOnlyList<DiffRecord> Worsened,    // 兩邊都有,但嚴重度變高
     IReadOnlyList<DiffRecord> Fixed,       // baseline 有、現在沒有 → 修好了
-    int Unchanged)
+    int Unchanged,
+    // baseline 有、落差也還在,但現況不拿它比(1.x 存的 soft 列):另計,baseline 的每一列都有去處
+    int Ignored = 0)
 {
     /// <summary>有沒有「相對 baseline 變差」——回歸模式的 gate 就看這個。</summary>
     public bool HasRegressions => Regressions.Count > 0 || Worsened.Count > 0;
@@ -84,9 +86,14 @@ public static class BaselineComparer
             else if (cur.Severity > bas.Severity) worsened.Add(cur);
             else unchanged++;
         }
+        var ignored = 0;
         foreach (var (key, bas) in baseByKey)
-            if (!curByKey.ContainsKey(key) && stillPresent?.Contains(key) != true) fixedList.Add(bas);
+        {
+            if (curByKey.ContainsKey(key)) continue;
+            if (stillPresent?.Contains(key) == true) ignored++;
+            else fixedList.Add(bas);
+        }
 
-        return new BaselineComparison(regressions, worsened, fixedList, unchanged);
+        return new BaselineComparison(regressions, worsened, fixedList, unchanged, ignored);
     }
 }

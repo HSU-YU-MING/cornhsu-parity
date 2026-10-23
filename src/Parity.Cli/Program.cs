@@ -196,7 +196,8 @@ internal static class CheckCommand
         var cmp = BaselineComparer.Compare(current, baseline.Diffs, DiffRecord.KeysOf(reports));
         WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp, baselineScore: baseline.Score);
         Console.WriteLine($"\nvs baseline — \x1b[31mnew {cmp.Regressions.Count}\x1b[0m, " +
-            $"\x1b[33mworsened {cmp.Worsened.Count}\x1b[0m, \x1b[32mfixed {cmp.Fixed.Count}\x1b[0m, unchanged {cmp.Unchanged}");
+            $"\x1b[33mworsened {cmp.Worsened.Count}\x1b[0m, \x1b[32mfixed {cmp.Fixed.Count}\x1b[0m, unchanged {cmp.Unchanged}" +
+            (cmp.Ignored > 0 ? $", ignored {cmp.Ignored} (soft diffs a 1.x baseline saved; they no longer count — re-save the baseline to drop them)" : ""));
 
         // 分數走勢——PM 要的「方向」:相對基準是往上還是往下
         if (baseline.Score is { } baseScore)
