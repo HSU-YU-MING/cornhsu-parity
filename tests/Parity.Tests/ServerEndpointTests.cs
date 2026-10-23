@@ -693,6 +693,40 @@ public class ServerEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Accepting_a_re_invite_checks_the_password_under_the_same_throttle_as_login()
+    {
+        // 驗證者:既有帳號被重邀時,接受邀請要驗密碼——這也是一個猜密碼的入口,卻沒有額度、序列化與鎖定。
+        // 現在與登入共用同一套:同一個 email 的失敗次數、鎖定與額度都算在一起
+        await OwnerAsync(); // owner@t.local 已有帳號
+        await using var factory = Factory(perIp: 100_000, perEmail: 100_000);
+        string reInvite;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+            var (invite, inviteToken) = Invites.Create(_projectId, "owner@t.local", ProjectRole.Member, DateTimeOffset.UtcNow);
+            db.Invites.Add(invite);
+            await db.SaveChangesAsync();
+            reInvite = inviteToken;
+        }
+        async Task<(HttpStatusCode Status, string Body)> AcceptAsync(string password)
+        {
+            using var client = factory.CreateClient();
+            using var resp = await client.PostAsync($"/api/invites/{reInvite}/accept", Json(new { password }));
+            return (resp.StatusCode, await resp.Content.ReadAsStringAsync());
+        }
+
+        var attempts = new List<string>();
+        for (var i = 0; i < 5; i++) attempts.Add((await AcceptAsync($"guess number {i}")).Body);
+        var correct = await AcceptAsync("correct horse battery");
+
+        Assert.All(attempts.Take(4), b => Assert.Contains("enter its password", b));
+        Assert.Contains("too many failed attempts", attempts[4]);          // 第 5 次失敗就鎖
+        Assert.Equal(HttpStatusCode.Unauthorized, correct.Status);         // 鎖定中連正確密碼也不行
+        Assert.Contains("too many failed attempts", correct.Body);
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "owner@t.local", "correct horse battery")).Body); // 與登入同一個計數
+    }
+
+    [Fact]
     public async Task Login_is_rate_limited_per_email_the_same_way_for_real_and_unknown_accounts()
     {
         // 預設每個 email 每分鐘 10 次(Parity:Login:PerEmailPerMinute),鍵是正規化後的 email,存在與否一視同仁:

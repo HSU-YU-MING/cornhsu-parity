@@ -176,12 +176,22 @@ app.MapGet("/api/invites/{token}", async (string token, ServerDbContext db) =>
 });
 
 app.MapPost("/api/invites/{token}/accept", async (
-    string token, AcceptRequest req, ServerDbContext db,
-    UserManager<AppUser> users, SignInManager<AppUser> signIn) =>
+    string token, AcceptRequest req, HttpContext http, ServerDbContext db,
+    UserManager<AppUser> users, SignInManager<AppUser> signIn, IPasswordHasher<AppUser> hasher, LoginGuard guard) =>
 {
     var invite = await Invites.FindUsableAsync(db, token, DateTimeOffset.UtcNow);
     if (invite is null)
         return Results.Json(new { error = "this invite link is invalid, expired, or already used — ask the project owner for a new one." }, statusCode: 404);
+
+    // 既有帳號被重邀時這裡要驗密碼,等於另一個猜密碼的入口:與登入共用同一套額度、序列化與失敗計數(決策 #21)
+    var key = users.NormalizeEmail(invite.Email) ?? invite.Email;
+    if (!guard.TryAcquire(http.Connection.RemoteIpAddress, key, out var retryAfter))
+    {
+        http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Results.Json(new { error = "too many attempts — wait a minute and try again." }, statusCode: 429);
+    }
+    using var serialized = await guard.SerializeAsync(key, http.RequestAborted);
 
     var user = await users.FindByEmailAsync(invite.Email);
     if (user is null)
@@ -193,9 +203,25 @@ app.MapPost("/api/invites/{token}/accept", async (
     }
     else
     {
-        // 既有使用者被重邀(換角色/回鍋):要證明是本人——密碼對得上才接受
-        if (!await users.CheckPasswordAsync(user, req.Password))
-            return Results.Json(new { error = "an account with this email already exists — enter its password to accept." }, statusCode: 401);
+        // 既有使用者被重邀(換角色/回鍋):要證明是本人——密碼對得上才接受。鎖定中一律擋(也付一次驗證的成本)
+        var row = await db.LoginThrottles.FindAsync([key], http.RequestAborted);
+        if (guard.IsLockedOut(row))
+        {
+            LoginTiming.SpendOneVerification(hasher, req.Password);
+            return Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
+        }
+        if (!await users.CheckPasswordAsync(user, req.Password ?? ""))
+        {
+            var lockedNow = guard.RecordFailure(db, key, row);
+            await db.SaveChangesAsync(http.RequestAborted);
+            return Results.Json(new
+            {
+                error = lockedNow
+                    ? "too many failed attempts — try again in a few minutes."
+                    : "an account with this email already exists — enter its password to accept.",
+            }, statusCode: 401);
+        }
+        if (row is not null) db.LoginThrottles.Remove(row); // 驗過了:清掉失敗計數(隨下面接受邀請一起存)
     }
 
     Audit.Log(db, invite.ProjectId, user.Id, invite.Email, "invite-accepted", $"as {invite.Role}");

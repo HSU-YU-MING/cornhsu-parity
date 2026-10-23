@@ -206,6 +206,8 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
     Identity 的 AccessFailedCount/LockoutEnd——升級時的 migration 把它們的現況(計數 > 0、或鎖定還沒到期)搬進新表,
     被鎖的人不會一升級就解鎖。沒有容量上限,也就沒有淘汰。
   - 同一個正規化 email 的登入在伺服器內一次只跑一個,並發下計數正確。
+  - 接受邀請也走同一套:既有帳號被重邀時要驗密碼,這個入口與登入共用額度、序列化與失敗計數(錯 5 次就鎖,
+    鎖定中登入與接受邀請都擋)。
   - 登入額度:每個用戶端 IP(IPv6 以 /64 為一個,IPv4-mapped 位址當成 IPv4)每分鐘 20 次、每個 email 每分鐘 10 次(一分鐘滑動視窗;設定
     `Parity:Login:PerIpPerMinute`、`Parity:Login:PerEmailPerMinute`;設錯——0、負數、不是整數——伺服器啟動時就失敗並點名設定鍵),超過回 429 + `Retry-After`,在任何查詢
     與密碼驗證之前擋下,存在與否一視同仁。
