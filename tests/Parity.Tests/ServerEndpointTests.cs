@@ -672,6 +672,27 @@ public class ServerEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task IPv6_clients_share_the_ip_budget_per_64_prefix()
+    {
+        // 驗證者:IPv6 用戶端通常拿到一整個 /64,逐位址算額度等於沒有額度(換一個位址就是新的 20 次)。
+        // 以 /64 分桶;IPv4-mapped 的 IPv6 位址與原本的 IPv4 同一桶
+        await using var factory = Factory(s => s.AddSingleton<IStartupFilter, FakeClientIp>());
+
+        for (var i = 0; i < 20; i++)
+            await LoginAsync(factory, $"ghost{i}@t.local", "whatever it is", $"2001:db8:1:2::{i + 1:x}");
+        var samePrefix = await LoginAsync(factory, "extra@t.local", "whatever it is", "2001:db8:1:2:ffff:ffff:ffff:9");
+        var otherPrefix = await LoginAsync(factory, "extra@t.local", "whatever it is", "2001:db8:1:3::1");
+
+        for (var i = 0; i < 20; i++)
+            await LoginAsync(factory, $"v4-{i}@t.local", "whatever it is", "203.0.113.50");
+        var mapped = await LoginAsync(factory, "v4-extra@t.local", "whatever it is", "::ffff:203.0.113.50");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, samePrefix.Status);
+        Assert.Equal(HttpStatusCode.Unauthorized, otherPrefix.Status);
+        Assert.Equal(HttpStatusCode.TooManyRequests, mapped.Status);
+    }
+
+    [Fact]
     public async Task Login_is_rate_limited_per_email_the_same_way_for_real_and_unknown_accounts()
     {
         // 預設每個 email 每分鐘 10 次(Parity:Login:PerEmailPerMinute),鍵是正規化後的 email,存在與否一視同仁:

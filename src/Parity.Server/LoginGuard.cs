@@ -8,7 +8,7 @@ using Parity.Server.Data;
 /// 登入的額度、序列化與鎖定(決策 #21;2.0.0 審查後改寫)。目標:回應的內容與時間都不透露帳號存不存在,
 /// 而且並發、灌爆都繞不過鎖定。三層,順序就是 /api/auth/login 的順序:
 /// <list type="number">
-/// <item>額度:每個用戶端 IP、每個正規化 email 各一個一分鐘的滑動視窗(預設 20 次、10 次;設定
+/// <item>額度:每個用戶端 IP(IPv6 以 /64 為一個)、每個正規化 email 各一個一分鐘的滑動視窗(預設 20 次、10 次;設定
 ///   <c>Parity:Login:PerIpPerMinute</c>、<c>Parity:Login:PerEmailPerMinute</c>)。超過就 429,
 ///   在任何查詢與密碼驗證之前擋下,存在與否一視同仁。</item>
 /// <item>序列化:同一個正規化 email 的登入一次只跑一個(不同 email 互不影響),
@@ -71,7 +71,7 @@ internal sealed class LoginGuard : IDisposable
     /// <summary>先扣這個 IP 的額度,再扣這個 email 的;任一不夠就回 false 與建議的等待時間。</summary>
     public bool TryAcquire(IPAddress? client, string normalizedEmail, out TimeSpan retryAfter)
     {
-        foreach (var (limiter, key) in new[] { (_perIp, client?.ToString() ?? "unknown"), (_perEmail, normalizedEmail) })
+        foreach (var (limiter, key) in new[] { (_perIp, IpBucket(client)), (_perEmail, normalizedEmail) })
         {
             using var lease = limiter.AttemptAcquire(key);
             if (lease.IsAcquired) continue;
@@ -80,6 +80,20 @@ internal sealed class LoginGuard : IDisposable
         }
         retryAfter = TimeSpan.Zero;
         return true;
+    }
+
+    /// <summary>
+    /// IP 額度的分桶:IPv4 一個位址一桶;IPv6 以 /64 一桶(用戶端通常拿到一整個 /64,逐位址算等於沒有額度);
+    /// IPv4-mapped 的 IPv6 位址當成原本的 IPv4。沒有位址(TestServer)歸到 "unknown"。
+    /// </summary>
+    internal static string IpBucket(IPAddress? client)
+    {
+        if (client is null) return "unknown";
+        if (client.IsIPv4MappedToIPv6) client = client.MapToIPv4();
+        if (client.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return client.ToString();
+        var bytes = client.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new IPAddress(bytes) + "/64";
     }
 
     /// <summary>同一個正規化 email 一次只放行一個;Dispose 才放下一個。</summary>
