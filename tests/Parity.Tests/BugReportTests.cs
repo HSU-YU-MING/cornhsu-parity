@@ -145,6 +145,23 @@ public class BugReportTests
     }
 
     [Fact]
+    public async Task The_summary_describes_values_the_way_the_engine_reads_them()
+    {
+        // 驗證者:compare.position "RELATIVE" 是合法值(引擎不分大小寫),摘要卻印 <other>;designToken "ENV:X"
+        // 引擎照樣當環境變數讀,摘要卻說成 literal value。照引擎的讀法描述
+        using var dir = new TempDir();
+        var config = dir.Write("parity.config.json", """
+            { "designFile": "d.json", "designToken": "ENV:FIGMA_TOKEN", "compare": { "position": "RELATIVE" },
+              "targets": [{ "route": "/", "frame": "", "url": "./page.html" }] }
+            """);
+
+        var r = await Cli.RunAsync("bug-report", "--config", config);
+
+        Assert.Contains("compare.position: relative", r.Out);
+        Assert.Contains("designToken: read from an environment variable", r.Out);
+    }
+
+    [Fact]
     public void A_report_too_long_for_a_link_keeps_only_the_summary_fields_in_the_url()
     {
         var fields = new Dictionary<string, string> { ["version"] = "2.0.0+abc1234", ["os"] = "Windows x64" };

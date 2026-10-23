@@ -40,7 +40,7 @@ internal sealed record ConfigSummary(
             DesignToken: config.DesignToken switch
             {
                 null => "not set",
-                var t when t.StartsWith("env:", StringComparison.Ordinal) => "read from an environment variable",
+                var t when t.StartsWith("env:", StringComparison.OrdinalIgnoreCase) => "read from an environment variable", // 與 ParityConfig 同一個比法
                 _ => "literal value in the config",
             },
             HasTokensFile: config.TokensFile is not null,
@@ -50,7 +50,8 @@ internal sealed record ConfigSummary(
             Tolerances: config.Tolerances,
             FailOn: config.Gate.FailOn.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過只有四個等級名
             MinMatchRate: config.Gate.MinMatchRate,
-            ComparePosition: config.Compare.Position is "relative" or "none" ? config.Compare.Position : "<other>");
+            // 載入時已驗過只有 relative/none(不分大小寫);印引擎讀到的小寫值
+            ComparePosition: config.Compare.Position.ToLowerInvariant() is "relative" or "none" ? config.Compare.Position.ToLowerInvariant() : "<other>");
     }
 
     /// <summary>只看網址的種類,不留網址本身。</summary>
