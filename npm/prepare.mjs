@@ -59,6 +59,13 @@ for (const t of TARGETS) {
     console.warn(`⚠ ${t.rid}:找不到 .playwright/node,可能 Playwright 版面有變,請確認體積`);
   }
 
+  // 授權:平台套件是散布第三方元件的那一包(.NET runtime、ASP.NET Core、Playwright driver、
+  // SQLite 原生檔、ImageSharp…),所以帶上 Parity 自己的 LICENSE 與第三方授權聲明。
+  // driver 自己的 NOTICE 在 bin/.playwright/package/,上面只刪 .playwright/node,不會動到它。
+  // 來源檔不存在時 cp 會丟例外、整個 prepare 失敗——寧可發不出去,也不要發出缺授權的包。
+  await cp(path.join(root, "LICENSE"), path.join(out, "LICENSE"));
+  await cp(path.join(root, "THIRD-PARTY-NOTICES.md"), path.join(out, "THIRD-PARTY-NOTICES.md"));
+
   await writeFile(
     path.join(out, "package.json"),
     JSON.stringify(
@@ -75,7 +82,8 @@ for (const t of TARGETS) {
         author: "許彧銘 Hsu Yu-Ming (https://cornhsu.com/)",
         os: [t.os],
         cpu: [t.cpu],
-        files: ["bin/"],
+        // npm 會自動收錄 LICENSE,但不會自動收錄 THIRD-PARTY-NOTICES.md;兩個都明列,不靠隱含規則
+        files: ["bin/", "LICENSE", "THIRD-PARTY-NOTICES.md"],
       },
       null,
       2
@@ -105,5 +113,7 @@ manifest.optionalDependencies = Object.fromEntries(
 await writeFile(path.join(mainOut, "package.json"), JSON.stringify(manifest, null, 2) + "\n");
 
 await cp(path.join(root, "README.md"), path.join(mainOut, "README.md"));
+// 主套件只有自己的啟動腳本,沒有第三方程式碼,帶 LICENSE 就夠(npm 會自動收錄,不必列進 files)
+await cp(path.join(root, "LICENSE"), path.join(mainOut, "LICENSE"));
 
 console.log(`✔ cornhsu-parity(${built.length} 個平台,版本 ${version})`);

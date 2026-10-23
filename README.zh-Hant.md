@@ -421,4 +421,5 @@ XamlContrast 回答「**做出來的東西看不看得見**」(WCAG 對比,靜�
 
 ## License
 
-MIT
+MIT。NuGet 與 npm 套件另外夾帶第三方元件(Playwright、ImageSharp、SQLite 等;npm 套件還含 .NET runtime),
+各自的授權列在 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)(英文),這份檔也隨 NuGet 套件與每個 npm 平台套件一起散布。

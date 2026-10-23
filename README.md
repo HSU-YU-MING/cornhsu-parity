@@ -517,4 +517,7 @@ of this project's future `WpfImplementationSource` desktop adapter (see §4.5 of
 
 ## License
 
-MIT
+MIT. The NuGet and npm packages also bundle third-party components (Playwright, ImageSharp,
+SQLite and others; the npm packages also include the .NET runtime). Their licenses are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which ships inside the NuGet package and every npm
+platform package.
