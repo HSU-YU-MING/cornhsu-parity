@@ -13,5 +13,7 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // *.test.ts 由 npm test(node:test + 型別剝除)跑,不進 tsc / vite
+  "exclude": ["src/**/*.test.ts"]
 }

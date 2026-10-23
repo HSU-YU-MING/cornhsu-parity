@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Parity.Engine;
 
@@ -23,12 +24,12 @@ internal static class ServeCommand
 
     public static async Task<int> RunAsync(string[] args, bool mapMode = false)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--port=", "--watch", "--open");
+        var opts = CliOptions.Parse(args, Usage.Flags.Serve);
         if (opts.ContainsKey("--help")) return Usage.Print(mapMode ? Usage.Map : Usage.Serve);
+        var port = CliOptions.PositiveIntOrDefault(opts, "--port", 4321, max: 65535);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
-        var port = int.TryParse(opts.GetValueOrDefault("--port"), out var p) ? p : 4321;
         var watch = opts.ContainsKey("--watch");
 
         await using var session = new ScanSession(configPath, captureScreenshots: true);
@@ -94,7 +95,7 @@ internal static class ServeCommand
             gateFail = state.GateFail,
             gateReasons = state.GateReasons,
             score = state.Score,
-            figmaFileKey = session.Config.FigmaFileKey,
+            figmaFileKey = session.Config.FigmaLinkFileKey, // 只有設計來源真的是 Figma 才給(UI 拿它組連結)
             failOn = session.Config.Gate.FailOn,
             watch,
             targets = state.Scans.Select((s, i) => new
@@ -168,19 +169,24 @@ internal static class ServeCommand
             watchers = StartWatchers(session, state);
 
         var url = $"http://127.0.0.1:{port}/{(mapMode ? "#map" : "")}";
-        Console.WriteLine($"\nreport UI: \x1b[1m{url}\x1b[0m{(watch ? " (watch mode)" : "")}");
-        Console.WriteLine("Ctrl+C to stop.");
-
-        if (mapMode || opts.ContainsKey("--open"))
-            TryOpenBrowser(url);
-
         try
         {
-            await app.RunAsync();
+            // 先真的開始監聽,才印網址、開瀏覽器:印出來的網址當下就要連得上(map 與 --open 會立刻開瀏覽器,
+            // 以前在 RunAsync 之前就印,慢一點的機器上瀏覽器會先吃到 connection refused);
+            // 埠被占用之類的啟動錯誤也因此在印網址之前就丟出來
+            await app.StartAsync();
+            Console.WriteLine($"\nreport UI: \x1b[1m{url}\x1b[0m{(watch ? " (watch mode)" : "")}");
+            Console.WriteLine("Ctrl+C to stop.");
+
+            if (mapMode || opts.ContainsKey("--open"))
+                TryOpenBrowser(url);
+
+            await app.WaitForShutdownAsync();
         }
         finally
         {
             foreach (var w in watchers) w.Dispose();
+            await app.DisposeAsync();
         }
         return 0;
     }
@@ -348,6 +354,26 @@ internal static class CliOptions
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// 正整數旗標(--width/--height/--port):沒給 → 預設值;給了就必須是正整數,否則是用法錯誤(exit 2)。
+    /// 1.x 非整數時靜默退回預設值(`snapshot --width 375px` 會以 1280 寬凍結手機基準),0 與負數則原樣
+    /// 交給瀏覽器——與本類別「靜默忽略會讓查詢變事故」的原則相反,2.0.0 起收緊。
+    /// </summary>
+    /// <summary>
+    /// 正整數旗標(--width、--height、--port)。只收十進位數字:NumberStyles.None 不收正負號、前後空白、
+    /// 千分位(`+375`、` 375`、`-0` 都是用法錯誤)。<paramref name="max"/> 給了就一併檢查上限(port 是 65535)。
+    /// </summary>
+    public static int PositiveIntOrDefault(Dictionary<string, string?> opts, string flag, int fallback, int max = int.MaxValue)
+    {
+        if (opts.GetValueOrDefault(flag) is not { } raw) return fallback;
+        var parsed = int.TryParse(raw, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value);
+        if (parsed && value > 0 && value <= max) return value;
+        // 純數字但超出範圍(含 int 放不下的長數字)時,說出範圍;其餘是「不是正整數」
+        if (max != int.MaxValue && raw.Length > 0 && raw.All(char.IsAsciiDigit) && (!parsed || value > 0))
+            throw new CliUsageException($"{flag} expects an integer from 1 to {max} (got \"{ConsoleText.Safe(raw)}\")");
+        throw new CliUsageException($"{flag} expects a positive integer (got \"{ConsoleText.Safe(raw)}\")");
     }
 }
 

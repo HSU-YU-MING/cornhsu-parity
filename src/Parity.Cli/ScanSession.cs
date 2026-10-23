@@ -31,6 +31,7 @@ public sealed class ScanSession : IAsyncDisposable
         if (Config.Targets.Count == 0)
             throw new InvalidOperationException("the config file declares no targets.");
 
+
         _designSource = CreateDesignSource(Config, refreshCache);
         _implSource = new WebImplementationSource(
             new WebCaptureOptions(Headless: headless, CaptureScreenshot: captureScreenshots));

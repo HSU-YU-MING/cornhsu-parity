@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- 不單獨發套件:隨 Cornhsu.Parity 這個 dotnet tool 打包,也隨 Parity.Server 部署 -->
+    <IsPackable>false</IsPackable>
+    <!--
+      報告契約:report.json 的型別(ReportDocument 一族)、序列化設定(ReportWire)、分數(FidelityScore)、
+      baseline 比對(DiffRecord / BaselineComparer)。從 Parity.Engine 拆出來,是為了讓 Parity.Server
+      **結構上**碰不到擷取端:這個專案刻意沒有任何套件相依——不准加 Microsoft.Playwright(鐵則:雲端不跑瀏覽器),
+      也不加 ImageSharp。命名空間沿用 Parity.Engine(型別不是公開面,搬組件不改 wire,也不必改所有 using)。
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Parity.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -74,5 +74,28 @@ public class DesignLintTests
         var root = Design("1", "frame",
             children: Design("2", "list", itemSpacing: 13));
         Assert.Empty(DesignLint.Run(root, onlyColors));
+
+        // 反過來:只定義尺寸 token → 顏色維度不 lint(不能拿「零個顏色」當允許集合,把每個顏色都報掉)
+        var onlySizes = new DesignTokens(new Dictionary<string, string> { ["space-4"] = "16px" });
+        var colorful = Design("1", "frame",
+            children: Design("2", "cta", fill: new Rgba(0xDC, 0x26, 0x26), itemSpacing: 16));
+        Assert.Empty(DesignLint.Run(colorful, onlySizes));
+    }
+
+    [Fact]
+    public void Corner_radius_and_each_distinct_padding_value_are_checked()
+    {
+        // 四邊內距相同的值只報一次(20/13/20/13 → 只有 13 違規,而且一條);圓角走同一份尺寸 scale
+        var root = Design("1", "frame", children:
+        [
+            Design("2", "card", padding: new Insets(20, 13, 20, 13)),
+            Design("3", "chip") with { CornerRadius = 6 },
+        ]);
+
+        var violations = DesignLint.Run(root, Tokens);
+
+        Assert.Equal(2, violations.Count);
+        Assert.Contains(violations, v => v is { Layer: "card", Prop: "padding", Value: "13px", NearestToken: "space-5" });
+        Assert.Contains(violations, v => v is { Layer: "chip", Prop: "cornerRadius", Value: "6px" });
     }
 }

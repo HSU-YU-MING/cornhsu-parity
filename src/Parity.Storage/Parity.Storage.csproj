@@ -9,7 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Parity.Engine\Parity.Engine.csproj" />
+    <!-- 只用到 DiffRecord / BaselineComparer / Severity:引用報告契約,不引用含擷取端的引擎 -->
+    <ProjectReference Include="..\Parity.Report\Parity.Report.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- 蓋掉 EF Sqlite 傳遞進來的 2.1.11(NU1903 高風險弱點),pin 到修補過的原生 SQLite -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />

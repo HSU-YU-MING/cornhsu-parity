@@ -144,6 +144,33 @@ public class ServerQueriesTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Runs_without_a_branch_are_listed_as_empty_string_and_that_string_filters_back_to_them()
+    {
+        // 手動 push(不在 CI、沒給 --branch)的 run 沒有分支。分支清單把它寫成 "",
+        // 前端選了 "" 再傳回來,總覽與趨勢要剛好篩出這些 run——不是「不過濾」,也不是查 Branch == ""
+        var manual = new Run
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = _projectId,
+            CreatedAt = DateTimeOffset.UnixEpoch.AddHours(5),
+            Score = 42,
+            GateFailed = true,
+            Branch = null,
+            RawReportGzip = ReportBlob.Compress("{}"),
+        };
+        manual.Pages.Add(Page("/", 42));
+        _db.Runs.Add(manual);
+        await _db.SaveChangesAsync();
+
+        var branches = await Queries.BranchesAsync(_db, _memberId);
+        Assert.Equal(["pr-1", "", "main"], branches.Select(b => b.Branch)); // 近 → 遠
+
+        var card = Assert.Single(await Queries.OverviewAsync(_db, _memberId, branch: ""));
+        Assert.Equal(("/", 42, 1), (card.Route, card.LastScore, card.RunCount));
+        Assert.Equal([42], (await Queries.TrendAsync(_db, _memberId, _projectId, "/", branch: "")).Select(p => p.Score));
+    }
+
+    [Fact]
     public async Task Non_members_see_nothing()
     {
         Assert.Empty(await Queries.OverviewAsync(_db, _strangerId));

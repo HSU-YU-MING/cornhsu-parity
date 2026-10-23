@@ -12,7 +12,7 @@ namespace Parity.Tests;
 /// </summary>
 public class ServerIngestTests
 {
-    private static string SampleReportJson()
+    private static string SampleReportJson(ReportDirection direction = ReportDirection.Forward)
     {
         var diffs = new List<PropDiff>
         {
@@ -28,7 +28,7 @@ public class ServerIngestTests
             nodes,
             [new UnmatchedNode("Ghost", "10:9", "no-anchor")],
             new ReportSummary(3, 2, 1, 1, 0, 1, 0, 1, Severity.Serious));
-        return JsonSerializer.Serialize(ReportDocument.Of([report]), ReportWire.Indented);
+        return JsonSerializer.Serialize(ReportDocument.Of([report]) with { Direction = direction }, ReportWire.Indented);
     }
 
     [Fact]
@@ -51,6 +51,34 @@ public class ServerIngestTests
         // 逐條落差刻意不進關聯表(零讀者、36k 列/9.95MB 的實測教訓)——
         // 落差的真相源是原文 blob,解壓回來逐位元等於送進去的
         Assert.Contains("paddingTop", ReportBlob.Decompress(run.RawReportGzip));
+    }
+
+    [Fact]
+    public void A_reverse_report_is_rejected()
+    {
+        // check --reverse 的報告期望/實際對調,收進來會污染趨勢與 gate(push 端也會先擋,這裡是第二道)
+        var raw = SampleReportJson(ReportDirection.Reverse);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => RunIngest.Parse(raw, new RunMetadata(null, null, null), DateTimeOffset.UnixEpoch));
+        Assert.Contains("reverse", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("\"Reverse\"")]
+    [InlineData("\"sideways\"")]
+    [InlineData("1")]
+    [InlineData("null")]
+    public void An_unknown_direction_is_bad_data(string direction)
+    {
+        // 審查第 6 條:伺服器與 CLI 同一套讀法(Parity.Report 的 ReportDirectionConverter)。原本 "Reverse" 與
+        // 數字 1 都讀成 reverse、5 讀成未定義的值——前者被當 reverse 拒收,後者竟當成一般 run 收下
+        var raw = SampleReportJson().Replace("\"direction\": \"forward\"", $"\"direction\": {direction}");
+        Assert.Contains($"\"direction\": {direction}", raw);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => RunIngest.Parse(raw, new RunMetadata(null, null, null), DateTimeOffset.UnixEpoch));
+        Assert.Contains("\"direction\" must be \"forward\" or \"reverse\"", ex.Message);
     }
 
     [Fact]

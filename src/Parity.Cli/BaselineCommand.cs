@@ -23,7 +23,7 @@ internal static class BaselineCommand
     /// <summary>跑一次掃描,把當前落差存成新的 baseline 快照。</summary>
     private static async Task<int> SaveAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--target=", "--headed");
+        var opts = CliOptions.Parse(args, Usage.Flags.BaselineSave);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Baseline);
         var configPath = ResolveConfig(opts);
 
@@ -58,13 +58,20 @@ internal static class BaselineCommand
     /// <summary>列出歷史 baseline 快照(新到舊)。</summary>
     private static async Task<int> ListAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=");
+        var opts = CliOptions.Parse(args, Usage.Flags.BaselineList);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Baseline);
         var configPath = ResolveConfig(opts);
         var config = ParityConfig.Load(configPath);
 
-        await using var store = new BaselineStore(BaselineDbPath(config));
-        var history = await store.HistoryAsync();
+        // 唯讀查詢不建檔:開 BaselineStore 就會跑 migration 建出空 db,被順手 commit 之後
+        // CI 的 `check --baseline` 就一直走「no baseline yet」。只有 `baseline save` 會建檔
+        var dbPath = BaselineDbPath(config);
+        IReadOnlyList<(int Id, DateTime CreatedAt, string? Commit, int DiffCount, int? Score)> history = [];
+        if (File.Exists(dbPath))
+        {
+            await using var store = new BaselineStore(dbPath);
+            history = await store.HistoryAsync();
+        }
         if (history.Count == 0)
         {
             Console.WriteLine("No baseline yet. Run `parity baseline save` first.");
@@ -90,8 +97,9 @@ internal static class BaselineCommand
             parity baseline — diff baselines and their history
 
             Usage:
-              parity baseline save [--config <path>] [--target <route>]
+              parity baseline save [--config <path>] [--target <route>] [--headed]
                   Run one scan and store the current diffs as a new baseline snapshot
+                  (--headed shows the browser window, for debugging)
               parity baseline list [--config <path>]
                   List the stored baseline snapshots
 

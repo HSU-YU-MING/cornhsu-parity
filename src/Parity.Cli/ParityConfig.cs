@@ -10,6 +10,14 @@ public sealed class ParityConfig
     /// <summary>Figma 檔案 key。與 DesignFile 二擇一。</summary>
     public string? FigmaFileKey { get; set; }
 
+    /// <summary>
+    /// 報告裡「圖層名連回 Figma」要用的 file key:只有設計來源**真的是 Figma** 時才有。
+    /// designFile 優先於 figmaFileKey(ScanSession);init 範本預設帶 figmaFileKey,改走 snapshot
+    /// 時沒刪掉的話,designId 是 CSS selector,拿它組 figma.com 連結點了就壞。
+    /// </summary>
+    [JsonIgnore]
+    public string? FigmaLinkFileKey => DesignFile is null ? FigmaFileKey : null;
+
     /// <summary>本機設計 JSON 檔路徑(離線測試/示範/snapshot 基準用)。與 FigmaFileKey 二擇一。</summary>
     public string? DesignFile { get; set; }
 
@@ -34,15 +42,58 @@ public sealed class ParityConfig
     /// </summary>
     public string? BaselineFile { get; set; }
 
-    public List<TargetConfig> Targets { get; set; } = [];
-    public CompareConfig Compare { get; set; } = new();
-    public ToleranceConfig Tolerances { get; set; } = new();
+    // 區段在 JSON 裡寫成 null(`"targets": null`)時,反序列化照樣成功、屬性就是 null——
+    // 原本一碰就是 NullReferenceException,使用者只看到 "Object reference not set to an instance of an object."。
+    // getter 改成丟指名欄位的錯。刻意在「用到時」才丟,不在載入時一律檢查:report/push/baseline list
+    // 不碰 targets/tolerances,那些指令的行為(含 exit code)一點都不變;gate/compare 載入時就會讀
+    // (Validate),所以照舊在載入時報錯。
+    private List<TargetConfig>? _targets = [];
+    private CompareConfig? _compare = new();
+    private ToleranceConfig? _tolerances = new();
+    private GateConfig? _gate = new();
+
+    public List<TargetConfig> Targets
+    {
+        get
+        {
+            var targets = _targets ?? throw NullSection("targets", "an array of targets (use [] for none)");
+            var hole = targets.IndexOf(null!);
+            if (hole >= 0) throw NullSection($"targets[{hole}]", "a target object");
+            return targets;
+        }
+        set => _targets = value;
+    }
+
+    public CompareConfig Compare
+    {
+        get => _compare ?? throw NullSection("compare", "an object, e.g. { \"position\": \"relative\" } (or remove the key)");
+        set => _compare = value;
+    }
+
+    public ToleranceConfig Tolerances
+    {
+        get => _tolerances ?? throw NullSection("tolerances", "an object, e.g. { \"sizePx\": 2 } (or remove the key for the defaults)");
+        set => _tolerances = value;
+    }
+
     public List<string> Ignore { get; set; } = [];
-    public GateConfig Gate { get; set; } = new();
+
+    public GateConfig Gate
+    {
+        get => _gate ?? throw NullSection("gate", "an object, e.g. { \"failOn\": [\"critical\", \"serious\"] } (or remove the key for the defaults)");
+        set => _gate = value;
+    }
 
     /// <summary>設定檔所在目錄(相對路徑的基準)。</summary>
     [JsonIgnore]
     public string BaseDirectory { get; set; } = ".";
+
+    /// <summary>設定檔路徑(錯誤訊息用;程式裡直接 new 出來的設定沒有)。</summary>
+    [JsonIgnore]
+    public string? SourcePath { get; private set; }
+
+    private InvalidOperationException NullSection(string field, string expected)
+        => new($"config {SourcePath ?? "(in memory)"}: \"{field}\" is null — it must be {expected}.");
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -59,6 +110,7 @@ public sealed class ParityConfig
         var config = JsonSerializer.Deserialize<ParityConfig>(File.ReadAllText(path), SerializerOptions)
             ?? throw new InvalidOperationException($"could not parse config file: {path}");
         config.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+        config.SourcePath = path;
         config.Validate(path);
         return config;
     }
@@ -66,10 +118,13 @@ public sealed class ParityConfig
     /// <summary>設定值驗證——拼錯的 gate 等級或超界的門檻,在載入時就給看得懂的錯,而不是跑到一半炸。</summary>
     private void Validate(string path)
     {
+        if (Gate.FailOn is null)
+            throw NullSection("gate.failOn", "an array of severities, e.g. [\"critical\", \"serious\"] (use [] to gate on match integrity only)");
         foreach (var s in Gate.FailOn)
-            if (!Enum.TryParse<Severity>(s, ignoreCase: true, out _))
+            if (s is null || !FailOnSeverities.ContainsKey(s))
                 throw new InvalidOperationException(
-                    $"config {path}: gate.failOn contains \"{s}\", which is not a valid severity (use: minor, medium, serious, critical).");
+                    $"config {path}: gate.failOn contains \"{ConsoleText.Safe(s)}\", which is not a valid severity " +
+                    "(use: minor, medium, serious, critical — one per string).");
         if (Gate.MinMatchRate is < 0 or > 1)
             throw new InvalidOperationException(
                 $"config {path}: gate.minMatchRate must be between 0 and 1 (got: {Gate.MinMatchRate}).");
@@ -82,6 +137,19 @@ public sealed class ParityConfig
                 $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
                 "fill may be omitted and sampled from the image).");
     }
+
+    /// <summary>
+    /// gate.failOn 的白名單(不分大小寫)——Validate 與 GateFailReason 共用這一張表。
+    /// 2.0.0 前用 <c>Enum.TryParse</c>,它另外收下 <c>none</c>、數字與逗號旗標語法(<c>"serious, critical"</c>
+    /// = 3|4 = 7):不是讓 gate 靜默失效,就是被讀成別的等級。
+    /// </summary>
+    private static readonly Dictionary<string, Severity> FailOnSeverities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["minor"] = Severity.Minor,
+        ["medium"] = Severity.Medium,
+        ["serious"] = Severity.Serious,
+        ["critical"] = Severity.Critical,
+    };
 
     /// <summary>從 cwd 往上找 parity.config.json。</summary>
     public static string? FindConfigFile(string startDirectory)
@@ -122,8 +190,9 @@ public sealed class ParityConfig
     public string? GateFailReason(FidelityReport report)
     {
         if (MatchIntegrityFailure(report) is { } untrusted) return untrusted;
-        var failOn = Gate.FailOn.Select(s => Enum.Parse<Severity>(s, ignoreCase: true)).ToHashSet();
-        return report.Nodes.SelectMany(n => n.Diffs).Any(diff => failOn.Contains(diff.Severity))
+        var failOn = Gate.FailOn.Select(s => FailOnSeverities[s]).ToHashSet();
+        // soft 落差(font-family)不擋 gate(2.0.0 起;與分數口徑一致——soft 也不扣分)
+        return report.Nodes.SelectMany(n => n.Diffs).Any(diff => !diff.Soft && failOn.Contains(diff.Severity))
             ? $"has {string.Join("/", Gate.FailOn)} severity diffs"
             : null;
     }

@@ -15,8 +15,7 @@ internal static class PushCommand
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args,
-            "--config=", "--in=", "--server=", "--token=", "--commit=", "--branch=", "--gate-exit=");
+        var opts = CliOptions.Parse(args, Usage.Flags.Push);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Push);
 
         var server = opts.GetValueOrDefault("--server")
@@ -54,20 +53,45 @@ internal static class PushCommand
             && Environment.GetEnvironmentVariable("GITHUB_REPOSITORY") is { } repo
             ? $"{srv.TrimEnd('/')}/{repo}" : null;
 
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        using var request = new HttpRequestMessage(HttpMethod.Post,
-            new Uri(new Uri(server.TrimEnd('/') + "/"), "api/runs"))
+        // 大報告送 Expect: 100-continue:伺服器(Kestrel 上限 20 MB)依 Content-Length 先回 413/401,
+        // 本文根本不送。不這樣做的話,Kestrel 在上傳途中回 413 並關連線,客戶端常常只拿到
+        // "An error occurred while sending the request.",看不到下面寫好的 413 提示(實測約一半)。
+        // 等待上限拉到 15 秒(預設 1 秒,冷啟動的伺服器來不及回,競態又回來);小報告不必等這一趟。
+        // 代價:中間的 proxy 若不回 100 也不回最終狀態,大報告每次會多等最多 15 秒才開始送本文;
+        // 若它直接回 417 Expectation Failed,拿掉 Expect 重送一次(加 Expect 之前,同樣的推送是會成功的)
+        using var http = new HttpClient(new SocketsHttpHandler { Expect100ContinueTimeout = TimeSpan.FromSeconds(15) })
         {
-            Content = new StringContent(raw, Encoding.UTF8, "application/json"),
+            Timeout = TimeSpan.FromSeconds(60),
         };
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        if (commit is not null) request.Headers.Add("X-Parity-Commit", commit);
-        if (branch is not null) request.Headers.Add("X-Parity-Branch", branch);
-        if (actor is not null) request.Headers.Add("X-Parity-Triggered-By", actor);
-        if (repoUrl is not null) request.Headers.Add("X-Parity-Repo-Url", repoUrl);
-        if (gateFailed is not null) request.Headers.Add("X-Parity-Gate", gateFailed.Value ? "fail" : "pass");
+        HttpRequestMessage BuildRequest(bool expectContinue)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post,
+                new Uri(new Uri(server.TrimEnd('/') + "/"), "api/runs"))
+            {
+                Content = new StringContent(raw, Encoding.UTF8, "application/json"),
+            };
+            if (expectContinue) request.Headers.ExpectContinue = true;
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            if (commit is not null) request.Headers.Add("X-Parity-Commit", commit);
+            if (branch is not null) request.Headers.Add("X-Parity-Branch", branch);
+            if (actor is not null) request.Headers.Add("X-Parity-Triggered-By", actor);
+            if (repoUrl is not null) request.Headers.Add("X-Parity-Repo-Url", repoUrl);
+            if (gateFailed is not null) request.Headers.Add("X-Parity-Gate", gateFailed.Value ? "fail" : "pass");
+            return request;
+        }
 
-        using var response = await http.SendAsync(request);
+        async Task<HttpResponseMessage> SendAsync()
+        {
+            var expect = raw.Length > 1024 * 1024;
+            using var first = BuildRequest(expect);
+            var reply = await http.SendAsync(first);
+            if (!expect || reply.StatusCode != System.Net.HttpStatusCode.ExpectationFailed) return reply;
+            reply.Dispose();
+            using var retry = BuildRequest(expectContinue: false);
+            return await http.SendAsync(retry);
+        }
+
+        using var response = await SendAsync();
         var body = await response.Content.ReadAsStringAsync();
 
         if (response.IsSuccessStatusCode)
@@ -80,11 +104,20 @@ internal static class PushCommand
             Console.WriteLine($"  view     {viewUrl}");
 
             // GitHub Actions:把儀表板連結寫進 job summary——紅燈 PR 到「PM 看得懂的那頁」
-            // 之間不再靠人肉找(M4.5 必補 #4)
+            // 之間不再靠人肉找(M4.5 必補 #4)。圖示用**伺服器記下的最終判定**(回應的 gateFailed):
+            // CLI 算不出 gate(沒給 --gate-exit、找不到 config)時伺服器會用預設口徑判,
+            // 只看 CLI 自己的結果會在儀表板紅字時顯示 ✅。兩邊都不知道就不放圖示,不假裝通過
             if (Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY") is { } summaryPath)
+            {
+                var verdict = (Bool(ack, "gateFailed") ?? gateFailed) switch
+                {
+                    true => " ❌",
+                    false => " ✅",
+                    null => "",
+                };
                 await File.AppendAllTextAsync(summaryPath,
-                    $"**Parity** — [{Str(ack, "project")} {Str(ack, "score")}/100 " +
-                    $"{(gateFailed == true ? "❌" : "✅")}]({viewUrl})\n");
+                    $"**Parity** — [{Str(ack, "project")} {Str(ack, "score")}/100{verdict}]({viewUrl})\n");
+            }
             return 0;
         }
 
@@ -123,6 +156,16 @@ internal static class PushCommand
         if (doc?.Reports is null)
             throw new InvalidOperationException(
                 $"{path} is not a Parity report (expected the {{ schemaVersion, reports }} envelope that `parity check` writes).");
+        // check --reverse 的報告:期望/實際對調、不把關,推上去會被當成一般 run 污染趨勢
+        if (doc.Direction == ReportDirection.Reverse)
+            throw new InvalidOperationException(
+                $"{path} was written by `parity check --reverse` (expected/actual swapped, never gated) — " +
+                "it is not pushed to the dashboard. Push a report from a normal `parity check`.");
+        // 比自己新的報告:這顆 CLI 讀不全(新欄位會被丟掉),而伺服器也會回 422——在本機就講清楚
+        if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
+            throw new InvalidOperationException(
+                $"{path} has report schemaVersion {doc.SchemaVersion}, which is newer than this Parity understands " +
+                $"({ReportDocument.CurrentSchemaVersion}) — it was written by a newer Parity; push it with that version.");
         return doc;
     }
 
@@ -144,6 +187,12 @@ internal static class PushCommand
 
     private static string Str(JsonElement e, string prop)
         => e.TryGetProperty(prop, out var v) ? v.ToString() : "?";
+
+    private static bool? Bool(JsonElement e, string prop)
+        => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(prop, out var v)
+            && v.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? v.GetBoolean()
+            : null;
 
     private static string ExtractError(string body)
     {

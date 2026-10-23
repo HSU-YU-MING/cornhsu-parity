@@ -10,6 +10,71 @@ public class BaselineComparerTests
         => new(route, layer, "sel", prop, sev, "expected", "actual");
 
     [Fact]
+    public void Soft_diffs_never_enter_the_baseline_or_the_comparison()
+    {
+        // 決策 #2(2.0.0):soft 落差(font-family)不擋 gate,--baseline 也一樣。1.x 把 soft 一起攤平,
+        // 調整 font stack 就讓 --baseline 多一條「新增」、exit 1
+        var node = new NodeResult("title", "1:2", "h1", "auto-text", Severity.Medium,
+        [
+            new PropDiff("fontSize", "32", "30", "px", 2, 0.5, Severity.Medium),
+            new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: true),
+        ]);
+        var report = new FidelityReport("/", "u", "d", [node], [], new ReportSummary(1, 1, 0, 1, 0, 0, 1, 1, Severity.Medium));
+
+        var records = DiffRecord.FromReports([report]);
+
+        Assert.Equal(["fontSize"], records.Select(r => r.Prop));
+        Assert.False(BaselineComparer.Compare(records, [D("title", "fontSize", Severity.Medium) with { Selector = "h1" }]).HasRegressions);
+    }
+
+    [Fact]
+    public void A_soft_row_in_an_old_baseline_is_not_fixed_while_that_diff_is_still_present()
+    {
+        // 審查實證:1.x 存的 baseline 有 soft 列(page-title · fontFamily)。2.0.0 第一版不把 soft 攤進現況,
+        // 舊列就**每一次**比對都算「修好」——PR 留言列出「🟢 Fixed: page-title · fontFamily」,同一條落差卻還在
+        // 落差表裡。Fixed 要拿全部現況落差(含 soft)的鍵來比,不寫死哪個屬性
+        static FidelityReport Report(params PropDiff[] diffs)
+            => new("/", "u", "d", [new NodeResult("title", "1:2", "h1", "auto-text", Severity.Medium, diffs)], [],
+                new ReportSummary(1, 1, 0, 1, 0, 0, 1, 0, Severity.Medium));
+        var fontSize = new PropDiff("fontSize", "32", "30", "px", 2, 0.5, Severity.Medium);
+        var fontFamily = new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: true);
+        DiffRecord[] oldBaseline =
+        [
+            D("title", "fontSize", Severity.Medium) with { Selector = "h1" },
+            D("title", "fontFamily", Severity.Minor) with { Selector = "h1" }, // 1.x 連 soft 一起存
+        ];
+
+        var stillThere = Report(fontSize, fontFamily);
+        var same = BaselineComparer.Compare(DiffRecord.FromReports([stillThere]), oldBaseline, DiffRecord.KeysOf([stillThere]));
+        Assert.Empty(same.Fixed);
+        // 驗證者:baseline 有 2 列,結果卻是 fixed 0、unchanged 1——soft 那列不在任何計數裡。另計 ignored,總數對得起來
+        Assert.Equal(1, same.Ignored);
+        Assert.Equal(oldBaseline.Length, same.Fixed.Count + same.Worsened.Count + same.Unchanged + same.Ignored);
+        Assert.False(same.HasRegressions);
+
+        var reallyFixed = Report(fontSize); // font stack 真的改對了才算修好
+        var repaired = BaselineComparer.Compare(DiffRecord.FromReports([reallyFixed]), oldBaseline, DiffRecord.KeysOf([reallyFixed]));
+        Assert.Equal(["fontFamily"], repaired.Fixed.Select(d => d.Prop));
+    }
+
+    [Fact]
+    public void A_non_soft_minor_diff_still_enters_the_baseline()
+    {
+        // 審查的 M02c:把「排除 soft」寫成「排除 minor」也能通過上面幾條——soft 落差剛好都是 minor。
+        // 非 soft 的 minor(例如 1px 的 fontSize)照樣要進 baseline,否則 --baseline 永遠看不到它變嚴重
+        var node = new NodeResult("title", "1:2", "h1", "auto-text", Severity.Minor,
+        [
+            new PropDiff("fontSize", "32", "31", "px", 1, 0.5, Severity.Minor),
+            new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: true),
+        ]);
+        var report = new FidelityReport("/", "u", "d", [node], [], new ReportSummary(1, 1, 0, 1, 0, 0, 0, 2, Severity.Minor));
+
+        var record = Assert.Single(DiffRecord.FromReports([report]));
+
+        Assert.Equal(("fontSize", Severity.Minor), (record.Prop, record.Severity));
+    }
+
+    [Fact]
     public void New_diff_not_in_baseline_is_regression()
     {
         var baseline = new[] { D("btn", "color", Severity.Serious) };

@@ -28,6 +28,7 @@ try
         "baseline" => await BaselineCommand.RunAsync(rest),
         "init" => InitCommand.Run(rest),
         "install-browser" => InstallBrowserCommand.Run(rest),
+        "bug-report" => BugReportCommand.Run(rest),
         "help" or "--help" or "-h" => HelpCommand.Run(),
         "version" or "--version" => VersionCommand.Run(),
         _ => UnknownCommand(command),
@@ -50,11 +51,14 @@ static int UnknownCommand(string cmd)
 
 internal static class CheckCommand
 {
+    /// <summary>reverse 報告的 Markdown 說明(check --reverse 與 parity report 重生 reverse 報告共用)。</summary>
+    internal const string ReverseNote =
+        "reverse mode: \"expected\" = the implementation, \"actual\" = the design file — the diff is for designers to read, no gating";
+
     /// <summary>parity check:讀 parity.config.json → 跑引擎 → 人看的摘要 + report.json + exit code。</summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args,
-            "--config=", "--target=", "--out=", "--md=", "--refresh", "--headed", "--baseline", "--reverse");
+        var opts = CliOptions.Parse(args, Usage.Flags.Check);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Check);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
@@ -82,7 +86,7 @@ internal static class CheckCommand
 
         foreach (var (scan, report) in scans.Zip(reports))
         {
-            Console.WriteLine($"target \x1b[1m{scan.Target.Route}\x1b[0m → {report.Url}" +
+            Console.WriteLine($"target \x1b[1m{ConsoleText.Safe(scan.Target.Route)}\x1b[0m → {ConsoleText.Safe(report.Url)}" +
                 (reverse ? "\x1b[36m (reverse: expected = implementation, actual = design)\x1b[0m" : ""));
             PrintReport(report);
         }
@@ -91,15 +95,15 @@ internal static class CheckCommand
         var outPath = opts.GetValueOrDefault("--out")
             ?? Path.Combine(session.Config.BaseDirectory, ".parity", "report.json");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
-        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(ReportDocument.Of(reports), ReportJson.Indented));
+        await File.WriteAllTextAsync(outPath, JsonSerializer.Serialize(
+            ReportDocument.Of(reports, reverse ? ReportDirection.Reverse : ReportDirection.Forward), ReportJson.Indented));
         Console.WriteLine($"report written: {outPath}");
 
         Console.WriteLine($"fidelity score: \x1b[1m{FidelityScore.Compute(reports)}/100\x1b[0m");
 
         if (reverse)
         {
-            WriteMarkdown(opts, session.Config, reports, gateFail: false,
-                gateNotes: ["reverse mode: \"expected\" = the implementation, \"actual\" = the design file — the diff is for designers to read, no gating"]);
+            WriteMarkdown(opts, session.Config, reports, gateFail: false, gateNotes: [ReverseNote]);
             Console.WriteLine("\n\x1b[36mreverse mode\x1b[0m: no gating, exit 0.");
             return 0;
         }
@@ -143,14 +147,12 @@ internal static class CheckCommand
         int? baselineScore = null)
     {
         if (opts.GetValueOrDefault("--md") is not { } mdPath) return;
-        var tokens = config.TokensFile is { } tf
-            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
-            : null;
+        var tokens = TokensFile.LoadForHints(config);
         var full = Path.GetFullPath(mdPath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, MarkdownReport.Render(
             reports, gateFail, baseline, tokens, gateNotes,
-            figmaFileKey: config.FigmaFileKey, baselineScore: baselineScore));
+            figmaFileKey: config.FigmaLinkFileKey, baselineScore: baselineScore));
         Console.WriteLine($"markdown report: {full}");
     }
 
@@ -172,8 +174,14 @@ internal static class CheckCommand
         }
 
         var current = DiffRecord.FromReports(reports);
-        await using var store = new BaselineStore(BaselineCommand.BaselineDbPath(session.Config));
-        var baseline = await store.GetLatestAsync();
+        // db 不存在 = 還沒有 baseline。不開 BaselineStore(建構子會 migrate、建出空 db 留在 repo 裡)
+        var dbPath = BaselineCommand.BaselineDbPath(session.Config);
+        LatestBaseline? baseline = null;
+        if (File.Exists(dbPath))
+        {
+            await using var store = new BaselineStore(dbPath);
+            baseline = await store.GetLatestAsync();
+        }
 
         if (baseline is null)
         {
@@ -185,10 +193,11 @@ internal static class CheckCommand
             return fail ? 1 : 0;
         }
 
-        var cmp = BaselineComparer.Compare(current, baseline.Diffs);
+        var cmp = BaselineComparer.Compare(current, baseline.Diffs, DiffRecord.KeysOf(reports));
         WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp, baselineScore: baseline.Score);
         Console.WriteLine($"\nvs baseline — \x1b[31mnew {cmp.Regressions.Count}\x1b[0m, " +
-            $"\x1b[33mworsened {cmp.Worsened.Count}\x1b[0m, \x1b[32mfixed {cmp.Fixed.Count}\x1b[0m, unchanged {cmp.Unchanged}");
+            $"\x1b[33mworsened {cmp.Worsened.Count}\x1b[0m, \x1b[32mfixed {cmp.Fixed.Count}\x1b[0m, unchanged {cmp.Unchanged}" +
+            (cmp.Ignored > 0 ? $", ignored {cmp.Ignored} (soft diffs a 1.x baseline saved; they no longer count — re-save the baseline to drop them)" : ""));
 
         // 分數走勢——PM 要的「方向」:相對基準是往上還是往下
         if (baseline.Score is { } baseScore)
@@ -199,11 +208,11 @@ internal static class CheckCommand
             Console.WriteLine($"fidelity trend: baseline {baseScore}/100 → now {score}/100 ({trend})");
         }
         foreach (var d in cmp.Regressions)
-            Console.WriteLine($"  \x1b[31m+ new\x1b[0m      {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+            Console.WriteLine($"  \x1b[31m+ new\x1b[0m      {ConsoleText.Safe(d.Route)} ‹{ConsoleText.Safe(d.DesignLayer)}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
         foreach (var d in cmp.Worsened)
-            Console.WriteLine($"  \x1b[33m↑ worsened\x1b[0m {d.Route} ‹{d.DesignLayer}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
+            Console.WriteLine($"  \x1b[33m↑ worsened\x1b[0m {ConsoleText.Safe(d.Route)} ‹{ConsoleText.Safe(d.DesignLayer)}› {d.Prop} [{d.Severity.ToString().ToLowerInvariant()}]");
         foreach (var d in cmp.Fixed)
-            Console.WriteLine($"  \x1b[32m- fixed\x1b[0m    {d.Route} ‹{d.DesignLayer}› {d.Prop}");
+            Console.WriteLine($"  \x1b[32m- fixed\x1b[0m    {ConsoleText.Safe(d.Route)} ‹{ConsoleText.Safe(d.DesignLayer)}› {d.Prop}");
 
         if (cmp.HasRegressions)
         {
@@ -223,15 +232,16 @@ internal static class CheckCommand
         }).ToList(),
     };
 
-    private static void PrintReport(FidelityReport report)
+    internal static void PrintReport(FidelityReport report)
     {
         var s = report.Summary;
         Console.WriteLine($"  matched {s.Matched}/{s.DesignNodes} design nodes; {s.NodesWithDiffs} with diffs");
 
         foreach (var node in Impact.Order(report.Nodes.Where(n => n.Diffs.Count > 0)))
         {
-            Console.WriteLine($"  \x1b[33m✘ {node.DesignLayer}\x1b[0m ‹{node.Selector}› " +
-                $"[{node.Severity.ToString().ToLowerInvariant()}] ({node.MatchedBy})");
+            // 圖層名、selector、設計值都來自 repo 內容:帶換行時跳脫成字面,不讓它在 CI 裡變成 workflow command
+            Console.WriteLine($"  \x1b[33m✘ {ConsoleText.Safe(node.DesignLayer)}\x1b[0m ‹{ConsoleText.Safe(node.Selector)}› " +
+                $"[{node.Severity.ToString().ToLowerInvariant()}] ({ConsoleText.Safe(node.MatchedBy)})");
             foreach (var diff in node.Diffs)
             {
                 var isColor = diff.Prop is "color" or "background";
@@ -240,13 +250,13 @@ internal static class CheckCommand
                     ? $"{diff.Actual}{(diff.Delta is { } de ? $" (ΔE {de})" : "")}"
                     : $"{diff.Actual}{diff.Unit}";
                 var soft = diff.Soft ? " [soft]" : "";
-                Console.WriteLine($"      {diff.Prop,-14} expected {expected}  actual {actual}{soft}");
+                Console.WriteLine($"      {diff.Prop,-14} expected {ConsoleText.Safe(expected)}  actual {ConsoleText.Safe(actual)}{soft}");
             }
         }
 
         if (report.Unmatched.Count > 0)
         {
-            Console.WriteLine($"  \x1b[90munmatched: {string.Join(", ", report.Unmatched.Select(u => $"{u.DesignLayer} ({u.Reason})"))}\x1b[0m");
+            Console.WriteLine($"  \x1b[90munmatched: {string.Join(", ", report.Unmatched.Select(u => $"{ConsoleText.Safe(u.DesignLayer)} ({ConsoleText.Safe(u.Reason)})"))}\x1b[0m");
             if (report.Unmatched.Any(u => u.Reason == "randomized-id"))
                 Console.WriteLine("  \x1b[90mhint: randomized-id = the baseline froze a selector containing a randomly generated id " +
                     "(React useId, CSS-in-JS, …). Newer baselines use structural paths that survive id regeneration — " +
@@ -264,7 +274,7 @@ internal static class ReportCommand
     /// </summary>
     public static int Run(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--in=", "--md=");
+        var opts = CliOptions.Parse(args, Usage.Flags.Report);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Report);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
@@ -282,6 +292,11 @@ internal static class ReportCommand
             doc = JsonSerializer.Deserialize<ReportDocument>(File.ReadAllText(inPath), ReportJson.Indented)
                 ?? throw new InvalidOperationException($"could not parse report: {inPath}");
         }
+        catch (ReportContractException ex)
+        {
+            // 形狀認得、但某個欄位違反契約(例如 direction 不是 forward/reverse):說出真正的原因,不要猜「舊格式」
+            throw new InvalidOperationException($"{inPath}: {ex.Message}");
+        }
         catch (JsonException)
         {
             throw new InvalidOperationException(
@@ -289,15 +304,22 @@ internal static class ReportCommand
         }
         var reports = doc.Reports
             ?? throw new InvalidOperationException($"report has no `reports` field: {inPath} (re-run `parity check`)");
+        // 比自己新的報告:拒收(2.0.0 起;與 snapshot 讀端、push、Parity.Server 一致)。1.x 照讀,
+        // 新版加的欄位被靜靜丟掉,重生的 Markdown 可能不完整
+        if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
+            throw new InvalidOperationException(
+                $"{inPath} has report schemaVersion {doc.SchemaVersion}, which is newer than this Parity understands " +
+                $"({ReportDocument.CurrentSchemaVersion}) — it was written by a newer Parity; render it with that version.");
 
-        var tokens = config.TokensFile is { } tf
-            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
-            : null;
+        var tokens = TokensFile.LoadForHints(config);
+        // check --reverse 寫出的報告期望/實際已對調:不做 gate,照 check --reverse 的樣子標明(2.0.0 起有方向欄位)
+        var reverse = doc.Direction == ReportDirection.Reverse;
         var md = MarkdownReport.Render(
             reports,
-            gateFail: config.GateFailReasons(reports).Count > 0,
+            gateFail: !reverse && config.GateFailReasons(reports).Count > 0,
             tokens: tokens,
-            gateNotes: config.MatchIntegrityFailures(reports));
+            gateNotes: reverse ? [CheckCommand.ReverseNote] : config.MatchIntegrityFailures(reports),
+            figmaFileKey: config.FigmaLinkFileKey); // 與 check --md 同一條:圖層名連回 Figma 節點
 
         if (opts.GetValueOrDefault("--md") is { } mdPath)
         {
@@ -314,6 +336,45 @@ internal static class ReportCommand
     }
 }
 
+/// <summary>
+/// config 的 tokensFile。「沒設定」「檔案不存在」「解析失敗」「沒有 token」各說各的——
+/// 原本全被吞成「沒有 token」,lint 接著叫人去設一個已經設了的 tokensFile。
+/// </summary>
+internal static class TokensFile
+{
+    /// <summary>lint:token 是必需的,任何問題都是錯(exit 2)。</summary>
+    public static DesignTokens LoadForLint(ParityConfig config)
+    {
+        if (config.TokensFile is not { } tf)
+            throw new InvalidOperationException(
+                "lint requires design tokens: set `tokensFile` in the config (a flat JSON object: {\"token name\": \"value\"}).");
+        var path = Path.Combine(config.BaseDirectory, tf);
+        var tokens = DesignTokens.Load(path);
+        if (tokens.IsEmpty)
+            throw new InvalidOperationException($"tokensFile {path} defines no tokens — lint needs at least one color or size token.");
+        return tokens;
+    }
+
+    /// <summary>
+    /// check --md / report:token 只是讓建議修法多一句「用哪個 token」,壞了不擋報告(exit code 不變),
+    /// 但要在 stderr 講出來,不再靜靜少掉提示。
+    /// </summary>
+    public static DesignTokens? LoadForHints(ParityConfig config)
+    {
+        if (config.TokensFile is not { } tf) return null;
+        try
+        {
+            var tokens = DesignTokens.Load(Path.Combine(config.BaseDirectory, tf));
+            return tokens.IsEmpty ? null : tokens;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Console.Error.WriteLine($"\x1b[33mwarning: {ex.Message} — suggested fixes will not name design tokens.\x1b[0m");
+            return null;
+        }
+    }
+}
+
 internal static class LintCommand
 {
     /// <summary>
@@ -323,25 +384,23 @@ internal static class LintCommand
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--config=", "--target=", "--refresh");
+        var opts = CliOptions.Parse(args, Usage.Flags.Lint);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Lint);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
         var config = ParityConfig.Load(configPath);
 
-        var tokens = config.TokensFile is { } tf
-            ? DesignTokens.LoadJson(Path.Combine(config.BaseDirectory, tf))
-            : null;
-        if (tokens is null)
-            throw new InvalidOperationException(
-                "lint requires design tokens: set `tokensFile` in the config (a flat JSON object: {\"token name\": \"value\"}).");
+        var tokens = TokensFile.LoadForLint(config);
 
-        var targets = opts.GetValueOrDefault("--target") is { } routeFilter
-            ? config.Targets.Where(t => t.Route == routeFilter).ToList()
-            : config.Targets;
-        if (targets.Count == 0)
+        if (config.Targets.Count == 0)
             throw new InvalidOperationException("the config file declares no targets.");
+        var routeFilter = opts.GetValueOrDefault("--target");
+        var targets = routeFilter is null
+            ? config.Targets
+            : config.Targets.Where(t => t.Route == routeFilter).ToList();
+        if (targets.Count == 0) // 與 check 同一句(ScanSession.RunAsync)
+            throw new InvalidOperationException($"no target with route {routeFilter}.");
 
         Console.WriteLine($"\x1b[1mParity lint\x1b[0m — design-token conformance of the design file (design only, no implementation)\n");
 
@@ -363,16 +422,17 @@ internal static class LintCommand
                 total += nodes;
                 var violations = DesignLint.Run(tree, tokens, config.Tolerances.ColorDeltaE);
                 allViolations.AddRange(violations.Select(v => (t.Route, v)));
-                Console.WriteLine($"target \x1b[1m{t.Route}\x1b[0m: {nodes} nodes, {violations.Count} violation(s)");
+                Console.WriteLine($"target \x1b[1m{ConsoleText.Safe(t.Route)}\x1b[0m: {nodes} nodes, {violations.Count} violation(s)");
             }
 
             foreach (var (route, v) in allViolations)
             {
+                // 圖層名、設計值、token 名稱都來自 repo 內容(見 ConsoleText)
                 var near = v.NearestToken is null
                     ? ""
-                    : $"; nearest: \x1b[36m{v.NearestToken}\x1b[0m = {v.NearestValue}" +
+                    : $"; nearest: \x1b[36m{ConsoleText.Safe(v.NearestToken)}\x1b[0m = {ConsoleText.Safe(v.NearestValue)}" +
                       (v.Prop == "color" ? $" (ΔE {v.Distance})" : $" (off by {v.Distance})");
-                Console.WriteLine($"  \x1b[33m✘ {v.Layer}\x1b[0m {v.Prop} = {v.Value} is not a token value{near}");
+                Console.WriteLine($"  \x1b[33m✘ {ConsoleText.Safe(v.Layer)}\x1b[0m {v.Prop} = {ConsoleText.Safe(v.Value)} is not a token value{near}");
             }
 
             if (allViolations.Count > 0)
@@ -399,10 +459,12 @@ internal static class SnapshotCommand
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
-        var opts = CliOptions.Parse(args,
-            "--config=", "--target=", "--out=", "--width=", "--height=", "--headed", "--stabilize");
+        var opts = CliOptions.Parse(args, Usage.Flags.Snapshot);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Snapshot);
         var stabilize = opts.ContainsKey("--stabilize");
+        // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
+        var width = CliOptions.PositiveIntOrDefault(opts, "--width", 1280);
+        var height = CliOptions.PositiveIntOrDefault(opts, "--height", 800);
         var configPath = opts.GetValueOrDefault("--config")
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
@@ -415,10 +477,6 @@ internal static class SnapshotCommand
             : config.Targets;
         if (targets.Count == 0)
             throw new InvalidOperationException("no target matches the requested route.");
-
-        // 快照的視窗大小 = 之後 check 的視窗大小(存進 frame box,check 會照它開視窗)
-        var width = int.TryParse(opts.GetValueOrDefault("--width"), out var w) ? w : 1280;
-        var height = int.TryParse(opts.GetValueOrDefault("--height"), out var h) ? h : 800;
 
         Console.WriteLine($"\x1b[1mParity snapshot\x1b[0m — freezing the current rendering as the design baseline ({width}×{height})\n");
 
@@ -457,7 +515,7 @@ internal static class SnapshotCommand
                 anyRandomIds = true;
                 implRef = implRef with { AllowedIdAnchors = stableIds };
                 tree = await impl.CaptureAsync(implRef); // 這拍會被凍結,照拍截圖(覆寫第 1 拍的)
-                Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstableIdCount} id string(s) appeared in only " +
+                Console.WriteLine($"  \x1b[33m⚠ {ConsoleText.Safe(t.Route)}: {unstableIdCount} id string(s) appeared in only " +
                     "one of two page loads (per-load random ids) — selectors anchor on the measured " +
                     "stable-id allowlist instead; the allowlist is stored in the snapshot so " +
                     "`parity check` anchors the same way.\x1b[0m");
@@ -473,17 +531,17 @@ internal static class SnapshotCommand
                 var unstable = SnapshotStabilizer.FindUnstable(captures);
                 if (unstable.Count > 0)
                 {
-                    Console.WriteLine($"  \x1b[33m⚠ {t.Route}: {unstable.Count} region(s) changed across 3 captures — " +
+                    Console.WriteLine($"  \x1b[33m⚠ {ConsoleText.Safe(t.Route)}: {unstable.Count} region(s) changed across 3 captures — " +
                         "the baseline freezes whichever state capture #1 happened to catch:\x1b[0m");
                     foreach (var u in unstable)
-                        Console.WriteLine($"      {u.Selector}  ({u.Reason})");
+                        Console.WriteLine($"      {ConsoleText.Safe(u.Selector)}  ({ConsoleText.Safe(u.Reason)})");
                     foreach (var sel in unstable.Select(u => SnapshotStabilizer.ToIgnoreSelector(u.Selector)))
                         if (!unstableBySelector.Contains(sel))
                             unstableBySelector.Add(sel);
                 }
                 else
                 {
-                    Console.WriteLine($"  \x1b[32m✓ {t.Route}: stable across 3 captures\x1b[0m");
+                    Console.WriteLine($"  \x1b[32m✓ {ConsoleText.Safe(t.Route)}: stable across 3 captures\x1b[0m");
                 }
             }
             frames.Add(SnapshotBuilder.ToFrame(tree, t.Route, t.Width ?? width, t.Height ?? height));
@@ -493,10 +551,12 @@ internal static class SnapshotCommand
                 var shot = targets.Count == 1
                     ? Path.ChangeExtension(outPath, ".png")
                     : Path.ChangeExtension(outPath, $".{i}.png");
+                // --out 可以指到還不存在的目錄(與 check 的 --out 一致);擷取成功才建,失敗不留空目錄
+                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
                 await File.WriteAllBytesAsync(shot, png);
                 shotPaths.Add(shot);
             }
-            Console.WriteLine($"  ✓ {t.Route} → {tree.DescendantsAndSelf().Count()} node(s)");
+            Console.WriteLine($"  ✓ {ConsoleText.Safe(t.Route)} → {tree.DescendantsAndSelf().Count()} node(s)");
         }
 
         // 單 target:frame 直接當根;多 target:包一層,frame id = route(對 config 的 target.frame)
@@ -516,6 +576,7 @@ internal static class SnapshotCommand
             Console.WriteLine($"previous baseline backed up: {bak} (use it to recover from a bad snapshot)");
         }
         // 白名單只在真的測到隨機 id 時才存(anyRandomIds):沒有隨機 id 的站,快照與 1.0 逐位元同形
+        Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(
             root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null));
 
@@ -573,7 +634,7 @@ internal static class InitCommand
 
     public static int Run(string[] args)
     {
-        var opts = CliOptions.Parse(args);
+        var opts = CliOptions.Parse(args, Usage.Flags.Init);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Init);
         const string path = "parity.config.json";
         if (File.Exists(path))
@@ -601,7 +662,7 @@ internal static class InstallBrowserCommand
 {
     public static int Run(string[] args)
     {
-        var opts = CliOptions.Parse(args, "--with-deps");
+        var opts = CliOptions.Parse(args, Usage.Flags.InstallBrowser);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.InstallBrowser);
         // --with-deps:連同系統相依一起裝(CI 的 Linux runner 需要,否則 Chromium 起不來)
         var withDeps = opts.ContainsKey("--with-deps");
@@ -621,6 +682,30 @@ internal static class InstallBrowserCommand
 /// </summary>
 internal static class Usage
 {
+    /// <summary>
+    /// 各指令 CliOptions 的 spec(「--x=」吃值、「--x」布林)。與下面的用法文字放在一起:
+    /// UsageMatchesParserTests 要求每段用法列出的旗標集合等於這裡——加旗標忘了寫用法、
+    /// 或用法寫了解析器不收的旗標,測試都會紅。
+    /// </summary>
+    public static class Flags
+    {
+        public static readonly string[] Check =
+            ["--config=", "--target=", "--out=", "--md=", "--refresh", "--headed", "--baseline", "--reverse"];
+        public static readonly string[] Report = ["--config=", "--in=", "--md="];
+        public static readonly string[] Push =
+            ["--config=", "--in=", "--server=", "--token=", "--commit=", "--branch=", "--gate-exit="];
+        public static readonly string[] Snapshot =
+            ["--config=", "--target=", "--out=", "--width=", "--height=", "--headed", "--stabilize"];
+        /// <summary>serve 與 map 共用(同一份實作)。</summary>
+        public static readonly string[] Serve = ["--config=", "--port=", "--watch", "--open"];
+        public static readonly string[] Lint = ["--config=", "--target=", "--refresh"];
+        public static readonly string[] BaselineSave = ["--config=", "--target=", "--headed"];
+        public static readonly string[] BaselineList = ["--config="];
+        public static readonly string[] Init = [];
+        public static readonly string[] InstallBrowser = ["--with-deps"];
+        public static readonly string[] BugReport = ["--config=", "--open"];
+    }
+
     public const string Check = """
           parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse] [--md <path>]
               Compare the real numeric values of the design and the implementation; writes a report and sets the exit code.
@@ -644,15 +729,21 @@ internal static class Usage
         """;
 
     public const string Push = """
-          parity push --server <url> [--config <path>] [--in <report.json>] [--commit <sha>] [--branch <name>] [--gate-exit <code>]
+          parity push --server <url> [--config <path>] [--in <report.json>] [--token <token>] [--commit <sha>] [--branch <name>] [--gate-exit <code>]
+              (experimental) The push command and its server protocol are not covered by the interface freeze:
+              they may change in a 2.x minor release until the Parity.Server dashboard is publicly deployed.
               Send an existing report.json to a Parity.Server dashboard (no re-scan; the server never
               runs a browser — scanning always happens where `parity check` ran).
               Token comes from the PARITY_TOKEN environment variable (a project token from the server);
+              --token is for local trials only — flag values end up in shell history and CI logs.
               --server may also come from PARITY_SERVER. Commit/branch default to the GitHub Actions
-              environment (GITHUB_SHA / GITHUB_REF_NAME) when present.
+              environment when present (GITHUB_SHA; GITHUB_HEAD_REF on pull requests, else GITHUB_REF_NAME).
               --gate-exit <code>  Pass `parity check`'s real exit code so the dashboard shows the same
                                   verdict as CI (covers custom failOn and --baseline semantics);
                                   omitted → recomputed from the config's gate settings.
+              Reports over 1 MB are sent with Expect: 100-continue so an oversized report gets a clean 413:
+              the upload waits up to 15 s for the server's go-ahead, and is resent without it on a 417.
+              Each attempt times out after 60 s, so a push can take up to about 2 minutes when it is resent.
         """;
 
     public const string Snapshot = """
@@ -672,8 +763,9 @@ internal static class Usage
         """;
 
     public const string Map = """
-          parity map [--config <path>] [--port <n>]
+          parity map [--config <path>] [--port <n>] [--watch] [--open]
               Interactive matching: pick an unmatched design node → click the page element → writes parity.map.json
+              Always opens the browser (--open is accepted for symmetry with serve); --watch as in serve.
         """;
 
     public const string Lint = """
@@ -684,7 +776,8 @@ internal static class Usage
         """;
 
     public const string Baseline = """
-          parity baseline save|list [--config <path>]
+          parity baseline save [--config <path>] [--target <route>] [--headed]
+          parity baseline list [--config <path>]
               Save or list diff baseline snapshots (SQLite); pair with `check --baseline` for regression gating.
         """;
 
@@ -696,6 +789,18 @@ internal static class Usage
           parity install-browser [--with-deps]
               Download Playwright Chromium (required on first use); --with-deps also installs system
               dependencies (needed on CI Linux runners).
+        """;
+
+    public const string BugReport = """
+          parity bug-report [--config <path>] [--open]
+              (experimental) Collect diagnostics on this machine for a bug report and print them, plus a link that
+              opens a pre-filled GitHub issue. Parity makes no network connection and only prints the link. The masked
+              report is in the link's query string: opening it (yourself, or with --open) sends that text to github.com
+              and leaves it in your browser history; no issue is created until you submit the form.
+              Collected: Parity version, OS and architecture, .NET, Node, Playwright and Chromium revision, install
+              channel; with --config, a structural summary (counts, source types, tolerances, gate and compare
+              settings). Never collected: URLs, routes, selectors, node names, text, Figma keys, tokens, file paths
+              (shown as <path>) or environment variable values.
         """;
 
     /// <summary>子指令 --help:印該指令的用法,exit 0。</summary>
@@ -716,7 +821,7 @@ internal static class HelpCommand
         foreach (var usage in new[]
         {
             Usage.Check, Usage.Report, Usage.Push, Usage.Snapshot, Usage.Serve, Usage.Map,
-            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser,
+            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser, Usage.BugReport,
         })
             Console.WriteLine(usage);
         Console.WriteLine("\nExit codes: 0 = pass; 1 = diffs exceed the gate threshold; 2 = execution error; " +

@@ -2,7 +2,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Parity.Engine;
@@ -172,5 +176,695 @@ public class ServerEndpointTests : IAsyncLifetime
         // 13) 登出後回到 401
         Assert.Equal(HttpStatusCode.NoContent, (await viewer.PostAsync("/api/auth/logout", null)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await viewer.GetAsync("/api/overview")).StatusCode);
+    }
+
+    // ── push 協定(parity push ↔ POST /api/runs):CLI 隨 NuGet 發、Server 自架,版本錯開是常態 ──
+
+    private static string CleanReport()
+    {
+        var report = new FidelityReport("/ok", "http://x/ok", "snap",
+            [new NodeResult("a", "a", "#a", "selector", Severity.None, [])], [],
+            new ReportSummary(1, 1, 0, 0, 0, 0, 0, 0, Severity.None));
+        return JsonSerializer.Serialize(ReportDocument.Of([report]), ReportWire.Compact);
+    }
+
+    private async Task<HttpClient> OwnerAsync()
+    {
+        var owner = Client();
+        Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"/api/invites/{_ownerInviteToken}/accept",
+            Json(new { password = "correct horse battery" }))).StatusCode);
+        return owner;
+    }
+
+    [Fact]
+    public async Task Push_ack_has_six_fields_and_every_metadata_header_reaches_the_run_detail()
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/runs")
+        {
+            Content = new StringContent(DemoReport(), Encoding.UTF8, "application/json"),
+        };
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _ciToken);
+        req.Headers.Add("X-Parity-Commit", "0123456789abcdef0123456789abcdef01234567");
+        req.Headers.Add("X-Parity-Branch", "feature/x");
+        req.Headers.Add("X-Parity-Triggered-By", "octocat");
+        req.Headers.Add("X-Parity-Repo-Url", "https://github.com/owner/repo");
+        req.Headers.Add("X-Parity-Gate", "pass");
+
+        var resp = await Client().SendAsync(req);
+
+        // parity push 讀的就是這六個欄位(印 project/score/url、寫 job summary)
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+        var ack = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(["id", "project", "score", "gateFailed", "pages", "url"], ack.EnumerateObject().Select(p => p.Name));
+        var id = ack.GetProperty("id").GetString();
+        Assert.Equal("demo", ack.GetProperty("project").GetString());
+        Assert.Equal(0, ack.GetProperty("score").GetInt32()); // 唯一節點有 serious → 0/1 忠實
+        Assert.False(ack.GetProperty("gateFailed").GetBoolean()); // X-Parity-Gate: pass 蓋過報告內容
+        Assert.Equal(1, ack.GetProperty("pages").GetInt32());
+        Assert.Equal($"/runs/{id}", ack.GetProperty("url").GetString());
+
+        var detail = await (await OwnerAsync()).GetFromJsonAsync<JsonElement>($"/api/runs/{id}");
+        Assert.Equal("0123456789abcdef0123456789abcdef01234567", detail.GetProperty("commitSha").GetString());
+        Assert.Equal("feature/x", detail.GetProperty("branch").GetString());
+        Assert.Equal("octocat", detail.GetProperty("triggeredBy").GetString());
+        Assert.Equal("https://github.com/owner/repo", detail.GetProperty("repoUrl").GetString());
+        Assert.False(detail.GetProperty("gateFailed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Push_without_metadata_headers_stores_nulls()
+    {
+        var resp = await PushAsync(Client(), _ciToken);
+        var id = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+
+        var detail = await (await OwnerAsync()).GetFromJsonAsync<JsonElement>($"/api/runs/{id}");
+        foreach (var field in new[] { "commitSha", "branch", "triggeredBy", "repoUrl" })
+            Assert.Equal(JsonValueKind.Null, detail.GetProperty(field).ValueKind);
+    }
+
+    [Theory]
+    [InlineData("FAIL", false)]  // 只認小寫 pass/fail;其他值 = 沒給 → 伺服器預設口徑(critical/serious)
+    [InlineData("1", false)]     // 把 exit code 直接塞進標頭不算數(那是 --gate-exit 的事)
+    [InlineData("PASS", true)]
+    [InlineData("0", true)]
+    [InlineData("maybe", true)]
+    public async Task Unrecognized_gate_header_values_are_treated_as_absent(string gate, bool reportHasSerious)
+    {
+        var resp = await PushAsync(Client(), _ciToken, gate: gate, report: reportHasSerious ? DemoReport() : CleanReport());
+
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+        Assert.Equal(reportHasSerious, (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("gateFailed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Newer_schema_version_is_422_not_400()
+    {
+        var resp = await PushAsync(Client(), _ciToken,
+            report: DemoReport().Replace("\"schemaVersion\":1", "\"schemaVersion\":99"));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+        var error = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
+        Assert.Contains("schemaVersion 99 is newer than this server supports (1)", error);
+    }
+
+    [Fact]
+    public async Task Raw_report_download_returns_the_pushed_bytes_to_members_only()
+    {
+        var raw = DemoReport();
+        var push = await PushAsync(Client(), _ciToken, report: raw);
+        var id = (await push.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+
+        var owner = await OwnerAsync();
+        var download = await owner.GetAsync($"/api/runs/{id}/report");
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("application/json", download.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(raw, await download.Content.ReadAsStringAsync()); // gzip 存、原樣還
+
+        // 別的專案的成員:看不到這筆 run(不是 403,是當作不存在)
+        string strangerInvite;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+            var other = new Project { Id = Guid.NewGuid(), Name = "other", TokenHash = ProjectToken.Hash(ProjectToken.Generate()), CreatedAt = DateTimeOffset.UtcNow };
+            db.Projects.Add(other);
+            var (invite, token) = Invites.Create(other.Id, "stranger@t.local", ProjectRole.Owner, DateTimeOffset.UtcNow);
+            db.Invites.Add(invite);
+            await db.SaveChangesAsync();
+            strangerInvite = token;
+        }
+        var stranger = Client();
+        Assert.Equal(HttpStatusCode.OK, (await stranger.PostAsync($"/api/invites/{strangerInvite}/accept",
+            Json(new { password = "stranger pass phrase" }))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync($"/api/runs/{id}/report")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync($"/api/runs/{id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client().GetAsync($"/api/runs/{id}/report")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Invite_acceptance_and_membership_edge_cases()
+    {
+        var owner = await OwnerAsync();
+        async Task<string> InviteAsync(string email, string role)
+        {
+            var resp = await owner.PostAsync($"/api/projects/{_projectId}/invites", Json(new { email, role }));
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            var link = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("link").GetString()!;
+            return link[(link.LastIndexOf('/') + 1)..];
+        }
+
+        // 1) 角色只有 owner/member/viewer
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsync($"/api/projects/{_projectId}/invites",
+            Json(new { email = "x@t.local", role = "admin" }))).StatusCode);
+
+        // 2) 密碼太短 → 400,邀請不被消耗;改用夠長的密碼才成立
+        var memberInvite = await InviteAsync("dev@t.local", "member");
+        var member = Client();
+        Assert.Equal(HttpStatusCode.BadRequest, (await member.PostAsync($"/api/invites/{memberInvite}/accept",
+            Json(new { password = "short" }))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Client().GetAsync($"/api/invites/{memberInvite}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await member.PostAsync($"/api/invites/{memberInvite}/accept",
+            Json(new { password = "a long enough pass" }))).StatusCode);
+
+        // 3) 已有帳號的人被重邀:要用原密碼證明是本人
+        var reInvite = await InviteAsync("dev@t.local", "viewer");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client().PostAsync($"/api/invites/{reInvite}/accept",
+            Json(new { password = "somebody else's guess" }))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Client().PostAsync($"/api/invites/{reInvite}/accept",
+            Json(new { password = "a long enough pass" }))).StatusCode);
+
+        // 4) Owner 移除成員:204、留帳,之後那個人讀不到這個專案的任何東西
+        await PushAsync(Client(), _ciToken);
+        Assert.Single((await member.GetFromJsonAsync<JsonElement>("/api/runs")).EnumerateArray());
+        var members = await owner.GetFromJsonAsync<JsonElement>($"/api/projects/{_projectId}/members");
+        var devId = members.GetProperty("members").EnumerateArray()
+            .First(m => m.GetProperty("email").GetString() == "dev@t.local").GetProperty("userId").GetString();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/projects/{_projectId}/members/{devId}")).StatusCode);
+        Assert.Empty((await member.GetFromJsonAsync<JsonElement>("/api/runs")).EnumerateArray());
+        var audit = await owner.GetFromJsonAsync<JsonElement>($"/api/projects/{_projectId}/audit");
+        Assert.Contains(audit.EnumerateArray(), a =>
+            a.GetProperty("action").GetString() == "member-removed" && a.GetProperty("detail").GetString() == "dev@t.local");
+    }
+
+    [Fact]
+    public async Task Login_answers_unknown_email_and_wrong_password_alike_and_locks_out_after_five_failures()
+    {
+        await OwnerAsync(); // 接受邀請 = 建立帳號(密碼 "correct horse battery")
+        async Task<(HttpStatusCode Status, JsonElement Body)> LoginAsync(HttpClient c, string email, string password)
+        {
+            var resp = await c.PostAsync("/api/auth/login", Json(new { email, password }));
+            return (resp.StatusCode, await resp.Content.ReadFromJsonAsync<JsonElement>());
+        }
+
+        // 1) 不存在的 email 與錯密碼:狀態碼與訊息逐字相同(訊息層面不能拿來探測誰有帳號;
+        //    回應時間、鎖定、並發與額度也一視同仁,見下面幾條 Lockout_* / Concurrent_* / Login_is_rate_limited_*)
+        var unknown = await LoginAsync(Client(), "nobody@t.local", "correct horse battery");
+        var wrong = await LoginAsync(Client(), "owner@t.local", "not the password");
+        Assert.Equal(HttpStatusCode.Unauthorized, unknown.Status);
+        Assert.Equal(HttpStatusCode.Unauthorized, wrong.Status);
+        Assert.Equal(unknown.Body.GetRawText(), wrong.Body.GetRawText());
+
+        // 2) 正確登入(email 前後空白容忍):回 me 的形狀,cookie 隨即生效
+        var browser = Client();
+        var ok = await LoginAsync(browser, "  owner@t.local ", "correct horse battery");
+        Assert.Equal(HttpStatusCode.OK, ok.Status);
+        Assert.Equal("owner@t.local", ok.Body.GetProperty("email").GetString());
+        var membership = Assert.Single(ok.Body.GetProperty("memberships").EnumerateArray());
+        Assert.Equal(("demo", "owner"), (membership.GetProperty("project").GetString(), membership.GetProperty("role").GetString()));
+        Assert.Equal(HttpStatusCode.OK, (await browser.GetAsync("/api/auth/me")).StatusCode);
+
+        // 3) 連錯 5 次 → 鎖定:之後連正確密碼也進不去,訊息改說「稍後再試」。
+        //    不存在的 email 也會被「模擬鎖定」,訊息與時序都一樣(見下面
+        //    Lockout_reads_the_same_and_costs_the_same_for_real_and_unknown_accounts)
+        for (var i = 0; i < 5; i++)
+            await LoginAsync(Client(), "owner@t.local", $"guess number {i}");
+        var locked = await LoginAsync(Client(), "owner@t.local", "correct horse battery");
+        Assert.Equal(HttpStatusCode.Unauthorized, locked.Status);
+        Assert.Contains("too many failed attempts", locked.Body.GetProperty("error").GetString());
+    }
+
+    /// <summary>數 VerifyHashedPassword 被呼叫幾次(其餘照 Identity 預設的 PBKDF2)。</summary>
+    private sealed class CountingHasher : IPasswordHasher<AppUser>
+    {
+        private readonly PasswordHasher<AppUser> _inner = new();
+        public int Verifications;
+        public string HashPassword(AppUser user, string password) => _inner.HashPassword(user, password);
+        public PasswordVerificationResult VerifyHashedPassword(AppUser user, string hashedPassword, string providedPassword)
+        {
+            Interlocked.Increment(ref Verifications);
+            return _inner.VerifyHashedPassword(user, hashedPassword, providedPassword);
+        }
+    }
+
+    [Fact]
+    public async Task Login_with_an_unknown_email_still_pays_for_one_password_hash_check()
+    {
+        // 不存在的 email 原本直接回 401、不跑密碼雜湊(PBKDF2,數十毫秒)——回得明顯比存在的帳號快,
+        // 光看回應時間就能探測誰有帳號。訊息已經逐字相同(上一條),時間也要對齊:跑一次同成本的假驗證
+        var hasher = new CountingHasher();
+        await using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureTestServices(s => s.AddSingleton<IPasswordHasher<AppUser>>(hasher)));
+        using var client = factory.CreateClient();
+
+        var resp = await client.PostAsync("/api/auth/login", Json(new { email = "nobody@t.local", password = "whatever-1234" }));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+        Assert.Equal(1, hasher.Verifications);
+    }
+
+    [Fact]
+    public async Task Lockout_reads_the_same_and_costs_the_same_for_real_and_unknown_accounts()
+    {
+        // 決策 #21(2.0.0):1.x 只有存在的帳號會被鎖、看到 too many failed attempts(不存在的 email 永遠回
+        // incorrect),而且被鎖的帳號 Identity 不驗密碼、3–7 ms 就回(其他 401 約 80–90 ms)——訊息與時序
+        // 兩條探測管道。現在不存在的 email 也模擬鎖定,每次嘗試(含鎖定之後)都恰好跑一次密碼驗證
+        await OwnerAsync(); // owner@t.local,密碼 "correct horse battery"
+        var hasher = new CountingHasher();
+        await using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureTestServices(s => s.AddSingleton<IPasswordHasher<AppUser>>(hasher)));
+
+        async Task<(HttpStatusCode Status, string Body, int Verifications)> AttemptAsync(string email, string password)
+        {
+            var before = hasher.Verifications;
+            using var client = factory.CreateClient();
+            var resp = await client.PostAsync("/api/auth/login", Json(new { email, password }));
+            return (resp.StatusCode, await resp.Content.ReadAsStringAsync(), hasher.Verifications - before);
+        }
+
+        var attempts = new List<(HttpStatusCode Status, string Body, int Verifications)>();
+        for (var i = 0; i < 5; i++)
+        {
+            attempts.Add(await AttemptAsync("owner@t.local", $"guess number {i}"));
+            attempts.Add(await AttemptAsync("nobody@t.local", $"guess number {i}"));
+        }
+        var real = await AttemptAsync("owner@t.local", "correct horse battery");
+        var unknown = await AttemptAsync("nobody@t.local", "correct horse battery");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, real.Status);
+        Assert.Contains("too many failed attempts", real.Body);
+        Assert.Equal(real.Body, unknown.Body);                    // 訊息逐字相同
+        Assert.Equal((1, 1), (real.Verifications, unknown.Verifications)); // 鎖定之後也各跑一次驗證
+        Assert.All(attempts, a => Assert.Equal(1, a.Verifications));
+        // 第 5 次(觸發鎖定的那次)兩邊也一樣
+        Assert.Equal(attempts[^2].Body, attempts[^1].Body);
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    /// <summary>
+    /// 從 _factory 衍生一個 host:可換服務、可調登入額度(Parity:Login:*)。沒給額度就用產品預設
+    /// (每個 IP 每分鐘 20 次、每個 email 每分鐘 10 次)。
+    /// </summary>
+    private WebApplicationFactory<ParityServerEntryPoint> Factory(
+        Action<IServiceCollection>? services = null, int? perIp = null, int? perEmail = null)
+        => _factory.WithWebHostBuilder(b =>
+        {
+            if (perIp is { } ip) b.UseSetting("Parity:Login:PerIpPerMinute", ip.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (perEmail is { } em) b.UseSetting("Parity:Login:PerEmailPerMinute", em.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (services is not null) b.ConfigureTestServices(services);
+        });
+
+    private static async Task<(HttpStatusCode Status, string Body)> LoginAsync(
+        WebApplicationFactory<ParityServerEntryPoint> factory, string email, string password, string? clientIp = null)
+    {
+        using var client = factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = Json(new { email, password }) };
+        if (clientIp is not null) req.Headers.Add(FakeClientIp.Header, clientIp);
+        using var resp = await client.SendAsync(req);
+        return (resp.StatusCode, await resp.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>TestServer 沒有 RemoteIpAddress;測試用這個 header 指定「從哪個 IP 來」。</summary>
+    private sealed class FakeClientIp : IStartupFilter
+    {
+        public const string Header = "X-Test-Client-IP";
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+            => app =>
+            {
+                app.Use((ctx, nextMiddleware) =>
+                {
+                    if (ctx.Request.Headers.TryGetValue(Header, out var ip)) ctx.Connection.RemoteIpAddress = IPAddress.Parse(ip.ToString());
+                    return nextMiddleware(ctx);
+                });
+                next(app);
+            };
+    }
+
+    [Fact]
+    public async Task Lockout_expires_the_same_way_for_real_and_unknown_accounts_and_attempts_during_it_do_not_count()
+    {
+        // 與 Identity 相同的語意,兩種帳號一致:第 5 次失敗鎖 5 分鐘(IdentityOptions.Lockout)、鎖上時計數歸零、
+        // 鎖定中的嘗試不累計(審查的 M21d:鎖定中繼續累計,到期後就會少於 4 次失敗即再鎖)、到期後從 0 重算
+        await OwnerAsync();
+        var clock = new ManualClock();
+        await using var factory = Factory(s => s.AddSingleton<TimeProvider>(clock), perIp: 100_000, perEmail: 100_000);
+
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+        {
+            for (var i = 0; i < 4; i++) Assert.Contains("incorrect", (await LoginAsync(factory, email, $"guess {i}")).Body);
+            Assert.Contains("too many failed attempts", (await LoginAsync(factory, email, "guess 4")).Body);
+        }
+        clock.Now += TimeSpan.FromMinutes(4);
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+            for (var i = 0; i < 5; i++) // 還在鎖定窗內:連正確密碼也不行,而且這些嘗試不算數
+                Assert.Contains("too many failed attempts", (await LoginAsync(factory, email, "correct horse battery")).Body);
+        clock.Now += TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1);
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+        {
+            for (var i = 0; i < 4; i++) Assert.Contains("incorrect", (await LoginAsync(factory, email, $"again {i}")).Body);
+            Assert.Contains("too many failed attempts", (await LoginAsync(factory, email, "again 4")).Body);
+        }
+    }
+
+    [Fact]
+    public async Task Concurrent_failures_on_one_email_are_counted_one_at_a_time_for_real_and_unknown_accounts()
+    {
+        // 審查實證(2.0.0 第一版,真伺服器):同一個 email 同時送 40 次錯誤密碼,真帳號 40 次都回 incorrect、
+        // AccessFailedCount 只加到 2(EF 的 ConcurrencyStamp 衝突讓 AccessFailedAsync 失敗,Identity 就不計數),
+        // 不存在的 email 卻是 4 次 incorrect、36 次鎖定——送一次就分得出帳號存不存在,真帳號的 5 次鎖定也被
+        // 並發繞過。現在整條登入路徑依正規化 email 序列化(審查的 M21f:拿掉序列化,這裡就紅)
+        await OwnerAsync();
+        await using var factory = Factory(perIp: 100_000, perEmail: 100_000);
+
+        async Task<string[]> BurstAsync(string email)
+            => await Task.WhenAll(Enumerable.Range(0, 40).Select(async k =>
+            {
+                var (status, body) = await LoginAsync(factory, email, $"bad {k}");
+                Assert.Equal(HttpStatusCode.Unauthorized, status);
+                return body;
+            }));
+        var realBurst = BurstAsync("owner@t.local");
+        var ghostBurst = BurstAsync("Nobody@T.local"); // 大小寫不同也是同一個鍵
+        var (real, ghost) = (await realBurst, await ghostBurst);
+
+        static (int Incorrect, int Locked) Tally(string[] bodies)
+            => (bodies.Count(b => b.Contains("incorrect")), bodies.Count(b => b.Contains("too many failed attempts")));
+        Assert.Equal((4, 36), Tally(real));
+        Assert.Equal((4, 36), Tally(ghost));
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "owner@t.local", "correct horse battery")).Body);
+    }
+
+    [Fact]
+    public async Task A_flood_of_other_emails_never_clears_an_existing_lockout()
+    {
+        // 審查實證(2.0.0 第一版):模擬鎖定記在記憶體、上限 10,000 筆、滿了整個清空——送 10,001 個不同的
+        // 假 email(64 秒)就洗掉了模擬鎖定,真帳號的鎖定卻還在。現在兩種帳號都記在 db 的同一張表,沒有容量上限
+        // (審查的 M21g)。10,001 筆直接寫表(走 HTTP 要 10,001 次 PBKDF2);之後再一次 HTTP 失敗,走一次寫入路徑
+        await OwnerAsync();
+        await using var factory = Factory(perIp: 100_000, perEmail: 100_000);
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+            for (var i = 0; i < 5; i++) await LoginAsync(factory, email, $"guess {i}");
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+            db.LoginThrottles.AddRange(Enumerable.Range(0, 10_001)
+                .Select(i => new LoginThrottle { NormalizedEmail = $"FLOOD{i}@X.INVALID", Failures = 1 }));
+            await db.SaveChangesAsync();
+        }
+        Assert.Contains("incorrect", (await LoginAsync(factory, "one-more@x.invalid", "whatever it is")).Body);
+
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "owner@t.local", "correct horse battery")).Body);
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "ghost@t.local", "whatever it is")).Body);
+    }
+
+    [Fact]
+    public void The_server_model_has_no_changes_missing_from_the_migrations()
+    {
+        // LoginThrottles 是 2.0.0 新增的 migration;模型改了卻忘了產 migration,啟動時 Migrate() 不會建表
+        using var scope = _factory.Services.CreateScope();
+        Assert.False(scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public async Task Login_is_rate_limited_per_client_ip_with_the_documented_default()
+    {
+        // 預設每個 IP 每分鐘 20 次(Parity:Login:PerIpPerMinute);別的 IP 不受影響。
+        // 這裡每次換一個 email,不碰每個 email 的額度
+        await using var factory = Factory(s => s.AddSingleton<IStartupFilter, FakeClientIp>());
+
+        for (var i = 0; i < 20; i++)
+            Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync(factory, $"ghost{i}@t.local", "whatever it is", "203.0.113.7")).Status);
+        using var client = factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = Json(new { email = "extra@t.local", password = "whatever it is" }) };
+        req.Headers.Add(FakeClientIp.Header, "203.0.113.7");
+        using var limited = await client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.NotNull(limited.Headers.RetryAfter);
+        Assert.Contains("too many login attempts", await limited.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync(factory, "extra@t.local", "whatever it is", "198.51.100.9")).Status);
+    }
+
+    /// <summary>經過反向代理的請求:每個都從同一個位址進來,X-Forwarded-For 才是真正的用戶端。</summary>
+    private static async Task<(HttpStatusCode Status, string Body)> LoginViaProxyAsync(
+        WebApplicationFactory<ParityServerEntryPoint> factory, string email, string password, string forwardedFor)
+    {
+        using var client = factory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login") { Content = Json(new { email, password }) };
+        req.Headers.Add("X-Forwarded-For", forwardedFor);
+        using var resp = await client.SendAsync(req);
+        return (resp.StatusCode, await resp.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Behind_a_proxy_without_forwarded_headers_one_client_can_lock_everyone_out_of_login()
+    {
+        // 驗證者實證(真伺服器):預設設定下伺服器看到的是代理的位址,X-Forwarded-For 不算數——有人用亂數 email
+        // 打滿每個 IP 每分鐘 20 次,所有人(包括密碼正確的人)都 429。這條把「後果」釘住,文件照這個寫
+        await OwnerAsync();
+        await using var factory = Factory();
+
+        for (var i = 0; i < 20; i++)
+            await LoginViaProxyAsync(factory, $"junk{i}@x.invalid", "whatever it is", "203.0.113.66");
+        var victim = await LoginViaProxyAsync(factory, "owner@t.local", "correct horse battery", "198.51.100.7");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, victim.Status);
+    }
+
+    [Fact]
+    public async Task With_ASPNETCORE_FORWARDEDHEADERS_ENABLED_each_forwarded_client_has_its_own_budget()
+    {
+        // 零改碼的開關:環境變數 ASPNETCORE_FORWARDEDHEADERS_ENABLED=true(設定鍵 FORWARDEDHEADERS_ENABLED)讓
+        // ASP.NET Core 採信 X-Forwarded-For。只能在**信任的**反向代理後面開——否則任何人都能偽造來源 IP
+        await OwnerAsync();
+        await using var factory = _factory.WithWebHostBuilder(b => b.UseSetting("FORWARDEDHEADERS_ENABLED", "true"));
+
+        for (var i = 0; i < 20; i++)
+            await LoginViaProxyAsync(factory, $"junk{i}@x.invalid", "whatever it is", "203.0.113.66");
+        var attacker = await LoginViaProxyAsync(factory, "junk-more@x.invalid", "whatever it is", "203.0.113.66");
+        var victim = await LoginViaProxyAsync(factory, "owner@t.local", "correct horse battery", "198.51.100.7");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, attacker.Status);
+        Assert.Equal(HttpStatusCode.OK, victim.Status);
+    }
+
+    [Theory]
+    [InlineData("Parity:Login:PerIpPerMinute", "0")]
+    [InlineData("Parity:Login:PerIpPerMinute", "-5")]
+    [InlineData("Parity:Login:PerEmailPerMinute", "abc")]
+    [InlineData("Parity:Login:PerEmailPerMinute", "1.5")]
+    public void A_bad_login_limit_stops_the_server_at_startup_and_names_the_setting(string key, string value)
+    {
+        // 驗證者實證:Parity__Login__PerIpPerMinute=0 時伺服器照常啟動,每次登入卻都 500(LoginGuard 第一次被
+        // 要用時才建立、才丟例外)。現在啟動時就解析與驗證,設錯直接起不來,訊息點名設定鍵
+        using var factory = _factory.WithWebHostBuilder(b => b.UseSetting(key, value));
+
+        var ex = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        var messages = string.Join(" | ", Unwrap(ex).Select(e => e.Message));
+        Assert.Contains(key, messages);
+        Assert.Contains($"\"{value}\"", messages);
+    }
+
+    private static IEnumerable<Exception> Unwrap(Exception ex)
+    {
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            yield return e;
+            if (e is AggregateException agg)
+                foreach (var inner in agg.InnerExceptions.SelectMany(Unwrap)) yield return inner;
+        }
+    }
+
+    [Fact]
+    public async Task IPv6_clients_share_the_ip_budget_per_64_prefix()
+    {
+        // 驗證者:IPv6 用戶端通常拿到一整個 /64,逐位址算額度等於沒有額度(換一個位址就是新的 20 次)。
+        // 以 /64 分桶;IPv4-mapped 的 IPv6 位址與原本的 IPv4 同一桶
+        await using var factory = Factory(s => s.AddSingleton<IStartupFilter, FakeClientIp>());
+
+        for (var i = 0; i < 20; i++)
+            await LoginAsync(factory, $"ghost{i}@t.local", "whatever it is", $"2001:db8:1:2::{i + 1:x}");
+        var samePrefix = await LoginAsync(factory, "extra@t.local", "whatever it is", "2001:db8:1:2:ffff:ffff:ffff:9");
+        var otherPrefix = await LoginAsync(factory, "extra@t.local", "whatever it is", "2001:db8:1:3::1");
+
+        for (var i = 0; i < 20; i++)
+            await LoginAsync(factory, $"v4-{i}@t.local", "whatever it is", "203.0.113.50");
+        var mapped = await LoginAsync(factory, "v4-extra@t.local", "whatever it is", "::ffff:203.0.113.50");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, samePrefix.Status);
+        Assert.Equal(HttpStatusCode.Unauthorized, otherPrefix.Status);
+        Assert.Equal(HttpStatusCode.TooManyRequests, mapped.Status);
+    }
+
+    [Fact]
+    public async Task Accepting_a_re_invite_checks_the_password_under_the_same_throttle_as_login()
+    {
+        // 驗證者:既有帳號被重邀時,接受邀請要驗密碼——這也是一個猜密碼的入口,卻沒有額度、序列化與鎖定。
+        // 現在與登入共用同一套:同一個 email 的失敗次數、鎖定與額度都算在一起
+        await OwnerAsync(); // owner@t.local 已有帳號
+        await using var factory = Factory(perIp: 100_000, perEmail: 100_000);
+        string reInvite;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+            var (invite, inviteToken) = Invites.Create(_projectId, "owner@t.local", ProjectRole.Member, DateTimeOffset.UtcNow);
+            db.Invites.Add(invite);
+            await db.SaveChangesAsync();
+            reInvite = inviteToken;
+        }
+        async Task<(HttpStatusCode Status, string Body)> AcceptAsync(string password)
+        {
+            using var client = factory.CreateClient();
+            using var resp = await client.PostAsync($"/api/invites/{reInvite}/accept", Json(new { password }));
+            return (resp.StatusCode, await resp.Content.ReadAsStringAsync());
+        }
+
+        var attempts = new List<string>();
+        for (var i = 0; i < 5; i++) attempts.Add((await AcceptAsync($"guess number {i}")).Body);
+        var correct = await AcceptAsync("correct horse battery");
+
+        Assert.All(attempts.Take(4), b => Assert.Contains("enter its password", b));
+        Assert.Contains("too many failed attempts", attempts[4]);          // 第 5 次失敗就鎖
+        Assert.Equal(HttpStatusCode.Unauthorized, correct.Status);         // 鎖定中連正確密碼也不行
+        Assert.Contains("too many failed attempts", correct.Body);
+        Assert.Contains("too many failed attempts", (await LoginAsync(factory, "owner@t.local", "correct horse battery")).Body); // 與登入同一個計數
+    }
+
+    [Fact]
+    public async Task Login_is_rate_limited_per_email_the_same_way_for_real_and_unknown_accounts()
+    {
+        // 預設每個 email 每分鐘 10 次(Parity:Login:PerEmailPerMinute),鍵是正規化後的 email,存在與否一視同仁:
+        // 第 11 次是 429,回應逐字相同。限額在任何查詢與密碼驗證之前就擋,沒有時序可量
+        await OwnerAsync();
+        await using var factory = Factory(perIp: 100_000);
+
+        var bodies = new List<string>();
+        foreach (var email in new[] { "owner@t.local", "ghost@t.local" })
+        {
+            for (var i = 0; i < 10; i++)
+                Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync(factory, i % 2 == 0 ? email : email.ToUpperInvariant(), $"guess {i}")).Status);
+            var (status, body) = await LoginAsync(factory, email, "correct horse battery");
+            Assert.Equal(HttpStatusCode.TooManyRequests, status);
+            bodies.Add(body);
+        }
+        Assert.Equal(bodies[0], bodies[1]);
+    }
+
+    [Fact]
+    public async Task Run_changes_endpoint_compares_with_the_previous_run_on_the_same_branch_for_members_only()
+    {
+        async Task<string> PushOnMainAsync(string report)
+        {
+            var resp = await PushAsync(Client(), _ciToken, branch: "main", report: report);
+            return (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
+        }
+        var first = await PushOnMainAsync(DemoReport());   // cta 的 paddingTop serious
+        await PushAsync(Client(), _ciToken, branch: "other", report: CleanReport()); // 別的分支不算「上一筆」
+        var second = await PushOnMainAsync(CleanReport()); // 修好了
+        var owner = await OwnerAsync();
+
+        var firstChanges = await owner.GetFromJsonAsync<JsonElement>($"/api/runs/{first}/changes");
+        Assert.Equal(JsonValueKind.Null, firstChanges.GetProperty("prevRunId").ValueKind); // 該分支第一筆
+
+        var changes = await owner.GetFromJsonAsync<JsonElement>($"/api/runs/{second}/changes");
+        Assert.Equal(first, changes.GetProperty("prevRunId").GetString());
+        Assert.Empty(changes.GetProperty("regressions").EnumerateArray());
+        var fixedDiff = Assert.Single(changes.GetProperty("fixed").EnumerateArray());
+        Assert.Equal(("cta", "paddingTop", "serious"), (fixedDiff.GetProperty("designLayer").GetString(),
+            fixedDiff.GetProperty("prop").GetString(), fixedDiff.GetProperty("severity").GetString()));
+
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/runs/{Guid.NewGuid()}/changes")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client().GetAsync($"/api/runs/{second}/changes")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Push_auth_scheme_is_case_insensitive_but_must_be_bearer()
+    {
+        async Task<HttpStatusCode> PushWithAuthorizationAsync(string authorization)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/api/runs")
+            {
+                Content = new StringContent(DemoReport(), Encoding.UTF8, "application/json"),
+            };
+            req.Headers.TryAddWithoutValidation("Authorization", authorization);
+            return (await Client().SendAsync(req)).StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.Created, await PushWithAuthorizationAsync($"bearer {_ciToken}"));
+        // "Digest " 與 "Bearer " 一樣長:沒驗 scheme 的話,切掉前 7 字剛好就是合法 token
+        Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync($"Digest {_ciToken}"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync(_ciToken)); // 少了 scheme
+        // 截短的 token 行為上被拒(查無此 token)。長度護欄只是查庫前的短路,行為與查無等價,這條不守它
+        Assert.Equal(HttpStatusCode.Unauthorized, await PushWithAuthorizationAsync($"Bearer {_ciToken[..10]}"));
+
+        // scheme 後多個空白、結尾空白也要認得(伺服器端 Trim)。這條不能走 HttpClient:它把 Authorization
+        // 解析成 AuthenticationHeaderValue 再送,多餘空白在到達伺服器之前就被正規化掉了——
+        // 所以直接對 TestServer 送原始 header
+        var raw = await _factory.Server.SendAsync(c =>
+        {
+            var body = Encoding.UTF8.GetBytes(DemoReport());
+            c.Request.Method = "POST";
+            c.Request.Path = "/api/runs";
+            c.Request.Headers.Authorization = $"Bearer   {_ciToken}  ";
+            c.Request.ContentType = "application/json";
+            c.Request.ContentLength = body.Length;
+            c.Request.Body = new MemoryStream(body);
+        });
+        Assert.Equal((int)HttpStatusCode.Created, raw.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rows_stored_per_push_do_not_grow_with_the_number_of_diffs()
+    {
+        // CLAUDE.md「Parity.Server.Data 刻意沒有 Diff 表」:M4 實測一次 push 的逐條落差 36,058 列、零讀者,
+        // 所以只存 run + 每頁一列 + gzip 原文。這條守的是那個取捨的效果,不管表叫什麼名字——
+        // 要把逐條落差加回資料庫,先回 CLAUDE.md 確認有讀者
+        async Task<Dictionary<string, long>> RowCountsAsync()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var conn = scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.GetDbConnection();
+            await conn.OpenAsync();
+            var tables = new List<string>();
+            await using (var list = conn.CreateCommand())
+            {
+                list.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table'";
+                await using var reader = await list.ExecuteReaderAsync();
+                while (await reader.ReadAsync()) tables.Add(reader.GetString(0));
+            }
+            var counts = new Dictionary<string, long>();
+            foreach (var table in tables)
+            {
+                await using var count = conn.CreateCommand();
+                count.CommandText = $"SELECT COUNT(*) FROM \"{table}\"";
+                counts[table] = (long)(await count.ExecuteScalarAsync())!;
+            }
+            return counts;
+        }
+        static string ReportWithDiffs(int n)
+        {
+            var nodes = Enumerable.Range(0, n).Select(i => new NodeResult($"n{i}", $"id{i}", $"#n{i}", "selector", Severity.Serious,
+                [new PropDiff("paddingTop", "12", "8", "px", 4, 2, Severity.Serious)])).ToList();
+            var report = new FidelityReport("/", "http://x/", "snap", nodes, [],
+                new ReportSummary(n, n, 0, n, 0, n, 0, 0, Severity.Serious));
+            return JsonSerializer.Serialize(ReportDocument.Of([report]), ReportWire.Compact);
+        }
+
+        var before = await RowCountsAsync();
+        Assert.Equal(HttpStatusCode.Created, (await PushAsync(Client(), _ciToken, report: ReportWithDiffs(1))).StatusCode);
+        var afterSmall = await RowCountsAsync();
+        Assert.Equal(HttpStatusCode.Created, (await PushAsync(Client(), _ciToken, report: ReportWithDiffs(300))).StatusCode);
+        var afterLarge = await RowCountsAsync();
+
+        foreach (var table in before.Keys)
+            Assert.True(afterLarge[table] - afterSmall[table] == afterSmall[table] - before[table],
+                $"{table}:1 條落差的 push 加了 {afterSmall[table] - before[table]} 列,300 條的加了 {afterLarge[table] - afterSmall[table]} 列");
+        Assert.Equal(1, afterSmall["Runs"] - before["Runs"]); // 前提:真的有落庫
+    }
+
+    [Fact]
+    public async Task Rejected_pushes_store_nothing()
+    {
+        await PushAsync(Client(), "wrong-token-wrong-token");
+        await PushAsync(Client(), _ciToken, report: "not json");
+        await PushAsync(Client(), _ciToken, report: DemoReport().Replace("\"schemaVersion\":1", "\"schemaVersion\":2"));
+
+        using var scope = _factory.Services.CreateScope();
+        Assert.Equal(0, await scope.ServiceProvider.GetRequiredService<ServerDbContext>().Runs.CountAsync());
     }
 }

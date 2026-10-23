@@ -96,6 +96,38 @@ public class RunCompareTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_diff_that_turned_soft_is_not_reported_fixed()
+    {
+        // 驗證者的 M2c(伺服器不傳 KeysOf)存活:原有案例裡前一份報告沒有 soft 落差。這裡的前一份是舊引擎寫的
+        // ——fontFamily 還不是 soft——現況同一條落差標成 soft,不進比對清單。落差還在,不能列成「修好」
+        static string Report(bool soft) => JsonSerializer.Serialize(ReportDocument.Of([new FidelityReport("/", "u", "figmakey123",
+            [new NodeResult("title", "id", "#title", "auto-text", Severity.Minor,
+                [new PropDiff("fontFamily", "Inter", "Arial", null, null, 0, Severity.Minor, Soft: soft)])],
+            [], new ReportSummary(1, 1, 0, 1, 0, 0, 0, 1, Severity.Minor))]), ReportWire.Compact);
+        Run Make(Guid id, DateTimeOffset at, string raw) => new()
+        {
+            Id = id,
+            ProjectId = _projectId,
+            CreatedAt = at,
+            Branch = "soft",
+            Score = 100,
+            GateFailed = false,
+            RawReportGzip = ReportBlob.Compress(raw),
+        };
+        var before = Guid.NewGuid();
+        var after = Guid.NewGuid();
+        _db.Runs.Add(Make(before, DateTimeOffset.UnixEpoch.AddDays(1), Report(soft: false)));
+        _db.Runs.Add(Make(after, DateTimeOffset.UnixEpoch.AddDays(2), Report(soft: true)));
+        await _db.SaveChangesAsync();
+
+        var changes = await RunCompare.ChangesAsync(_db, _userId, after);
+
+        Assert.Equal(before, changes!.PrevRunId);
+        Assert.Empty(changes.Fixed);
+        Assert.Empty(changes.Regressions);
+    }
+
+    [Fact]
     public async Task First_run_has_no_previous_and_strangers_get_null()
     {
         var first = await RunCompare.ChangesAsync(_db, _userId, _first);

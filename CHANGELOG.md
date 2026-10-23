@@ -1,17 +1,288 @@
 # Changelog
 
-版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節);0.x 期間為新功能升 minor、修正升 patch。
+版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.0.0 — 2026-10-23
+
+**第一個 major。** 1.1.0 之後的產品稽核(2026-10-22)找到幾條「原本被接受、卻讓 gate 靜默失效或被靜默改讀」
+的輸入,以及幾處量測與報告語意的缺口。照 1.x 的凍結規則只能先改成印警告;這一版直接改成正確的行為,下面「破壞性變更」
+逐條附遷移方式。npm 通路的 Node 下限從 18 升到 20,依 npm 慣例也算破壞,一起放進這個 major。
+
+**介面凍結延續到 2.x。** 1.0.0 節的六面凍結與演進條款,自本版起照樣適用於 2.x,以本版的形狀為準
+(逐面現況見 `docs/公開介面盤點.md` 第 11 節)。六面是:`parity.config.json` schema(含容差預設值)、
+CLI 與 exit code 契約(`0` 通過 / `1` 落差超 gate / `2` 執行錯誤 / `3` 配對可信度不足)、GitHub Action
+inputs、`report.json`、baseline SQLite schema、`parity.snapshot.json`。演進條款:
+
+1. 上述六面的介面破壞 → **major**(下一個是 3.0.0)
+2. 量測語意演進(量得更準、配對規則變化,可能需重拍基準)→ **minor**,CHANGELOG 開頭顯著標示「升級必做」
+3. 預設值調整(容差、gate 預設)→ **minor** + 顯著標示
+4. 行為完全不變的修正 → **patch**
+5. **minor 若需要重拍基準,工具必須大聲失敗並給指引**——不得靜默給錯誤結果
+
+**例外:`parity push` 屬實驗性,不列入凍結。** push 子指令與伺服器協定屬實驗性,2.x 內可能在 minor 版本改變,
+伺服器正式上線時再納入凍結。範圍:push 的旗標、環境變數(`PARITY_SERVER`、`PARITY_TOKEN`)與 exit code;
+push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、伺服器的拒收規則);push 寫進 job summary
+的內容。伺服器還沒有公開部署(網頁外殼的 M5),現在就凍結的話,M5 想調整 push 的介面就得等到 3.0。
+`report.json` 本身(含 `direction`)仍屬凍結面 4,不受這條例外影響。`parity push --help` 與主 help 標
+`(experimental)`;執行時不印警告。新增的 `parity bug-report` 同樣屬實驗性、不列入凍結。
+
+**GitHub Action 改用移動式 `@v2`**(跟隨最新 2.x;之後每個 2.x 發版把 `v2` 前移)。`v1` 停在 v1.1.0,不再前移。
+
+**升級必做 (upgrade required)**——依序處理:
+
+1. **Action 改引用 `@v2`**。`v1` 停在 v1.1.0,而 v1.1.0 的 `action.yml` 在 `version` 留空時安裝**不限 major**
+   的最新版(限制 major 的修正在它之後才加)——沒填 `version` 的 `@v1` workflow 會用 1.1.0 的 action 步驟
+   跑 2.x 的工具,下面的破壞性變更一條不少地照樣生效。**遷移:改成 `uses: HSU-YU-MING/cornhsu-parity@v2`**;
+   暫時不想升的話,`@v1` 加上 `version: 1.1.0` 固定在 1.x。
+2. **先確認 Node 版本,再重跑 `parity install-browser`**。Microsoft.Playwright 從 1.61 升到 1.63:Chromium
+   換成 revision 1243,升級後不重跑 `parity install-browser`,`check` 等指令會 exit 2(`Chromium is not
+   installed yet`)。**npm 通路(`npx cornhsu-parity`)另外需要 Node 20 以上**(破壞性變更第 8 條)——Node 18
+   上連 `install-browser` 本身都會失敗,所以順序是**先升 Node、再裝瀏覽器**。
+3. **用 `actions/download-artifact` 讀報告的下游 workflow,改讀 artifact 的根目錄**。artifact 名稱預設仍是
+   `parity-report`,但裡面改成根目錄直接是 `report.json` 與 `parity-report.md`;1.1.0 的 artifact 內是
+   `<repo>/<repo>/<working-directory>/.parity/report.json` 與 `_temp/parity-report.md`(上傳時以兩個檔的最近
+   共同上層目錄為根)。**遷移:下載後改讀根目錄的 `report.json`**(例如
+   `parity report --config … --in <下載目錄>/report.json`)。這不在凍結面內(面 3 凍結的是 inputs),但照舊
+   路徑讀檔的步驟會靜靜讀不到檔,所以列在這裡。
+4. **用 `--baseline` 的專案,升級後重存一次 baseline**(`parity baseline save`)。只給 `height` 的 target
+   量測會變(破壞性變更第 4 條),重存之後才對齊。1.x 存的 baseline 裡的 font-family(soft)列不會造成誤報
+   (第 2 條),比對結果把它們另計為 `ignored N`(baseline 的每一列都有去處:fixed + worsened + unchanged +
+   ignored = 列數);重存 baseline 就不再有這些列。
+
+**破壞性變更**——每條附遷移方式:
+
+1. **`gate.failOn` 只收 `minor`、`medium`、`serious`、`critical`(不分大小寫),其他值載入時就 exit 2**
+   (面 1)。1.x 用 Enum 解析:`none`、數字(`"9"`、`"4"`)、逗號字串(`"serious, critical"` 被讀成 7、
+   `"serious, minor"` 被讀成 serious)、帶前後空白的值都能載入,不是讓 gate 靜默失效就是被讀成別的等級。
+   **遷移:一個陣列元素放一個等級名**(`["serious", "critical"]`);1.x 寫 `none` 想關掉嚴重度 gate 的,
+   改寫空陣列 `"failOn": []`——配對可信度的 gate(0 配對、`minMatchRate`)照常。錯誤訊息會指出是哪個值。
+2. **soft 落差(font-family)不再擋 gate,`--baseline` 也不再把它算成新增**(gate 變寬:FAIL → PASS)。
+   1.x 的 gate 沒排除 soft:`failOn` 含 `minor` 時,只有 font-family 落差的頁面分數 100/100 卻 GATE FAIL;
+   `--baseline` 模式不看 `failOn`,調整 font stack 就多一條「新增」、exit 1。soft 落差照樣列在報告與 PR
+   留言裡,只是不扣分、不擋。baseline schema 不變:新存的 baseline 不收 soft 列;1.x 存的舊 db 裡已有的
+   font-family 列,只要那條落差還在就不算「修好」(比對時拿現況全部落差的鍵來比,含 soft),另計為 `ignored`,真的改對了才列為
+   修好。**遷移:不用改設定;想清掉舊列就重存 baseline**(升級必做第 4 點)。依賴「字型堆疊一變就擋」的團隊,改在 review 時看報告的 soft 列——沒有替代的 gate 開關。
+3. **`snapshot --width`/`--height` 與 `serve`/`map --port` 必須是正整數,否則 exit 2**(面 2)。**只收十進位
+   數字,不收正負號與前後空白**:`375px`、`3.5`、`0`、`-800`,以及 1.x 接受的 `+375`、`" 375"`、`-0` 都是
+   用法錯誤;`--port` 另外只收 1–65535(1.x 與這一版的第一稿要到 bind 時才失敗)。1.x 遇到非整數靜默退回
+   預設值(`--width 375px` 會以 1280 寬凍結手機基準),0 與負數原樣交給瀏覽器。現在在讀設定檔、開瀏覽器之前就以
+   用法錯誤結束(`--width expects a positive integer (got "375px")`、
+   `--port expects an integer from 1 to 65535 (got "65536")`)。**遷移:只寫數字**(`--width 375`,不加單位、
+   正號或空白)。
+4. **target 只給 `height`(沒給 `width`)時,`check`/`serve`/`map`/`baseline save` 照用它**(演進條款 ②
+   的量測語意變化)。1.x 在寬度沒給時把寬高一起換成設計 frame 的尺寸,`height` 被靜靜丟掉(`snapshot` 則
+   照用,兩邊量的視窗不一樣高)。現在兩個欄位各管各的軸:寬用 frame 的、高用給的。
+   **遷移:想維持 1.x 的量法就拿掉 `height`;留著的話,用 `--baseline` 的專案重存 baseline**(升級必做第 4 點)。
+5. **`report.json` 頂層多一個 `direction` 欄位;`check --reverse` 的報告不再被當成一般報告**(面 4)。
+   值是封閉集 `forward`/`reverse`,一律寫出;沒有這個欄位的舊檔讀成 `forward`,`schemaVersion` 維持 1。
+   讀端只收這兩個**小寫字串**:大小寫不同(`"Reverse"`)、其他字串、數字、`null` 一律拒收——`parity report`
+   與 `push` exit 2(訊息 `"direction" must be "forward" or "reverse" (got …)`),Parity.Server 回壞資料,
+   儀表板也照同一套規則讀。
+   1.x 的 reverse 報告期望/實際已對調,信封卻沒有任何標記:`parity report` 照正向重算 gate、顯示 GATE FAIL,
+   `parity push` 把它當一般 run 推上儀表板。現在 `parity report` 對 reverse 報告不做 gate(照
+   `check --reverse` 的樣子標明),`parity push` 在本機拒推(exit 2),Parity.Server 也拒收。
+   **遷移:拒收未知欄位的嚴格解析器要接受 `direction`;不要 push `check --reverse` 的報告**(它本來就不是
+   gate 用的)。
+6. **`parity report` 讀到比自己新的 `schemaVersion` 時 exit 2**(面 2、面 4)。1.x 照讀,新版加的欄位被靜靜
+   丟掉、Markdown 可能不完整。現在與 snapshot 讀端、`parity push`、Parity.Server 一致:比自己新就拒收。
+   **遷移:用寫出那份報告的 Parity 版本(或更新的版本)來 render**。
+7. **`designImage` 只接受 PNG 與 JPEG,其他格式 exit 2**(面 1 的有效值)。文件一直寫 PNG/JPG,但 1.x 實際
+   會解 ImageSharp 支援的所有格式(WebP、BMP、GIF、TIFF…)。判格式看檔案內容,不看副檔名;錯誤訊息一律帶檔案路徑,並分清楚是空檔、損毀的 PNG/JPEG、認得的其他格式(說出是哪一種),還是根本不是圖。收窄之後,
+   ImageSharp 3.1.12 的 BigTIFF 解碼 DoS(GHSA-wmxv-xphr-5c9g,3.1 線沒有修補版)碰不到。
+   **遷移:把設計圖轉成 PNG**。
+8. **npm 通路需要 Node 20 以上**(主套件 `engines.node` 從 `>=18` 改成 `>=20`)。npm 版讓 Playwright driver
+   用你自己的 Node 跑,而 1.63 的 driver 下限是 20。NuGet 通路(`dotnet tool`)與 GitHub Action 不受影響。
+   **遷移:升到 Node 20+,再跑 `parity install-browser`**(升級必做第 2 點)。
+
+**新增**
+
+- **新增:Action 的 `artifact-name` input**(面 3 的加法)。預設 `parity-report`,與 1.x 相同。matrix 或同一次
+  執行呼叫多次時,每次給不同的名稱(例如 `parity-report-${{ matrix.site }}`):每個名稱各自一個 artifact、
+  各自一則 PR 留言(留言開頭的標記是 `<!-- parity-report:<名稱> -->`;預設名稱沿用 `<!-- parity-report -->`,
+  升級後照樣更新 PR 上原本那則)。1.x 第二次上傳撞名 409,留言也互相覆蓋。只收英數字與 `.` `_` `-`
+  (1–100 字,不可以 `-` 開頭、不可以全是點,例如 `.`、`..`、`-rf`),其他值 exit 2。同一個 job 呼叫兩次時,check 步驟會先清掉前一次留在 `$RUNNER_TEMP` 的報告,
+  check 沒跑就不上傳。多次呼叫優先用 matrix:同一個 job 裡第一次呼叫的 gate 失敗,job 就停在那裡,第二次不會跑。
+
+- **新增:`parity bug-report`**(**實驗性**,不列入凍結)。在本機整理回報 bug 需要的資訊並印出來:Parity 版本(含
+  commit)、作業系統與架構、.NET、Playwright driver 實際用的 Node、Playwright 版本、Chromium 預期的 revision 與是否
+  已安裝、安裝通路;給 `--config` 時再加設定檔的**結構摘要**(targets 數、網址種類、設計來源類型、tolerances、
+  failOn、minMatchRate、compare)。**絕對不收**網址、route、selector、節點名稱、文字、Figma fileKey、token、檔案路徑
+  (一律遮成 `<path>`)、環境變數的內容——摘要只讀白名單欄位;外部來源的自由文字也只收白名單形狀(Node 的輸出只收
+  `v20.11.1` 這種版本字串、Chromium 目錄只收數字 revision,其他印 `unrecognized`);整份文字最後再過一次遮罩
+  (網址含沒有 scheme 的、email、Windows/UNC/Unix/`~` 路徑含有空白的,以及任何帶斜線的字)。最後印一個預填好的
+  GitHub issue 網址(錯誤回報範本);太長時網址只帶摘要欄位,提示把全文貼上。**Parity 本身不連網**,預設只印網址;要說準確:遮罩過的報告全文在網址的
+  query string 裡,打開網址(自己點,或 `--open` 交給瀏覽器)時就會送到 github.com、也會留在瀏覽器紀錄,issue 要使用者
+  自己按送出才會建立。
+- **新增:報告裡的回報連結**(none:Markdown 與本機 UI 不屬於凍結面)。`check --md`、`parity report` 的 Markdown 與
+  Action 的 PR 留言最後一行是「Report a misjudgment」,連到誤判/漏判範本的預填網址(`issues/new?template=1-misjudgment.yml`),
+  並提醒貼報告片段前先遮掉內部網址與內容;`parity serve` 的本機報告 UI 頂列也有同一個連結。只是連結:工具不連網、
+  不送任何資料。不進 report.json。
+- **新增:GitHub issue 範本**(none:只動 repo 設定)。三張表單——誤判/漏判(設計值、實作值、哪個屬性、為什麼認為判斷錯了;
+  附截圖或報告片段前提醒先遮掉網址與內容)、錯誤回報(版本、安裝通路、作業系統、Node、Chromium、重現步驟、預期與實際)、
+  功能建議;`config.yml` 關掉空白 issue,安全問題導向私下回報與 SECURITY.md。
+
+**產品 bug 修正(2026-10-22 稽核)**——每條標出它單獨來看的 semver 判讀。會讓原本接受的輸入變成錯誤、
+或改變量測/gate 結果的修法,列在上面的「破壞性變更」。
+
+- **修正:`parity serve`/`parity map` 等伺服器真的在監聽才印網址、開瀏覽器**(patch)。以前在啟動 Kestrel
+  之前就印 `report UI:` 並開瀏覽器,慢一點的機器上瀏覽器會先吃到 connection refused;埠被占用時也會先印出
+  一個連不上的網址才失敗。現在先啟動、再印網址,埠被占用時在印網址之前就以 exit 2 結束。
+- **修正:npm 啟動腳本認得 win32-arm64 與 linux-arm64**(patch)。這兩個平台包 1.1.0 就有發佈,
+  但啟動腳本的平台表只有 4 筆,`npx cornhsu-parity` 在這兩個平台印「沒有預先建置版本」並 exit 1。
+  新增測試要求啟動腳本的平台表與 `npm/prepare.mjs` 一一對應。
+- **修正:Action 的 artifact 不再漏掉 report.json**(patch)。`check` 把報告寫在設定檔所在目錄的
+  `.parity/`,Action 卻固定上傳 `<working-directory>/.parity/report.json`——`config` 指向子目錄時,
+  artifact 靜靜只剩 Markdown。現在 check 步驟跑完後把設定檔目錄的 report.json 與 Markdown 複製到
+  `$RUNNER_TEMP/parity-artifact/`,上傳那個固定目錄;報告本身的位置不變(之後的步驟照舊找得到)。
+  artifact 名稱(預設值)不變,**內部路徑改變**(見開頭「升級必做 (upgrade required)」第 3 點的遷移方式)。上傳路徑刻意不經
+  step output:input 值帶換行時會被寫成新的 output 行(可改寫 exit、指定上傳任意檔),這一步寫進
+  `$GITHUB_OUTPUT` 的只有數字 exit code。複製時只收一般檔案、不跟 symlink——這是新的複製這一步本身要防的事:
+  若單純用 cp,repo commit 一個 `.parity/report.json` → `/proc/self/environ` 之類的 symlink,就會把這一步的環境
+  (含 `FIGMA_TOKEN`)複製進 artifact。1.1.0 沒有這一步(它直接上傳 `<working-directory>/.parity/report.json`),
+  所以這條不是對已發佈版的安全修正。
+- **修正:Action 只安裝自己那個 major 的工具**(patch)。`version` 留空時,v1.1.0 的 action 執行不帶範圍的
+  `dotnet tool install`,裝的是最新穩定版,不管引用的是哪個 `@v`。現在用浮動版號 `"2.*"`(取最高的 2.x
+  穩定版;NuGet 的區間寫法 `[2.0.0,3.0.0)` 會取**最低**版,不能用),`@v2` 只會裝到 2.x,3.0.0 發佈時也不會跨過去。
+  `v1` 停在 v1.1.0,沒有這個修正——見開頭「升級必做」第 1 點。
+- **修正:Parity.Server 不再間接帶著 Playwright**(未發佈的伺服器;CLI 行為與 wire 格式不變)。
+  `Parity.Server.Data` 原本引用 `Parity.Engine`,把 Microsoft.Playwright 與整個 node driver(約 103 MB)
+  帶進伺服器的建置產物——鐵則「雲端不跑瀏覽器」只靠測試掃型別參考把關,反射載入擋不住。現在報告契約
+  (report.json 型別、`ReportWire`、`FidelityScore`、`DiffRecord`/`BaselineComparer`、`Box`)拆到零套件
+  相依的新組件 `Parity.Report`(命名空間不變),伺服器與 `Parity.Storage` 只引用它;伺服器的 publish
+  產物裡不再有 Playwright、ImageSharp 或引擎組件。新增測試沿伺服器的 ProjectReference 走完整張圖檢查。
+  NuGet tool 包多一個 `Parity.Report.dll`,其餘不變。
+- **修正:`parity push` 的 job summary 圖示跟著儀表板的最終判定**(未發佈的 push)。沒給 `--gate-exit`、
+  又找不到 config 時,CLI 不知道 gate 結果,伺服器改用預設口徑(critical/serious)判定並在回應帶
+  `gateFailed`;summary 原本只看 CLI 自己的結果,一律顯示 ✅——正是 M4.5 要根治的「CI 綠、儀表板紅」。
+  現在用回應的 `gateFailed`;兩邊都不知道時不放圖示。
+- **修正:`parity lint --target` 指到不存在的 route 時,錯誤訊息改成 `no target with route …`**
+  (patch:exit 2 不變,只改訊息)。原本說 `the config file declares no targets.`,但 config 明明有 target;
+  現在與 `check` 同一句。
+- **修正:設定檔區段寫成 `null` 時,錯誤訊息指名是哪個欄位**(patch:exit 2 與報錯時機都不變)。
+  `"gate": null`、`"compare": null`、`"gate": { "failOn": null }` 載入時、`"targets": null`、
+  `"tolerances": null`、`"targets": [null]` 用到時,原本都只印 `Object reference not set to an instance
+  of an object.`;現在印 `config <路徑>: "targets" is null — it must be an array of targets …`。
+  不碰這些區段的指令(`report`、`push`、`baseline list`)行為不變。
+- **修正:用法文字與解析器同步**(patch:只改 help 文字,解析器接受的旗標不變)。`push` 的用法補上
+  `--token`(註明僅供本機試用)並更正 branch 的來源(先 `GITHUB_HEAD_REF`、再 `GITHUB_REF_NAME`);
+  `baseline save` 的用法補上 `--target`、`--headed`;`map` 的用法補上 `--watch`、`--open`。新增測試要求
+  每個指令 `--help`(與主 help)列出的旗標集合等於該指令解析器的 spec。
+- **修正:儀表板的 Figma 深連結真的會出現**(未發佈的網頁外殼;M4.5 #5 原本完全失效)。引擎寫的
+  `designReference` 是 `<fileKey>#<frame>`,前端卻拿整串比對 `^[A-Za-z0-9]{15,}$`,裡面有 `#` 所以永遠
+  不成立。現在先取 `#` 之前的部分再驗證,node-id 照 CLI 的 Markdown 報告把 `:` 換成 `-`。解析抽成
+  `web/src/figma.ts`,用 Node 內建 test runner 測(`npm test`,CI 的 web-build job 也跑;需要 Node 22.6+ 的
+  型別剝除,`web/package.json` 已宣告 `engines`)。
+- **修正:比自己新的報告 `schemaVersion`,`push` 在本機就擋**(未發佈的 push)。本機信封檢查原本只驗
+  `reports` 欄位,`schemaVersion: 99` 一路送到伺服器才被 422 擋下;現在本機就 exit 2、不送出。
+  `parity report` 同樣改成拒收(破壞性變更第 6 條)。
+- **修正:同時設了 `figmaFileKey` 與 `designFile` 時,不再產生壞掉的 Figma 連結**(patch:只影響 Markdown
+  與本機報告 UI 的連結)。`designFile` 優先於 `figmaFileKey`,設計來源其實是本機檔(snapshot 的 designId
+  是 CSS selector),Markdown 與 `parity serve` 卻拿 `figmaFileKey` 組出點了就壞的 figma.com 連結——
+  `init` 範本預設就有 `figmaFileKey`,改走 snapshot 時沒刪掉就會遇到。現在只有設計來源真的是 Figma 才連。
+- **修正:`parity report` 重生的 Markdown 也把圖層名連回 Figma**(patch:只改 Markdown 內容)。
+  `check --md` 一直有這些連結,`report` 呼叫 `MarkdownReport.Render` 時卻沒傳 `figmaFileKey`。
+  套用上一條的條件(有 `designFile` 就不連)。
+- **修正:`parity push` 推超過 20 MB 的報告時,穩定拿到 413 的提示**(未發佈的 push)。Kestrel 依
+  Content-Length 回 413 後在上傳途中關連線,客戶端常常只拿到 `An error occurred while sending the
+  request.`。現在超過 1 MB 的報告送 `Expect: 100-continue`,伺服器先回 413/401、本文不送出;exit 2 不變。
+  代價與保險:中間的 proxy 若既不回 100 也不回最終狀態,大報告每次最多多等 15 秒才開始送本文;
+  若它回 417 Expectation Failed,拿掉 Expect 重送一次(加 Expect 之前同樣的推送會成功,不能因此變 exit 2)。
+  每次送出各有 60 秒逾時,所以重送時整個 push 最多約 2 分鐘。`parity push --help` 寫明了這些。
+- **修正:npm 啟動腳本自己的錯誤改回 exit 2,訊息改成英文**(patch:修回 exit code 契約)。平台不支援、
+  找不到平台包、執行檔起不來,原本都 exit 1——在 CLI 契約裡 1 是「落差超過 gate」,CI 會把「工具沒裝好」
+  讀成「設計還原度不合格」。訊息原本是中文(CLI 本體 0.12.0 起全英文)。
+- **修正:`parity snapshot --out` 可以指到還不存在的目錄**(patch)。原本寫截圖與 JSON 前不建目錄,
+  瀏覽器擷取全部做完之後才 exit 2(`Could not find a part of the path …`);`check --out` 一直會先建。
+- **修正:Parity.Server 的 web host 與管理指令開同一個資料庫**(未發佈的伺服器)。原本管理指令只讀
+  `PARITY_SERVER_DB`、web host 只讀 `ConnectionStrings:parity`:只設前者時 `create-project` 寫進一個檔、
+  web host 開的是 ContentRoot 下的另一個,push 回 401、邀請連結回 404。現在兩邊共用同一個解析:
+  `ConnectionStrings:parity` → `PARITY_SERVER_DB` → `parity-server.db`(cwd/ContentRoot)。
+- **修正:登入端點不再透露帳號存不存在,鎖定也繞不過**(未發佈的伺服器)。找到的探測管道:(1) 不存在的 email
+  直接回 401、不跑 PBKDF2,回得明顯比存在的帳號快;(2) 只有存在的帳號連錯 5 次會看到 `too many failed attempts`;
+  (3) 鎖定中的帳號 Identity 不驗密碼、3–7 ms 就回(其他 401 約 80–90 ms);(4) 並發:同一個 email 同時送 40 次
+  錯誤密碼,真帳號 40 次都回 incorrect、計數只加到 2(EF 的 ConcurrencyStamp 衝突讓 Identity 不計數),鎖定被繞過,
+  不存在的 email 卻是 4 次 incorrect、36 次鎖定;(5) 這一版的第一稿把不存在 email 的計數放在記憶體、上限 10,000
+  筆、滿了就清空,灌 10,001 個假 email(64 秒)就洗掉;(6) 真帳號打錯密碼多一次 db 寫入,穩定慢 1.4–2 ms。現在:
+  - 存在與不存在的 email 走同一條路:失敗次數與鎖定記在 db 的 `LoginThrottles` 表(以正規化 email 為鍵,新
+    migration),兩邊都是查使用者、查這一列、驗一次密碼、寫這一列;鎖定中也驗一次、不寫。語意照 Identity:
+    第 5 次失敗鎖 5 分鐘(`IdentityOptions.Lockout`)、鎖上時計數歸零、鎖定中不累計、成功登入清掉。真帳號不再用
+    Identity 的 AccessFailedCount/LockoutEnd——升級時的 migration 把它們的現況(計數 > 0、或鎖定還沒到期)搬進新表,
+    被鎖的人不會一升級就解鎖。沒有容量上限,也就沒有淘汰。
+  - 同一個正規化 email 的登入在伺服器內一次只跑一個,並發下計數正確。
+  - 接受邀請也走同一套:既有帳號被重邀時要驗密碼,這個入口與登入共用額度、序列化與失敗計數(錯 5 次就鎖,
+    鎖定中登入與接受邀請都擋)。
+  - 登入額度:每個用戶端 IP(IPv6 以 /64 為一個,IPv4-mapped 位址當成 IPv4)每分鐘 20 次、每個 email 每分鐘 10 次(一分鐘滑動視窗;設定
+    `Parity:Login:PerIpPerMinute`、`Parity:Login:PerEmailPerMinute`;設錯——0、負數、不是整數——伺服器啟動時就失敗並點名設定鍵),超過回 429 + `Retry-After`,在任何查詢
+    與密碼驗證之前擋下,存在與否一視同仁。
+  - 實測(審查者的腳本,真伺服器):額度放寬時,6 組真帳號與 6 組不存在 email 的 40 次並發都是 4 次 incorrect、
+    36 次鎖定;預設額度下,40 次並發只有 10 次進到驗證(4 incorrect、6 鎖定、30 次 429)。灌 10,001 個假 email:
+    預設額度下 2.6 秒內全部 429;額度放寬時灌完(77 秒)先前的鎖定都還在(表裡 10,299 列)。時序(額度放寬):
+    審查者的分類器(每個新帳號 5 次失敗的平均)判對 28/60,等於用猜的(原本 47/60)。
+  - **還剩下的**:時序差沒有歸零。同一個 email 反覆失敗的節奏下,不存在的 email 中位數反而慢 0–1.5 ms(6 次量測
+    有 5 次是它較慢,原因未定位;量測時機器上同時有其他建置在跑),攻擊者照「新帳號試 5 次」量則分不出來;
+    節流列存在與否(UPDATE 或 INSERT)也會影響時間,而真使用者自己打錯密碼又沒再登入成功會留下一列。序列化只在
+    單一行程內有效,多個伺服器實例共用一個 db 時要改成 db 層的鎖;IP 額度擋不住分散在很多 IP 的攻擊(email
+    額度與 5 次鎖定照常有效);**部署在反向代理後面時,預設設定會讓任何一個人把所有人擋在登入外面**:伺服器看到的來源都是代理的位址,
+    `X-Forwarded-For` 不算數,有人用亂數 email 每分鐘打 20 次,所有人(包括密碼正確的人)都 429(驗證者實測)。
+    零改碼的開關:環境變數 `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`,ASP.NET Core 就採信 `X-Forwarded-For`、
+    每個真正的用戶端各算各的額度——**只能在信任的代理後面開**(代理要覆寫而不是附加這個標頭),否則任何人都能
+    偽造來源 IP、繞過 IP 額度;
+    鎖定與 email 額度可以被拿來讓特定使用者暫時登不進去(鎖定機制本來的代價);`LoginThrottles` 每個嘗試過的
+    email 一列、不清理(實測 10,330 列約 1 MB),成長速度受 IP 額度限制。範圍只到登入端點。
+- **修正:`tokensFile` 讀不到或寫壞時說清楚是哪裡,並允許註解**(patch)。原本 `catch { return null; }`
+  把檔案不存在、JSON 壞掉、值是數字、有 `//` 註解全當成「沒有 token」:`lint` 接著報
+  `lint requires design tokens: set tokensFile in the config`——叫人去設一個已經設了的欄位;`check --md`
+  與 `report` 則靜靜少掉 token 提示。現在 `lint` 分別報 `tokensFile not found`、`is not valid JSON`(附行號)、
+  `"x" is a number, but token values must be strings`、`defines no tokens`(exit 2 不變);`check --md` /
+  `report` 照常出報告、在 stderr 警告。tokens 檔與 `parity.config.json`、`parity.map.json` 一樣允許 `//`
+  註解與尾逗號(原本會被當成「沒有 token」的檔現在讀得到)。
+- **修正:`baseline list` 與 `check --baseline` 在 db 不存在時不再建出空的 db**(patch:exit code 與輸出不變)。
+  唯讀的查詢會留下一個 32 KB 的空 `parity.baseline.db`;被順手 commit 之後,CI 的 `--baseline` 就一直走
+  「no baseline yet」、退回一般 gate。現在只有 `baseline save` 會建檔。
+- **修正:Action 的 `config`/`target`/`version` 帶換行時直接拒跑**(patch:原本這種值本來就跑不起來)。parity 會把
+  config 與 target 原樣印到 stderr,值裡的換行讓後面的內容落在行首,成了 runner 會解析的 workflow command
+  (`::add-mask::`、`::set-output`…)。現在 check 步驟在呼叫 parity 之前就檢查換行(LF 或 CR),有就記為
+  exit 2(執行錯誤)、不呼叫 parity,錯誤訊息也不印出 input 本身。`version` 同理(`dotnet tool install` 的錯誤訊息
+  會把版本原樣印出):Install 步驟遇到換行直接失敗、不呼叫 dotnet——帶換行的版本本來就裝不起來。
+- **修正:Action 找舊的報告留言時看完所有分頁**(patch)。原本只看第一頁(30 則),PR 留言一多、Parity 的
+  留言落到後面的頁時,每次都找不到標記、每次都貼一則新的——與「同一則原地更新、不洗版」相反。
+- **修正:Action 只更新 `github-actions[bot]` 自己的報告留言**(patch)。原本取「最舊的、以 marker 開頭」的留言、
+  不看作者:任何人搶先貼一則以 marker 開頭的留言,bot 就會去改那則——`GITHUB_TOKEN` 改不了別人的留言(403),
+  報告就永遠貼不上。
+- **修正:主控台輸出裡來自 repo 內容的字串,控制字元跳脫成字面**(patch:console 輸出不屬於凍結面)。
+  設計稿的圖層名、selector、設計值、設定檔的 route 帶換行時,原樣印出會讓後面的內容落在行首——在 GitHub
+  Actions 裡就成了 runner 會解析的 workflow command(`::warning …`)。check、lint、snapshot、baseline 的一般輸出
+  與警告改成把換行印成 `\n`(其他控制字元印成 `\uXXXX`)。gate 與報告不受影響;例外訊息尚未處理(ROADMAP)。
+- **CI:離線示範除了 exit 1,也斷言報告計數**(none:只動 CI)。比照 XamlContrast 的 `jq -e` 形狀,
+  驗 12 個設計節點配到 11、3 個節點有落差(5 serious + 1 條 soft 的 minor)——「工具真的會擋」與
+  「擋的數量沒有莫名其妙變動」一起驗。數字以沒有 `parity.map.json` 的 checkout 為準;新增的真瀏覽器
+  測試對 demo 的乾淨複本實跑、拿 ci.yml 裡的數字比對。
+- **相依:網頁外殼(`web/`)的 vite 6.4.3 → 6.4.5**(none:dev 相依,不進 NuGet/npm 套件,建置產物逐位元相同)。
+  `npm audit` 的 1 個 high 歸零:vite 開發伺服器的 GHSA-9jrq-w75r-8gcw(自訂 middleware 的跨來源腳本執行)、
+  GHSA-rq7h-c2jc-7f22(`server.fs.allow` 之外的檔案),以及它內含的 launch-editor 的 GHSA-698v-4r3x-3vcv、
+  GHSA-r825-w8mm-5pxw、GHSA-587h-7wmj-h5pm。都只影響本機 `npm run dev`;正式相依(`--omit=dev`)本來就是 0。
+- **打包:NuGet 與 npm 套件附上第三方授權聲明**(none:行為不變)。新增 `THIRD-PARTY-NOTICES.md`(各通路夾帶的
+  第三方元件與授權),放在 NuGet 套件根目錄與每個 npm 平台套件裡;npm 的平台套件與主套件也補上 `LICENSE`。
+  另外 tool 套件不再夾帶沒有用到的 `System.IO.Hashing.dll`(SourceLink 的傳遞相依帶進來的)。
+- **安全:設計圖解碼不再讀中繼資料,關閉 ICC 解析路徑**(patch:像素不變)。`designImage` 解碼時不讀 ICC／EXIF／
+  XMP／IPTC(取樣只用像素),解碼後也不留 ICC 設定檔。ImageSharp 3.1.12 的 ICC CLUT 記憶體配置(GHSA-gwg2-r3hj-4w44,
+  3.1 線沒有修補版)要讀設定檔內容才會觸發:Parity 原本就不讀,現在設計圖上也沒有可讀的。改動前後解碼出的像素
+  逐位元相同(測試以帶 ICC、EXIF、Adobe APP14、tRNS 的 PNG/JPEG 鎖住)。
+- **安全:Action 與 CI 呼叫的 `actions/*` 改釘 commit SHA**(patch:行為不變)。`action.yml` 的 `setup-dotnet`、
+  `upload-artifact`,以及 ci.yml／release.yml 的 `checkout`、`setup-dotnet`、`setup-node`、`upload-artifact` 原本跟著
+  移動式 tag(`@v7` 等):上游的 tag 一被改指,跑的就是別的程式碼——action.yml 跑在使用者的 runner 上。現在釘
+  40 碼 SHA,行尾註解標版本(`# v7.0.1`);`NuGet/login` 原本就有釘。新增測試要求這三個檔的每個 `uses:` 都是 commit SHA。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
-只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一的寫入口收「已完成的報告」,
-不存在任何「給我 URL 我去掃」的入口;掃描永遠發生在本機/CI。
+只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」
+(其他寫入端點只管登入、邀請、成員、token 與刪除 run),不存在任何「給我 URL 我去掃」的入口;
+掃描永遠發生在本機/CI。
 
-- **新增:`parity push` 子指令**(CLI 面加法 = minor)。把既有的 report.json 送上
+- **新增:`parity push` 子指令**(**實驗性**,不列入凍結——見開頭的例外;伺服器尚未公開部署)。把既有的 report.json 送上
   Parity.Server:token 走 `PARITY_TOKEN` 環境變數(CI secret;`--token` 旗標僅供本機
   試用,旗標值會進 shell 歷史與 CI log)、`--server` 或 `PARITY_SERVER`;
-  commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`/`GITHUB_REF_NAME`)。
+  commit/branch 自動吃 GitHub Actions 環境(`GITHUB_SHA`;branch 先取 PR 事件的 `GITHUB_HEAD_REF`,
+  沒有才用 `GITHUB_REF_NAME`)。
   送出前在本機先驗報告信封,壞檔案不浪費往返。
 - **新增:網頁外殼 M4.6——防禦層(拋開部署視角後的純軟體盤點)**。
   1. **端點層整合測試進 CI**:M3 當時用 curl 手跑的認證劇本(401/403/邀請單次/
@@ -52,7 +323,7 @@
   - M1 期間的「非 localhost 拒啟」保險絲**已隨本次拆除**。它是「讀取端點還沒有認證、
     唯一防線只有『只聽本機』」那段期間的權宜:綁對外位址就拒絕啟動,另附一個自擔風險的
     明示逃生口。現在讀取有認證了,保險絲與逃生口一併移除,程式碼裡不再有任何繞道開關
-    ——**兩者都只存在於這個未發佈區間之內,從未對外發佈過**。伺服器仍只綁 127.0.0.1,
+    ——**兩者都只存在於 1.1.0 之後的開發過程,從未對外發佈過**。伺服器仍只綁 127.0.0.1,
     TLS 與對外網域是 M5。
   - E2E 劇本 16 關全過(401/403/404/400 各就各位);測試 217 → 220。
 - **新增:網頁外殼 M4——總覽卡與趨勢圖(刻意提前到 M3 之前:分數沒有趨勢就沒有語境)**。

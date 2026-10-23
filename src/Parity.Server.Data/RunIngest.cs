@@ -39,6 +39,10 @@ public static class RunIngest
                 "body is not a Parity report (expected the { schemaVersion, reports } envelope that `parity check` writes).");
         if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
             throw new SchemaTooNewException(doc.SchemaVersion, ReportDocument.CurrentSchemaVersion);
+        // check --reverse 的報告期望/實際對調、不把關;收進來會污染趨勢與 gate(push 端也會先擋)
+        if (doc.Direction == ReportDirection.Reverse)
+            throw new InvalidOperationException(
+                "this is a `parity check --reverse` report (expected/actual swapped) — reverse reports are not accepted.");
 
         var run = new Run
         {

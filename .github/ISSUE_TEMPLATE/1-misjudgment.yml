@@ -1,0 +1,108 @@
+name: Misjudgment — a gap that isn't real, or a real gap it missed
+description: Parity reported a difference between the design and the page that is wrong, gave it the wrong severity, matched the wrong element, or said nothing about a real one.
+labels: ["misjudgment"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most valuable report this project receives — a fidelity tool people stop
+        believing is a tool people turn off.
+
+        **Before you attach anything, mask what you would not post publicly**: internal or
+        staging URLs, customer names and data, real text content, tokens. Report excerpts and
+        screenshots carry the page's structure, selectors and text. Replacing them with
+        placeholders is fine — the values and the property are what matter.
+
+        Write in English or 中文, whichever is easier.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `parity version` (or the Action ref you use)
+      placeholder: "2.0.0+abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong?
+      options:
+        - "False gap — it reported a difference that isn't there"
+        - "Missed gap — a real difference it said nothing about"
+        - "Wrong severity — the gap is real but graded too high or too low"
+        - "Wrong match — it compared the design node with the wrong page element"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: property
+    attributes:
+      label: Which property
+      description: As named in the report (fontSize, paddingLeft, background, itemSpacing, width…)
+      placeholder: "paddingLeft"
+    validations:
+      required: true
+
+  - type: input
+    id: design-value
+    attributes:
+      label: Design value
+      description: What the design says (from the report's "expected" column, or from the design tool)
+      placeholder: "20px"
+    validations:
+      required: true
+
+  - type: input
+    id: implementation-value
+    attributes:
+      label: Implementation value
+      description: What the page actually has (the report's "actual" column, or what devtools shows)
+      placeholder: "8px"
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why you think the judgment is wrong
+      description: >
+        For example: devtools shows the computed value matches; the gap comes from a CSS
+        transform or zoom; the design node is a variant sheet, not the screen; the element
+        is the wrong one because two layers share a name.
+    validations:
+      required: true
+
+  - type: textarea
+    id: excerpt
+    attributes:
+      label: The relevant part of the report (masked)
+      description: >
+        The lines for that node from the console output or the Markdown report, or the node's
+        entry in report.json. Mask URLs and content first (see above).
+      render: text
+    validations:
+      required: false
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Design source
+      options:
+        - "Figma"
+        - "Local design JSON (designFile)"
+        - "Image + annotations (designImage)"
+        - "Snapshot (parity snapshot)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Tolerances and gate settings, if you changed them
+      description: Only the `tolerances`, `gate` and `compare` sections — no URLs or keys needed.
+      render: json
+    validations:
+      required: false

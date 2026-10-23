@@ -11,7 +11,7 @@
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 tracks the latest 1.x (interfaces frozen since 1.0)
+- uses: HSU-YU-MING/cornhsu-parity@v2   # @v2 tracks the latest 2.x (interfaces frozen within a major)
   with:
     config: parity.config.json      # optional, defaults to parity.config.json
     target: /pricing                # optional, check only this route (omit for all)
@@ -63,13 +63,13 @@ PR comment, updating the same comment rather than adding new ones.
 
 | | |
 |---|---|
-| Releases | 27 on NuGet (v0.1.0 → v1.1.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
+| Releases | 28 on NuGet (v0.1.0 → v2.0.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **227**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **805**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
-| Proven in production | **All 21 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
+| Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
 ## Install
 
@@ -86,13 +86,15 @@ dotnet tool install -g Cornhsu.Parity
 > The npm build is the same self-contained native executable; you only download the one for
 > your platform (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64).
 > Playwright normally bundles its own copy of Node; the npm build strips that out and uses the
-> Node you already have, which saves about 88 MB per platform package.
+> Node you already have, which saves at least 88 MB per platform package. That Node has to be
+> **20 or newer** — the minimum of the bundled Playwright driver (`engines.node` says so).
 
 ## Quick start
 
 ```sh
 parity init                # Generate a parity.config.json template
-parity install-browser     # First run only: download Playwright Chromium
+parity install-browser     # Download Playwright Chromium: on first run, and again after an
+                           #   upgrade if check says Chromium is not installed
 export FIGMA_TOKEN=...     # Only the file_content:read scope is needed
 parity check               # Compare; writes a report and sets the exit code
 parity report              # Re-render the Markdown report from an existing report.json
@@ -105,6 +107,11 @@ parity lint                # Design lint: are the design file's values inside th
                            #   design-token set? (design only, no implementation)
 parity check --reverse     # Reverse view, for a designer redrawing an existing page:
                            #   how does my draft differ from what ships? (never gates)
+parity bug-report          # (experimental) Collect version / OS / Node / Chromium info and print
+                           #   it with a pre-filled GitHub issue link. Parity itself connects to nothing;
+                           #   opening the link sends the masked report to github.com (it rides in
+                           #   the URL). No issue until you submit the form. --config adds a
+                           #   structural summary without URLs, routes, keys, tokens or paths
 ```
 
 When working inside this repo:
@@ -125,24 +132,27 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "figmaFileKey": "abcd1234",
   "designToken": "env:FIGMA_TOKEN",
   "mapFile": "parity.map.json",              // manual fallback mapping (layer name → selector)
-  "tokensFile": "tokens.json",               // optional: design tokens (name → value);
+  "tokensFile": "tokens.json",               // optional: design tokens, a flat object of string values
+                                             //   ({"brand": "#2563EB", "space-4": "16px"}; // comments ok);
                                              //   suggested fixes will name the matching token
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
   "compare": { "position": "relative" },     // relative = compare relative position (default); none = skip position
-  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "positionPx": 4 },
+  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
-    "failOn": ["critical", "serious"],
-    "minMatchRate": 0                        // optional: FAIL outright below this match rate (0–1); 0 = no threshold
+    "failOn": ["critical", "serious"],       // any of minor / medium / serious / critical, one per string
+    "minMatchRate": 0                        // optional: below this match rate (0–1) → exit 3, see below; 0 = no threshold
   }
 }
 ```
 
 > Besides gaps, the gate also validates **match integrity**: zero matches (or zero design nodes)
-> is always a GATE FAIL — with nothing matched there are no gaps to catch, so a silent PASS
-> would be a false pass, usually caused by a wrong url or frame. `--baseline` mode is not exempt.
+> always fails, with exit code 3 (`MATCH INTEGRITY TOO LOW`) rather than 1 — with nothing
+> matched there are no gaps to catch, so a silent PASS would be a false pass, usually caused by
+> a wrong url or frame. A match rate below `gate.minMatchRate` fails the same way, with exit
+> code 3. `--baseline` mode is not exempt; `--reverse` never gates and always exits 0.
 
 ## Targets: a web page or an Electron desktop app
 
@@ -209,15 +219,20 @@ Only the things that should hold no matter how the layout flows:
   as references (TEXT/HUG boxes are never references, TEXT is never a target, and Y is honestly
   skipped when everything above is text), so line-height drift in a flowing layout does not
   produce false positives. Turn it off with `compare.position: "none"`.
-- **Typography**: size, weight, line-height and letter-spacing are compared exactly;
-  font-family is a **soft gap** and never gates.
+- **Typography**: size and letter-spacing are compared as numbers within `tolerances.fontSizePx`,
+  line-height within `tolerances.sizePx`; weight has no tolerance — any difference is a gap
+  (under 200 apart is medium, 200 or more is serious). font-family is a **soft gap**: it is
+  reported (severity `minor`, marked soft) but costs no fidelity points and **never gates** —
+  not even when `failOn` includes `minor`, and `--baseline` mode does not count it as new.
 - **Color**: thresholded on CIEDE2000 (ΔE), not hex equality. Parsing covers modern syntax
   (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `color(display-p3 …)`).
 - **Absolute x/y is deliberately never compared**: it legitimately differs in a flexible layout,
   so comparing it means false positives, which means losing trust.
 
-> When the design source is Figma, layer names in the report (both the Markdown and the local UI)
-> **link back to that node in Figma** — a designer clicks once and lands on the layer.
+> When the design source is Figma, layer names in the report (the Markdown written by
+> `check --md` or re-rendered by `parity report`, and the local UI) **link back to that node in
+> Figma** — a designer clicks once and lands on the layer. When `designFile` is set it wins over
+> `figmaFileKey`, so a snapshot- or JSON-based report carries no Figma links.
 
 ## Two workflows for designers
 
@@ -245,7 +260,9 @@ frame's size**, so a 375-wide phone frame makes your media queries fire naturall
 ```
 
 `route` is only a label in the report, so pick something recognizable. You only need `width` /
-`height` on a target when the frame's width is not the viewport width you want to test.
+`height` on a target when the frame's size is not the viewport you want to test. Each one
+overrides its own axis: `width` alone keeps the default height of 800, `height` alone keeps the
+frame's width.
 
 ## Shadow DOM / iframes
 
@@ -262,7 +279,8 @@ unaffected and works as usual).
 
 1. **Automatic text anchoring**: design TEXT content ↔ page text (matched only when unique;
    when several elements share the text, the layer name disambiguates — and it still refuses to force a match)
-2. **Layer name ↔ id / class / aria-label**: `CTA Button` matches `class="cta-button"` automatically
+2. **Layer name ↔ id / class / aria-label** (falling back to `data-testid` when there is no
+   aria-label): `CTA Button` matches `class="cta-button"` automatically
 3. **Container inference**: an unmatched container is inferred from the lowest common ancestor of
    its already-matched descendants (pure structure — no guessing)
 4. **Manual fallback**: add `data-parity="Layer Name"` in your HTML, or write
@@ -286,8 +304,10 @@ src/Parity.Engine/        The engine; FidelityEngine is the only entry point
   DesignSources/          IDesignSource + Figma (REST + local cache) / Json
   ImplementationSources/  IImplementationSource + Web (Playwright)
   Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta (CIEDE2000)
+src/Parity.Report/        The report contract: report.json types, ReportWire, the fidelity score,
+                          baseline comparison — no package dependencies, so no Playwright
 src/Parity.Cli/           The dotnet tool shell: parity check / init / install-browser,
-                          the local report UI (parity serve) and parity push
+                          the local report UI (parity serve) and parity push (experimental)
 src/Parity.Storage/       Baseline history (EF Core + SQLite), behind parity baseline
 src/Parity.Server/        Team dashboard shell (ASP.NET Core) — not published to NuGet
 src/Parity.Server.Data/   Its database (EF Core + SQLite, migrations from day one)
@@ -307,17 +327,33 @@ There are three shells, and **the engine does not know that any of them exist**:
    that trends exist and so that people who never touch the tool have a place to look. You
    deploy it yourself; it is not on NuGet, and it is **still in development** (see M7 below).
 
+> **Where the dashboard keeps its data.** The web host and the admin commands (`create-project`,
+> `create-invite`) find the SQLite database the same way: `ConnectionStrings:parity` (from
+> `appsettings.json` or the `ConnectionStrings__parity` environment variable), then
+> `PARITY_SERVER_DB` (a file path), then `parity-server.db` in the working directory. This is the
+> reverse of .NET's usual "environment beats appsettings": a connection string in
+> `appsettings.json` wins over `PARITY_SERVER_DB` — to override it from the environment, set
+> `ConnectionStrings__parity`. The reason: an explicit connection string is the more specific
+> setting, and the integration tests inject one that a developer's `PARITY_SERVER_DB` must not
+> redirect.
+
 ### The iron rule: the cloud never runs a browser
 
-`Parity.Server`'s only write endpoint is `POST /api/runs`, and what it accepts is **a report
-that has already finished running**. There is no "give me a URL and I will go scan it"
+`Parity.Server`'s only endpoint that takes in scan results is `POST /api/runs` (its other
+write endpoints only manage sign-in, invites, members, tokens and run deletion), and what it
+accepts is **a report that has already finished running**. There is no "give me a URL and I will go scan it"
 endpoint, and there will not be one: **scanning always happens on your own machine or in your
 CI**, where the page, the credentials and the localhost port already are.
 
 This is not an implementation detail — it is the security claim of the whole design. It is why
 the dashboard has **no SSRF surface at all**: it is never handed a URL to fetch. And it is
-enforced structurally rather than by policy — `Parity.Server.csproj` never references
-Playwright, so the server has no browser to point anywhere in the first place.
+enforced structurally rather than by policy — the server projects do not reference the engine
+at all, only `Parity.Report` (the report types, which have no package dependencies), so neither
+Playwright nor its driver is anywhere in the server's build output. A test walks the server's
+whole project-reference graph and turns CI red if any project in it references Playwright or
+the engine; another turns it red the moment server code references a Playwright type or the
+engine's capture side (`FidelityEngine`, `IImplementationSource`, or anything in
+`ImplementationSources.Web`, which is the code that opens Chromium).
 
 ## Local report UI (M3)
 
@@ -349,12 +385,12 @@ jobs:
       contents: read
       pull-requests: write   # lets the action post the fidelity report as a PR comment
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Start your site (or deploy to a preview URL and point the config's url at it)
       - run: |
           npm ci && npm run build
           npm run preview &   # e.g. serving on localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 tracks the latest 1.x
+      - uses: HSU-YU-MING/cornhsu-parity@v2   # @v2 tracks the latest 2.x
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # omit when the design source is a local JSON file
@@ -362,25 +398,46 @@ jobs:
 
 Behaviour:
 
-- **PR comment**: posts a fidelity report (score + gap table + **suggested fixes**) and keeps
+- **PR comment**: posts a fidelity report (score + gap table + **suggested fixes**, ending with a
+  "Report a misjudgment" link to the issue form — a link only, nothing is sent) and keeps
   updating that same comment instead of adding new ones — so PMs and reviewers see it without
   ever touching the tool.
 - **Blocks the PR**: gaps beyond `gate.failOn` → exit 1 → red PR. (**The comment is posted
   first, then the gate is enforced.**)
-- **Artifacts**: `report.json` plus the Markdown report are uploaded for download.
+- **Artifacts**: `report.json` plus the Markdown report are uploaded for download (artifact
+  name `parity-report` unless you set `artifact-name`; `report.json` and `parity-report.md` at its
+  root). `report.json` is picked up from `.parity/report.json` next to the config file — where
+  `check` writes it — even when `config` points into a subdirectory.
+- **Running it more than once per workflow run**: prefer a **matrix** (one job per site or config), and
+  give each call its own `artifact-name` (e.g. `parity-report-${{ matrix.site }}`). Each name gets its
+  own artifact and keeps its own PR comment; two calls with the same name collide on the artifact upload.
+  Two calls in **one job** work only while the first one passes: when its gate fails, the job stops at
+  that call's last step and the second call never runs (no report, no comment, no artifact for it).
 
 Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
-`baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report`.
+`baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report` /
+`artifact-name` (default `parity-report`; letters, digits, `.`, `_`, `-`, at most 100 characters, not starting with `-` and not only dots).
 
 > The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
-> nuget.org). This repo's own `.github/workflows/ci.yml` instead **builds from source** and runs
-> the offline demo as a self-check, so it does not depend on a published release.
+> nuget.org) — the latest 2.x when `version` is omitted, so `@v2` never jumps to a future 3.x,
+> or exactly the `version` you pass. **Within one job the tool is installed once per call into the same
+> global location, and a later call cannot install a lower version than an earlier one** (`dotnet tool`
+> refuses to downgrade) — e.g. a first call without `version` installs the latest 2.x, and a second call
+> with `version: 2.0.0` fails. Give every call in a job the same `version`, or use a matrix. This repo's own `.github/workflows/ci.yml` instead **builds from
+> source** and runs the offline demo as a self-check, so it does not depend on a published release.
+>
+> **Upgrading from `@v1`?** `v1` stays at 1.1.0, whose action installs the newest release of *any*
+> major when `version` is omitted — so an unpinned `@v1` workflow already runs 2.x. Switch to `@v2` and
+> work through the "upgrade required" list in the CHANGELOG's 2.0.0 entry, or set `version: 1.1.0` to
+> stay on 1.x for now.
 
 ## Report vocabulary (for anyone parsing `report.json`)
 
+- **Unknown keys** — consumers must ignore keys they do not recognize. Within 2.x, `report.json` only *gains* fields; existing keys are never removed, renamed or given a different type (that would be 3.0). Closed sets below never gain members within 2.x either.
 - `severity` — **closed set** (spelling and membership frozen): `none` / `minor` / `medium` / `serious` / `critical`. `status`: `mismatch` / `missing`.
 - `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `randomized-id`, `size-implausible`.
 - `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`.
+- `direction` (top level, since 2.0.0) — **closed set**: `forward` (a normal `check`) / `reverse` (`check --reverse`: expected and actual swapped, never gated). Always written; files without it read as `forward`. Readers accept exactly the lowercase strings `"forward"` and `"reverse"` — any other value (other casing, a number, `null`) is an error, not a guess. `parity report` does not gate a reverse report, and `parity push` refuses one.
 
 ## Regression gating: baselines (M5)
 
@@ -419,8 +476,9 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
   declined** (2026-07-18). This is *not* what M7 is: M7 never scans anything. The reasoning is
   kept in [ROADMAP.md](ROADMAP.md).
 - [ ] **M7** Team dashboard shell (`Parity.Server` + `Parity.Server.Data` + `web/`) — **in
-  progress, not yet released.** `parity push` sends a finished `report.json` to a server you
-  host yourself; the dashboard renders the gaps as an engineering blueprint drawn from the
+  progress, not yet released.** `parity push` (**experimental**: the server is not publicly deployed
+  yet, so the command and its server protocol may change in a 2.x minor release and join the interface
+  freeze once the server ships) sends a finished `report.json` to a server you host yourself; the dashboard renders the gaps as an engineering blueprint drawn from the
   measured coordinates (no screenshot upload), an overview and score trend per project and
   route, and accounts / project roles / invite links. Its own internal M1–M4.6 are done; its
   M5 (real external deployment: TLS, a domain, a hosted database) is not. **It receives
@@ -433,8 +491,8 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
 
 - The Figma token comes from an environment variable (`env:FIGMA_TOKEN`); it never reaches a log
   and never goes in a URL (it is sent as the `X-Figma-Token` header).
-- Fetched frames are cached in `.parity/cache` (gitignored), so re-runs do not hit Figma and can
-  compare offline.
+- Fetched frames are cached in `.parity/cache` (add `.parity/` to your `.gitignore`), so re-runs do
+  not hit Figma and can compare offline.
 - The local report UI binds 127.0.0.1 only, and additionally rejects unexpected `Host` headers
   (DNS rebinding) and cross-origin `POST`s (CSRF).
 - **The team dashboard never scans anything** — it only receives finished reports, so it has no
@@ -454,8 +512,12 @@ same author, built on the same philosophy: numeric checks that gate CI. Parity a
 implementation match the design?**" (fidelity); XamlContrast answers "**can anyone actually see
 what we built?**" (WCAG contrast, scanned statically from XAML source). One guards fidelity, the
 other readability — and its static color resolution is also the groundwork for the expected values
-of this project's future `WpfImplementationSource` desktop adapter.
+of this project's future `WpfImplementationSource` desktop adapter (see §4.5 of the
+[project plan](docs/Parity專案規畫書.md), in Traditional Chinese).
 
 ## License
 
-MIT
+MIT. The NuGet and npm packages also bundle third-party components (Playwright, ImageSharp,
+SQLite and others; the npm packages also include the .NET runtime). Their licenses are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which ships inside the NuGet package and every npm
+platform package.

@@ -44,8 +44,9 @@ public static class RunCompare
         if (prev is null)
             return new RunChanges(null, null, [], [], [], 0);
 
+        var current = Reports(run.RawReportGzip);
         var comparison = BaselineComparer.Compare(
-            Records(run.RawReportGzip), Records(prev.RawReportGzip));
+            DiffRecord.FromReports(current), DiffRecord.FromReports(Reports(prev.RawReportGzip)), DiffRecord.KeysOf(current));
         return new RunChanges(
             prev.Id, prev.CreatedAt,
             comparison.Regressions.Select(Map).ToList(),
@@ -54,12 +55,8 @@ public static class RunCompare
             comparison.Unchanged);
     }
 
-    private static IReadOnlyList<DiffRecord> Records(byte[] blob)
-    {
-        var doc = JsonSerializer.Deserialize<ReportDocument>(
-            ReportBlob.Decompress(blob), ReportWire.Compact)!;
-        return DiffRecord.FromReports(doc.Reports);
-    }
+    private static IReadOnlyList<FidelityReport> Reports(byte[] blob)
+        => JsonSerializer.Deserialize<ReportDocument>(ReportBlob.Decompress(blob), ReportWire.Compact)!.Reports;
 
     private static ChangedDiff Map(DiffRecord d) => new(
         d.Route, d.DesignLayer, d.Selector, d.Prop,

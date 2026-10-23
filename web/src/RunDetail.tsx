@@ -3,13 +3,9 @@ import { deleteRun, fetchChanges, fetchRunMeta, fetchRunReport } from './api'
 import type { FidelityReport, Me, NodeResult, ReportDocument, RunChanges, RunMeta, Severity } from './types'
 import Blueprint from './Blueprint'
 import { navigate } from './App'
-
-/* Figma 深連結:designReference 是 Figma file key 時(不含路徑分隔符的一串英數),
-   圖層名可以直接跳回 Figma 的那個節點——CLI 的 Markdown 報告本來就會這樣連,儀表板跟上。 */
-function figmaUrl(designReference: string, designId: string): string | null {
-  if (!/^[A-Za-z0-9]{15,}$/.test(designReference)) return null // 路徑/快照檔 → 不是 Figma
-  return `https://www.figma.com/design/${designReference}?node-id=${encodeURIComponent(designId)}`
-}
+// Figma 深連結:設計來源是 Figma 時,圖層名可以直接跳回 Figma 的那個節點
+// ——CLI 的 Markdown 報告本來就會這樣連,儀表板跟上(解析規則與測試見 figma.ts)
+import { figmaUrl } from './figma'
 
 /* 落差詳情——取代 PPT 那一頁的畫面(網頁外殼規畫書 6)。
    左:藍圖(在哪裡);右:數值清單(差多少)。點任一邊,另一邊跟著亮。 */

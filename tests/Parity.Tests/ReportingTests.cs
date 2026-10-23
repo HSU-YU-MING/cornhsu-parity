@@ -76,6 +76,44 @@ public class ReportingTests
     public void Fix_hint_maps_prop_to_css(string prop, string expected, string hint)
         => Assert.Equal(hint, FixHint.For(Diff(prop, expected, "x")));
 
+    [Theory]
+    [InlineData("width", "160", "width: 160px")]
+    [InlineData("height", "48", "height: 48px")]
+    [InlineData("paddingTop", "12", "padding-top: 12px")]
+    [InlineData("paddingRight", "20", "padding-right: 20px")]
+    [InlineData("paddingBottom", "12", "padding-bottom: 12px")]
+    [InlineData("fontWeight", "700", "font-weight: 700")]
+    [InlineData("lineHeight", "24", "line-height: 24px")]
+    [InlineData("letterSpacing", "0.5", "letter-spacing: 0.5px")]
+    [InlineData("color", "#111827", "color: #111827")]
+    [InlineData("fontFamily", "Inter", "font-family should include Inter")]
+    [InlineData("offsetX", "16", "horizontal offset from its sibling/parent should be 16px")]
+    [InlineData("offsetY", "8", "vertical offset from its sibling/parent should be 8px")]
+    public void Fix_hint_maps_the_remaining_props_to_css(string prop, string expected, string hint)
+        => Assert.Equal(hint, FixHint.For(Diff(prop, expected, "x")));
+
+    [Fact]
+    public void Every_prop_the_diff_engine_emits_has_a_fix_hint()
+    {
+        // 上面兩張表寫死了現有的 prop;DiffEngine 新增一個 prop 卻忘了補 FixHint 時,
+        // FixHint 回 null、報告那格靜靜空白,表格不會紅。所以直接掃 DiffEngine.cs(去掉註解)
+        // 裡的 camelCase 字串常值——prop 名稱都長這樣,其他常值(HUG/FILL、"0.##")不是。
+        // 新常值若根本不是 prop,把它加進 notProps 並寫一行理由
+        string[] notProps =
+        [
+            "px", // PropDiff 的 Unit 欄位
+        ];
+        var code = string.Join('\n', File.ReadAllLines(Repo.PathOf("src", "Parity.Engine", "Comparison", "DiffEngine.cs"))
+            .Select(l => l.IndexOf("//", StringComparison.Ordinal) is var i and >= 0 ? l[..i] : l));
+        var props = System.Text.RegularExpressions.Regex.Matches(code, "\"([a-z][a-zA-Z]*)\"")
+            .Select(m => m.Groups[1].Value).Except(notProps).Distinct().Order().ToList();
+
+        // 掃描本身要有效:regex 對不上時會安靜地變成「零項通過」
+        Assert.Contains("paddingLeft", props);
+        Assert.Contains("fontFamily", props);
+        Assert.DoesNotContain(props, p => FixHint.For(Diff(p, "1", "2")) is null);
+    }
+
     [Fact]
     public void Fix_hint_null_for_unknown_prop()
         => Assert.Null(FixHint.For(Diff("mysteryProp", "1", "2")));
@@ -147,6 +185,39 @@ public class ReportingTests
     }
 
     [Fact]
+    public void Markdown_ends_with_a_link_to_report_a_misjudgment()
+    {
+        // 2.0.0 的回報功能:Markdown 報告(也就是 PR 留言)最後一行連到誤判/漏判的 issue 範本(預填網址)。
+        // 只是一個連結,工具本身不送任何東西;也不進 report.json
+        var md = MarkdownReport.Render([Report(1, [Node("cta", Diff("color", "#fff", "#000"))])], gateFail: true);
+
+        var last = md.TrimEnd().Split('\n')[^1];
+        Assert.Contains("Report a misjudgment", last);
+        Assert.Contains("(https://github.com/HSU-YU-MING/cornhsu-parity/issues/new?template=1-misjudgment.yml)", last);
+        Assert.Contains("mask", last);
+        Assert.Equal(FeedbackLinks.Misjudgment, "https://github.com/HSU-YU-MING/cornhsu-parity/issues/new?template=1-misjudgment.yml");
+    }
+
+    [Fact]
+    public void Feedback_links_point_at_templates_that_exist()
+    {
+        foreach (var url in new[] { FeedbackLinks.Misjudgment, FeedbackLinks.Bug })
+        {
+            var template = url[(url.IndexOf("template=", StringComparison.Ordinal) + "template=".Length)..];
+            Assert.True(File.Exists(Repo.PathOf(".github", "ISSUE_TEMPLATE", template)), $"{url} 指向不存在的範本");
+        }
+    }
+
+    [Fact]
+    public void The_local_report_ui_links_to_the_misjudgment_template()
+    {
+        var html = Repo.Read("src", "Parity.Cli", "wwwroot", "index.html");
+
+        Assert.Contains($"href=\"{FeedbackLinks.Misjudgment}\"", html);
+        Assert.Contains("rel=\"noopener noreferrer\"", html);
+    }
+
+    [Fact]
     public void Markdown_includes_baseline_change_section()
     {
         var report = Report(1, [Node("cta", Diff("color", "#fff", "#000"))]);
@@ -185,6 +256,37 @@ public class ReportingTests
         Assert.Contains("**Fidelity 50/100** (baseline 75 ↓ -25)", md);
     }
 
+    [Theory]
+    [InlineData(25, "(baseline 25 ↑ +25)")]
+    [InlineData(50, "(baseline 50 → ±0)")]
+    public void Markdown_score_trend_also_reads_up_and_flat(int baselineScore, string trend)
+    {
+        var report = Report(2, [Node("bad", Diff("fontSize", "32", "30")), Node("ok")]); // 50 分
+        Assert.Contains($"**Fidelity 50/100** {trend}", MarkdownReport.Render([report], gateFail: true, baselineScore: baselineScore));
+    }
+
+    [Fact]
+    public void Markdown_lists_new_worsened_and_fixed_items_under_their_own_headings()
+    {
+        // reviewer 在 PR 留言裡最先看的是「這次變了什麼」:三類各自一段,空的那類不出標題
+        var report = Report(1, [Node("cta", Diff("color", "#fff", "#000"))]);
+        DiffRecord Rec(string layer, string prop) => new("/", layer, "sel", prop, Severity.Serious, "12", "8");
+
+        var all = MarkdownReport.Render([report], gateFail: true, baseline: new BaselineComparison(
+            Regressions: [Rec("cta", "paddingTop")], Worsened: [Rec("hero", "height")], Fixed: [Rec("nav", "itemSpacing")], Unchanged: 2));
+
+        Assert.Contains("vs baseline: 🔴 new **1**, 🟠 worsened **1**, 🟢 fixed **1**, ⚪ unchanged 2", all);
+        Assert.Contains("**🔴 New diffs**\n- `cta` · paddingTop · `12` → `8`", all.ReplaceLineEndings("\n"));
+        Assert.Contains("**🟠 Worsened**\n- `hero` · height · `12` → `8`", all.ReplaceLineEndings("\n"));
+        Assert.Contains("**🟢 Fixed**\n- `nav` · itemSpacing · `12` → `8`", all.ReplaceLineEndings("\n"));
+
+        var onlyFixed = MarkdownReport.Render([report], gateFail: false, baseline: new BaselineComparison(
+            Regressions: [], Worsened: [], Fixed: [Rec("nav", "itemSpacing")], Unchanged: 0));
+        Assert.Contains("**🟢 Fixed**", onlyFixed);
+        Assert.DoesNotContain("**🔴 New diffs**", onlyFixed);
+        Assert.DoesNotContain("**🟠 Worsened**", onlyFixed);
+    }
+
     [Fact]
     public void Markdown_pipe_in_value_is_escaped()
     {
@@ -192,5 +294,80 @@ public class ReportingTests
         var report = Report(1, [Node("x", Diff("fontFamily", "A|B", "C"))]);
         var md = MarkdownReport.Render([report], gateFail: false);
         Assert.Contains("A\\|B", md);
+    }
+
+    [Fact]
+    public void Markdown_for_several_routes_adds_a_route_column_and_prefixes_unmatched()
+    {
+        // 多頁的 PR 留言:同名圖層(Header/Footer)出現在每一頁,沒有 route 欄分不出是哪一頁
+        var home = Report(2, [Node("Header", Diff("height", "64", "80"))], [new UnmatchedNode("Badge", "b", "no-anchor")], route: "/");
+        var pricing = Report(1, [Node("Header", Diff("height", "64", "72"))], route: "/pricing");
+
+        var md = MarkdownReport.Render([home, pricing], gateFail: true);
+
+        Assert.Contains("| Route | Element | Property | Expected → Actual | Severity | Suggested fix |", md);
+        Assert.Contains("| / | `Header` | height |", md);
+        Assert.Contains("| /pricing | `Header` | height |", md);
+        Assert.Contains("- `/` `Badge` — no-anchor", md);
+
+        var single = MarkdownReport.Render([home], gateFail: true);
+        Assert.Contains("| Element | Property | Expected → Actual | Severity | Suggested fix |", single);
+        Assert.DoesNotContain("| Route |", single);
+    }
+
+    [Fact]
+    public void Markdown_soft_diffs_are_labelled_soft()
+    {
+        var report = Report(1, [Node("title", Diff("fontFamily", "Inter", "Arial", Severity.Minor, soft: true))]);
+
+        Assert.Contains("| minor(soft) |", MarkdownReport.Render([report], gateFail: false));
+    }
+
+    [Fact]
+    public void Tokens_file_loads_colors_and_sizes_and_skips_other_values()
+    {
+        using var dir = new TempDir();
+
+        var tokens = DesignTokens.Load(dir.Write("ok.json", """{ "brand": "#2563EB", "space-2": "8px", "font": "Inter" }"""));
+
+        Assert.Equal(["brand"], tokens.Colors.Select(c => c.Name));
+        Assert.Equal(["space-2"], tokens.Sizes.Select(s => s.Name)); // 既不是顏色也不是 px 的值被略過
+        Assert.False(tokens.IsEmpty);
+        Assert.True(DesignTokens.Load(dir.Write("empty.json", "{}")).IsEmpty);
+    }
+
+    [Fact]
+    public void Tokens_file_allows_comments_and_trailing_commas_like_the_config_and_map_files()
+    {
+        // 三個檔並排放,只有 tokens 檔不吃註解是暗雷(1.0.0 修 map 檔時的同一個理由,B9)
+        using var dir = new TempDir();
+
+        var tokens = DesignTokens.Load(dir.Write("t.json", "{\n  // brand\n  \"brand\": \"#2563EB\",\n}"));
+
+        Assert.Equal(["brand"], tokens.Colors.Select(c => c.Name));
+    }
+
+    [Fact]
+    public void Tokens_file_problems_are_reported_with_the_file_and_the_location()
+    {
+        // 原本 LoadJson 用 catch 把這些全吞成 null,lint 接著叫使用者去「set tokensFile in the config」
+        // ——叫人去設一個已經設了的欄位
+        using var dir = new TempDir();
+
+        var missing = Assert.Throws<FileNotFoundException>(() => DesignTokens.Load(dir.File("nope.json")));
+        Assert.Contains($"tokensFile not found: {dir.File("nope.json")}", missing.Message);
+
+        var broken = Assert.Throws<InvalidOperationException>(
+            () => DesignTokens.Load(dir.Write("broken.json", "{\n  \"a\": \"1px\"\n  oops\n}")));
+        Assert.Contains($"tokensFile {dir.File("broken.json")} is not valid JSON", broken.Message);
+        Assert.Contains("LineNumber: 2", broken.Message);
+
+        var number = Assert.Throws<InvalidOperationException>(
+            () => DesignTokens.Load(dir.Write("number.json", """{ "space-2": 8 }""")));
+        Assert.Contains("\"space-2\" is a number", number.Message);
+        Assert.Contains("must be strings", number.Message);
+
+        var array = Assert.Throws<InvalidOperationException>(() => DesignTokens.Load(dir.Write("array.json", "[]")));
+        Assert.Contains("flat JSON object", array.Message);
     }
 }

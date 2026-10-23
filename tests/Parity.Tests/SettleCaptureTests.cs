@@ -92,6 +92,56 @@ public class SettleCaptureTests : IDisposable
         Assert.Equal(TargetTopPx, target.Box.Y, precision: 0);
     }
 
+    /// <summary>
+    /// CLAUDE.md 地雷「<c>wait(minRounds, …)</c> 的 minRounds 不能省」的回歸測試。上面那條驗的是幾何保證
+    /// (撐高視窗);這條驗的是等待本身:要先無條件花掉 minRounds,才開始要求「連續穩定」——
+    /// 變化送達之前版面本來就是靜止的,只看穩定會在變化來之前就收工(0.11.0/0.11.1 的失敗模式)。
+    /// 用 rAF 計數讓版面在第 N 幀才變,模擬晚到的 IntersectionObserver callback。不賭時序:
+    /// 頁面的 rAF 鏈與腳本的 rAF 鏈每幀同步前進,幀數是確定的。
+    /// 少了 minRounds:Trigger 的第一段等待在第 6 幀就收工(第二段等待到第 14 幀),Settle 在第 6 幀;
+    /// 有 minRounds:Trigger 至少撐到第 16 幀之後,Settle 撐到第 10 幀。
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(SettleScript.Trigger), 18)]
+    [InlineData(nameof(SettleScript.Settle), 8)]
+    public async Task 版面晚幾幀才變_定案腳本要等到變化之後才收工(string script, int changeAtFrame)
+    {
+        var js = script == nameof(SettleScript.Trigger) ? SettleScript.Trigger : SettleScript.Settle;
+
+        using var pw = await Microsoft.Playwright.Playwright.CreateAsync();
+        Microsoft.Playwright.IBrowser browser;
+        try
+        {
+            browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
+        }
+        catch (Microsoft.Playwright.PlaywrightException ex) when (BrowserMissing(ex))
+        {
+            Console.WriteLine("略過:未安裝 Chromium(parity install-browser);此測試需要真實瀏覽器");
+            return;
+        }
+        await using var _ = browser;
+        var page = await browser.NewPageAsync();
+        await page.SetContentAsync("""<!doctype html><body style="margin:0"><div id="late" style="height:10px"></div></body>""");
+
+        // 腳本收工那一刻(同一個 task 內、還沒有下一幀)的高度 = 擷取會量到的高度
+        var heightWhenDone = await page.EvaluateAsync<double>($$"""
+            async () => {
+              const box = document.getElementById('late');
+              let frames = 0;
+              const tick = () => {
+                if (++frames === {{changeAtFrame}}) box.style.height = '200px';
+                else requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+              await ({{js}})();
+              return box.getBoundingClientRect().height;
+            }
+            """);
+
+        Assert.True(heightWhenDone == 200,
+            $"{script} 在第 {changeAtFrame} 幀的版面變化之前就收工了(量到高度 {heightWhenDone})——minRounds 被省掉或調小了?");
+    }
+
     private static bool BrowserMissing(Exception ex) =>
         ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("install-browser", StringComparison.OrdinalIgnoreCase)

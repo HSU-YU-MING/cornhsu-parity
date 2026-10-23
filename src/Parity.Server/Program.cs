@@ -28,8 +28,7 @@ if (builder.Configuration["urls"] is null && Environment.GetEnvironmentVariable(
     builder.WebHost.UseUrls("http://127.0.0.1:4322");
 
 builder.Services.AddDbContext<ServerDbContext>(o => o.UseSqlite(
-    builder.Configuration.GetConnectionString("parity")
-    ?? $"Data Source={Path.Combine(builder.Environment.ContentRootPath, "parity-server.db")}"));
+    ServerDatabase.ConnectionString(builder.Configuration, builder.Environment.ContentRootPath)));
 
 builder.Services.AddIdentityCore<AppUser>(o =>
     {
@@ -40,10 +39,22 @@ builder.Services.AddIdentityCore<AppUser>(o =>
         o.Password.RequireLowercase = false;
         o.Password.RequireDigit = false;
         o.User.RequireUniqueEmail = true;
-        o.Lockout.MaxFailedAccessAttempts = 5; // 內建暴力破解節流
+        // 暴力破解節流的門檻與時長(5 次、預設 5 分鐘)。計數與鎖定由 LoginGuard + LoginThrottles 表執行,
+        // 不走 Identity 的 AccessFailedCount——這裡只是數值的單一來源(決策 #21)
+        o.Lockout.MaxFailedAccessAttempts = 5;
     })
     .AddEntityFrameworkStores<ServerDbContext>()
     .AddSignInManager();
+// 登入的額度、序列化與鎖定(見 LoginGuard):門檻與時長取自 IdentityOptions.Lockout,額度取自 Parity:Login:*
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new LoginGuard(
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityOptions>>().Value.Lockout,
+        sp.GetService<TimeProvider>() ?? TimeProvider.System,
+        LoginGuard.LimitFrom(config, LoginGuard.PerIpKey, LoginGuard.DefaultPerIpPerMinute),
+        LoginGuard.LimitFrom(config, LoginGuard.PerEmailKey, LoginGuard.DefaultPerEmailPerMinute));
+});
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddCookie(IdentityConstants.ApplicationScheme, o =>
@@ -63,6 +74,9 @@ builder.Services.AddAuthorization();
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 20 * 1024 * 1024);
 
 var app = builder.Build();
+// 啟動時就建立 LoginGuard:額度設錯(0、負數、不是整數)直接起不來、訊息點名設定鍵。
+// 原本第一次登入才建立,設錯時伺服器照常啟動、每次登入都 500
+app.Services.GetRequiredService<LoginGuard>();
 
 using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.Migrate();
@@ -87,17 +101,57 @@ app.MapGet("/healthz", async (ServerDbContext db) =>
 
 // ── 認證 ───────────────────────────────────────────────────────
 app.MapPost("/api/auth/login", async (
-    LoginRequest req, SignInManager<AppUser> signIn, UserManager<AppUser> users, ServerDbContext db) =>
+    LoginRequest req, HttpContext http, SignInManager<AppUser> signIn, UserManager<AppUser> users,
+    ServerDbContext db, IPasswordHasher<AppUser> hasher, LoginGuard guard) =>
 {
-    var user = await users.FindByEmailAsync(req.Email.Trim());
-    if (user is null)
-        return Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
-    var result = await signIn.PasswordSignInAsync(user, req.Password, isPersistent: true, lockoutOnFailure: true);
-    if (result.IsLockedOut)
-        return Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
-    if (!result.Succeeded)
-        return Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
-    return Results.Json(await MeAsync(user, db));
+    // 帳號存不存在,回應的內容與時間都不能透露(決策 #21):存在與不存在的 email 走同一條路——
+    // 同樣的額度、同樣的序列化、同樣的查詢與寫入(LoginThrottles),每次失敗都恰好跑一次密碼雜湊驗證
+    // (PBKDF2,數十毫秒),鎖定也一視同仁
+    static IResult Incorrect() => Results.Json(new { error = "email or password is incorrect." }, statusCode: 401);
+    static IResult LockedOut() => Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
+
+    var email = (req.Email ?? "").Trim();
+    var password = req.Password ?? "";
+    // 比 AspNetUsers.NormalizedEmail 的上限還長的不可能是帳號(公開資訊,不是探測管道),也不讓它進節流表
+    if (email.Length > 256)
+        return Results.Json(new { error = "email is too long." }, statusCode: 400);
+    var key = users.NormalizeEmail(email) ?? email;
+
+    // 1) 額度:任何查詢與驗證之前
+    if (!guard.TryAcquire(http.Connection.RemoteIpAddress, key, out var retryAfter))
+    {
+        http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Results.Json(new { error = "too many login attempts — wait a minute and try again." }, statusCode: 429);
+    }
+
+    // 2) 同一個 email 一次一個:讀計數 → 驗密碼 → 寫計數不被並發穿插
+    using var serialized = await guard.SerializeAsync(key, http.RequestAborted);
+
+    // 3) 兩種帳號都是:查使用者、查節流列、驗一次密碼、(失敗時)寫節流列
+    var user = await users.FindByEmailAsync(email);
+    var row = await db.LoginThrottles.FindAsync([key], http.RequestAborted);
+    if (guard.IsLockedOut(row))
+    {
+        LoginTiming.SpendOneVerification(hasher, password); // 鎖定中也付一次驗證的成本,不寫入
+        return LockedOut();
+    }
+    var ok = false;
+    if (user?.PasswordHash is null) LoginTiming.SpendOneVerification(hasher, password); // 同成本的假驗證
+    else ok = await users.CheckPasswordAsync(user, password);
+    if (!ok)
+    {
+        var lockedNow = guard.RecordFailure(db, key, row);
+        await db.SaveChangesAsync(http.RequestAborted);
+        return lockedNow ? LockedOut() : Incorrect();
+    }
+    if (row is not null)
+    {
+        db.LoginThrottles.Remove(row); // 成功登入清掉失敗計數
+        await db.SaveChangesAsync(http.RequestAborted);
+    }
+    await signIn.SignInAsync(user!, isPersistent: true);
+    return Results.Json(await MeAsync(user!, db));
 });
 
 app.MapPost("/api/auth/logout", async (SignInManager<AppUser> signIn) =>
@@ -122,12 +176,22 @@ app.MapGet("/api/invites/{token}", async (string token, ServerDbContext db) =>
 });
 
 app.MapPost("/api/invites/{token}/accept", async (
-    string token, AcceptRequest req, ServerDbContext db,
-    UserManager<AppUser> users, SignInManager<AppUser> signIn) =>
+    string token, AcceptRequest req, HttpContext http, ServerDbContext db,
+    UserManager<AppUser> users, SignInManager<AppUser> signIn, IPasswordHasher<AppUser> hasher, LoginGuard guard) =>
 {
     var invite = await Invites.FindUsableAsync(db, token, DateTimeOffset.UtcNow);
     if (invite is null)
         return Results.Json(new { error = "this invite link is invalid, expired, or already used — ask the project owner for a new one." }, statusCode: 404);
+
+    // 既有帳號被重邀時這裡要驗密碼,等於另一個猜密碼的入口:與登入共用同一套額度、序列化與失敗計數(決策 #21)
+    var key = users.NormalizeEmail(invite.Email) ?? invite.Email;
+    if (!guard.TryAcquire(http.Connection.RemoteIpAddress, key, out var retryAfter))
+    {
+        http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Results.Json(new { error = "too many attempts — wait a minute and try again." }, statusCode: 429);
+    }
+    using var serialized = await guard.SerializeAsync(key, http.RequestAborted);
 
     var user = await users.FindByEmailAsync(invite.Email);
     if (user is null)
@@ -139,9 +203,25 @@ app.MapPost("/api/invites/{token}/accept", async (
     }
     else
     {
-        // 既有使用者被重邀(換角色/回鍋):要證明是本人——密碼對得上才接受
-        if (!await users.CheckPasswordAsync(user, req.Password))
-            return Results.Json(new { error = "an account with this email already exists — enter its password to accept." }, statusCode: 401);
+        // 既有使用者被重邀(換角色/回鍋):要證明是本人——密碼對得上才接受。鎖定中一律擋(也付一次驗證的成本)
+        var row = await db.LoginThrottles.FindAsync([key], http.RequestAborted);
+        if (guard.IsLockedOut(row))
+        {
+            LoginTiming.SpendOneVerification(hasher, req.Password);
+            return Results.Json(new { error = "too many failed attempts — try again in a few minutes." }, statusCode: 401);
+        }
+        if (!await users.CheckPasswordAsync(user, req.Password ?? ""))
+        {
+            var lockedNow = guard.RecordFailure(db, key, row);
+            await db.SaveChangesAsync(http.RequestAborted);
+            return Results.Json(new
+            {
+                error = lockedNow
+                    ? "too many failed attempts — try again in a few minutes."
+                    : "an account with this email already exists — enter its password to accept.",
+            }, statusCode: 401);
+        }
+        if (row is not null) db.LoginThrottles.Remove(row); // 驗過了:清掉失敗計數(隨下面接受邀請一起存)
     }
 
     Audit.Log(db, invite.ProjectId, user.Id, invite.Email, "invite-accepted", $"as {invite.Role}");
@@ -469,14 +549,49 @@ internal static class Auth
     }
 }
 
+/// <summary>
+/// 資料庫在哪——web host 與管理指令**共用這一個解析**。原本兩邊各讀各的:管理指令只看
+/// PARITY_SERVER_DB,web host 只看 ConnectionStrings:parity,只設前者時 create-project 寫進一個檔、
+/// web host 開的是另一個(push 回 401、邀請連結 404)。優先序:
+///   ConnectionStrings:parity(完整連線字串;appsettings.json 或環境變數 ConnectionStrings__parity)
+///   → PARITY_SERVER_DB(檔案路徑)→ &lt;defaultDirectory&gt;/parity-server.db
+/// 連線字串排第一:整合測試以設定注入暫存 db,不能被開發機上的 PARITY_SERVER_DB 蓋掉。
+/// </summary>
+internal static class ServerDatabase
+{
+    public static string ConnectionString(IConfiguration configuration, string defaultDirectory)
+    {
+        if (configuration.GetConnectionString("parity") is { Length: > 0 } configured) return configured;
+        var path = Environment.GetEnvironmentVariable("PARITY_SERVER_DB") is { Length: > 0 } env
+            ? env
+            : Path.Combine(defaultDirectory, "parity-server.db");
+        return $"Data Source={Path.GetFullPath(path)}";
+    }
+
+    /// <summary>管理指令不起 web host,自己組一份與 web host 相同來源的設定(appsettings*.json + 環境變數)。</summary>
+    public static IConfiguration AdminConfiguration()
+    {
+        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+            ?? "Production";
+        return new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile($"appsettings.{environment}.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+    }
+}
+
 internal static class AdminCommands
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        var dbPath = Environment.GetEnvironmentVariable("PARITY_SERVER_DB")
-            ?? Path.Combine(Directory.GetCurrentDirectory(), "parity-server.db");
+        var connectionString = ServerDatabase.ConnectionString(
+            ServerDatabase.AdminConfiguration(), Directory.GetCurrentDirectory());
+        var dbPath = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString).DataSource;
         var options = new DbContextOptionsBuilder<ServerDbContext>()
-            .UseSqlite($"Data Source={dbPath}").Options;
+            .UseSqlite(connectionString).Options;
         await using var db = new ServerDbContext(options);
         await db.Database.MigrateAsync();
 

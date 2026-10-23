@@ -14,8 +14,8 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
       - run: dotnet format Parity.slnx --verify-no-changes
@@ -30,8 +30,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
       - run: dotnet test Parity.slnx -c Release
@@ -46,8 +46,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
       - name: Pack
@@ -60,7 +60,7 @@ jobs:
           export PATH="$HOME/.dotnet/tools:$PATH"
           parity --help > /dev/null
           echo "✓ 打包出來的工具在 ${{ matrix.os }} 上裝得起來也跑得動"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.os == 'ubuntu-latest'
         with:
           name: nupkg
@@ -71,8 +71,8 @@ jobs:
   web-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -81,15 +81,18 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
+      # 前端的純函式(例如 Figma 深連結的解析)用 Node 內建 test runner 跑,不另裝測試框架
+      - run: npm test
+        working-directory: web
 
   build-test:
     name: Build + Test + Parity 自我把關
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
@@ -114,23 +117,36 @@ jobs:
 
       # 離線示範刻意做壞 → 預期 GATE FAIL(exit 1)。這正是 CI 把關該有的行為,
       # 所以「跑出 exit 1」= 成功;跑出別的才是回歸。
+      # 只看退出碼不夠(XamlContrast 的 ci.yml 同一個形狀):再用 jq 驗報告計數,
+      # 「工具真的會擋」與「擋的數量沒有莫名其妙變動」一起驗——配對規則或量測一改,這裡立刻紅。
+      # 計數以「沒有 parity.map.json 的 checkout」為準(map 檔刻意不進版控):12 個設計節點配到 11、
+      # 1 個未配對(hero-badge);3 個節點有落差,共 5 條 serious + 1 條 minor(font-family,soft)。
+      # 本機跑過 `parity map` 的話會是 12/12,與這裡不同是正常的。
+      # 這組數字也被 CliBrowserTests 對著 demo 的乾淨複本實跑比對,改數字前先確認那條測試。
       - name: Parity check (offline demo, 預期 GATE FAIL)
         run: |
           set +e
           dotnet run --project src/Parity.Cli -c Release --no-build -- \
             check --config samples/demo/parity.config.json
           code=$?
-          if [ "$code" -eq 1 ]; then
-            echo "✓ 離線示範如預期 GATE FAIL(exit 1)——CI 把關行為正確"
-            exit 0
-          else
+          set -e
+          if [ "$code" -ne 1 ]; then
             echo "✗ 預期 exit 1(GATE FAIL),實際為 $code"
             exit 1
           fi
+          echo "✓ 離線示範如預期 GATE FAIL(exit 1)——CI 把關行為正確"
+          report=samples/demo/.parity/report.json
+          jq -e '(.reports | length) == 1
+            and (.reports[0].summary | .designNodes == 12 and .matched == 11 and .unmatched == 1
+                 and .nodesWithDiffs == 3 and .critical == 0 and .serious == 5 and .medium == 0 and .minor == 1)
+            and ([.reports[0].nodes[].diffs[] | select(.soft)] | length) == 1' \
+            "$report" > /dev/null \
+            || { echo "✗ demo 報告計數與預期不符"; jq '.reports[0].summary' "$report"; exit 1; }
+          echo "✓ demo 報告計數正確"
 
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: parity-report
           path: samples/demo/.parity/report.json

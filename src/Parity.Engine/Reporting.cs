@@ -15,29 +15,6 @@ public static class Impact
         => nodes.OrderByDescending(n => (int)n.Severity).ThenByDescending(Area);
 }
 
-/// <summary>還原度分數(0–100):給 PM 看的一個好消化的數字——忠實實作的設計節點比例(有配對且零落差)。</summary>
-public static class FidelityScore
-{
-    /// <summary>
-    /// 「忠實」= 有配對且沒有硬落差;純軟落差(如 font-family stack 差異)不擋 gate、不扣分。
-    /// 分數與 Markdown 表頭的計數都用這一個判準——兩處口徑不一致會出現
-    /// 「100/100 卻 11/12 忠實」的自相矛盾標題。
-    /// </summary>
-    public static bool IsFaithful(NodeResult n) => !n.Diffs.Any(d => !d.Soft);
-
-    public static int Compute(IEnumerable<FidelityReport> reports)
-    {
-        var list = reports as IReadOnlyList<FidelityReport> ?? reports.ToList();
-        var total = list.Sum(r => r.Summary.DesignNodes);
-        if (total == 0) return 100;
-        var clean = list.Sum(r => r.Nodes.Count(IsFaithful));
-        var score = (int)Math.Round(100.0 * clean / total);
-        // 100 保留給「全部忠實」:四捨五入會把 99.5+ 進成 100,出現「100/100 卻 GATE FAIL」
-        // 的矛盾標題(野生實查 F5,Stripe 3306/3322 忠實)。封頂 99,滿分只有一種拿法。
-        return score == 100 && clean < total ? 99 : score;
-    }
-}
-
 /// <summary>
 /// 團隊的 design token(名稱 → 值)。用途:落差建議修法時,若期望值剛好是某個 token,
 /// 就提示「用這個 token」而不是生的數字/色碼——貼合設計系統,也是團隊真正想驗的東西。
@@ -95,16 +72,63 @@ public sealed class DesignTokens
         return null;
     }
 
-    /// <summary>從 JSON(平面的 {"name":"value"} 物件)載入;檔案不存在或解析失敗回 null。</summary>
-    public static DesignTokens? LoadJson(string path)
+    /// <summary>檔案裡一個 token 都沒有(<c>{}</c>)。</summary>
+    public bool IsEmpty { get; private init; }
+
+    private static readonly System.Text.Json.JsonDocumentOptions TokenFileOptions = new()
     {
+        // 與 parity.config.json、parity.map.json 同一套寬鬆規則——三個檔並排放,只有一個吃註解是暗雷
+        CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    /// <summary>
+    /// 從 JSON(平面的 {"name":"value"} 物件)載入。問題一律講清楚是哪個檔、哪裡:檔案不存在 →
+    /// FileNotFoundException;不是合法 JSON(附行號)、不是物件、值不是字串 → InvalidOperationException。
+    /// (原本的 LoadJson 用 catch 把這些全吞成「沒有 token」,lint 接著叫人去設一個已經設了的 tokensFile。)
+    /// 要不要因此擋下指令由呼叫端決定:lint 必需 token,check --md / report 只是少了提示。
+    /// </summary>
+    public static DesignTokens Load(string path)
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"tokensFile not found: {path}", path);
+
+        System.Text.Json.JsonDocument doc;
         try
         {
-            if (!File.Exists(path)) return null;
-            var map = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
-            return map is { Count: > 0 } ? new DesignTokens(map) : null;
+            doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path), TokenFileOptions);
         }
-        catch { return null; }
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new InvalidOperationException($"tokensFile {path} is not valid JSON: {ex.Message}", ex);
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                throw new InvalidOperationException(
+                    $"tokensFile {path} must be a flat JSON object ({{\"token name\": \"value\"}}), not {Kind(doc.RootElement.ValueKind)}.");
+            var map = new Dictionary<string, string>();
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                if (p.Value.ValueKind != System.Text.Json.JsonValueKind.String)
+                    throw new InvalidOperationException(
+                        $"tokensFile {path}: \"{p.Name}\" is {Kind(p.Value.ValueKind)}, but token values must be strings " +
+                        "(e.g. \"16px\", \"#2563EB\").");
+                map[p.Name] = p.Value.GetString()!;
+            }
+            return new DesignTokens(map) { IsEmpty = map.Count == 0 };
+        }
+
+        static string Kind(System.Text.Json.JsonValueKind k) => k switch
+        {
+            System.Text.Json.JsonValueKind.Number => "a number",
+            System.Text.Json.JsonValueKind.Array => "an array",
+            System.Text.Json.JsonValueKind.Object => "an object",
+            System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False => "a boolean",
+            System.Text.Json.JsonValueKind.Null => "null",
+            _ => k.ToString().ToLowerInvariant(),
+        };
     }
 }
 
@@ -191,7 +215,8 @@ public static class MarkdownReport
         if (baseline is not null)
         {
             sb.AppendLine($"vs baseline: 🔴 new **{baseline.Regressions.Count}**, " +
-                $"🟠 worsened **{baseline.Worsened.Count}**, 🟢 fixed **{baseline.Fixed.Count}**, ⚪ unchanged {baseline.Unchanged}");
+                $"🟠 worsened **{baseline.Worsened.Count}**, 🟢 fixed **{baseline.Fixed.Count}**, ⚪ unchanged {baseline.Unchanged}" +
+                (baseline.Ignored > 0 ? $", ignored {baseline.Ignored} (soft diffs a 1.x baseline saved — re-save the baseline to drop them)" : ""));
             sb.AppendLine();
             AppendChangeList(sb, "🔴 New diffs", baseline.Regressions);
             AppendChangeList(sb, "🟠 Worsened", baseline.Worsened);
@@ -239,6 +264,9 @@ public static class MarkdownReport
         }
 
         sb.AppendLine("<sub>Generated by Parity · property-level design fidelity checking</sub>");
+        // 回報入口(2.0.0):只是連結,點了才開 GitHub 的誤判範本;報告片段常帶內部網址與內容,提醒先遮掉
+        sb.AppendLine();
+        sb.AppendLine($"<sub>Is a verdict wrong? [Report a misjudgment]({FeedbackLinks.Misjudgment}) — mask internal URLs and content before pasting any of this report.</sub>");
         return sb.ToString();
     }
 

@@ -8,13 +8,15 @@
 
 **[作品介紹與開發故事](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · [English](README.md) · MIT**
 
-> **note** 工具本身的所有輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文。
+> **note** 工具本身的輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文
+> (npm 啟動腳本的錯誤訊息自下一版起也是);
+> 作業系統回報的錯誤(連線被拒、檔案存取之類)則照系統語言原樣帶出。
 > 這份中文說明維持與英文版同步。
 
 ## GitHub Action
 
 ```yaml
-- uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 跟隨最新 1.x(1.0 起介面已凍結)
+- uses: HSU-YU-MING/cornhsu-parity@v2   # @v2 跟隨最新 2.x(同一個 major 內介面凍結)
   with:
     config: parity.config.json      # 選填,預設 parity.config.json
     target: /pricing                # 選填,只檢查這個 route(省略 = 全部)
@@ -57,13 +59,13 @@
 
 | | |
 |---|---|
-| 發佈 | NuGet 共 27 版(v0.1.0 → v1.1.0),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
+| 發佈 | NuGet 共 28 版(v0.1.0 → v2.0.0),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **227 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **805 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
-| 真實驗證 | **cornhsu.com 全站 21 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
+| 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
 ## 安裝
 
@@ -80,13 +82,14 @@ dotnet tool install -g Cornhsu.Parity
 > npm 版是同一份自帶執行環境的原生執行檔,只下載你這個平台的那一份
 > (win32-x64 / win32-arm64 / linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64)。
 > Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
-> 每個平台包因此省下約 88 MB。
+> 每個平台包因此至少省下 88 MB。這份 Node 必須是 **20 以上**——內附 Playwright driver 的下限
+> (`engines.node` 也這樣宣告)。
 
 ## 快速開始
 
 ```sh
 parity init                # 產生 parity.config.json 範本
-parity install-browser     # 第一次:下載 Playwright Chromium
+parity install-browser     # 下載 Playwright Chromium:第一次使用時,以及升級後 check 說 Chromium 沒裝時
 export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
 parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
@@ -95,6 +98,9 @@ parity snapshot            # 把「現在跑著的畫面」凍結成設計基準
                            #   lazy 媒體——列出來並給可貼進 config 的 ignore 建議)
 parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
 parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
+parity bug-report          # (實驗性)整理版本/作業系統/Node/Chromium 資訊並印出,附預填好的 GitHub issue 連結。
+                           #   Parity 本身不連網;打開連結時遮罩過的報告會跟著網址送到 github.com,按送出才會建立 issue。
+                           #   --config 加上設定檔的結構摘要(不含網址、route、key、token、路徑)
 ```
 
 在這個 repo 裡開發時:
@@ -114,22 +120,25 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "figmaFileKey": "abcd1234",
   "designToken": "env:FIGMA_TOKEN",
   "mapFile": "parity.map.json",              // 手動補漏的對應檔(圖層名 → selector)
-  "tokensFile": "tokens.json",               // 選配:design token(名→值);建議修法會提示對應 token
+  "tokensFile": "tokens.json",               // 選配:design token,值一律是字串的平面物件
+                                             //   ({"brand": "#2563EB", "space-4": "16px"};可寫 // 註解);
+                                             //   建議修法會提示對應 token
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
   "compare": { "position": "relative" },     // relative = 比相對位置(預設);none = 不比位置
-  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "positionPx": 4 },
+  "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
-    "failOn": ["critical", "serious"],
-    "minMatchRate": 0                        // 選配:配對率低於此值(0–1)直接 FAIL;0 = 不設門檻
+    "failOn": ["critical", "serious"],       // minor / medium / serious / critical 任選,一個字串放一個等級
+    "minMatchRate": 0                        // 選配:配對率低於此值(0–1)→ exit 3,見下方說明;0 = 不設門檻
   }
 }
 ```
 
-> gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律 GATE FAIL——
-> 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。`--baseline` 模式也不豁免。
+> gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律失敗,exit code 是 3(`MATCH INTEGRITY TOO LOW`)而不是 1——
+> 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。配對率低於 `gate.minMatchRate`
+> 也是同樣的失敗、同樣 exit 3。`--baseline` 模式也不豁免;`--reverse` 不做把關,永遠 exit 0。
 
 ## 目標:網頁或 Electron 桌面 app
 
@@ -194,12 +203,12 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
   - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
 - **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
 - **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
-- **字體**:size / weight / line-height / letter-spacing 精確比;font-family 是**軟落差**(不擋 gate)
+- **字體**:size 與 letter-spacing 依 `tolerances.fontSizePx`、line-height 依 `tolerances.sizePx` 做數值比對;weight 沒有容差,不一樣就算落差(相差不到 200 是 medium,200 以上是 serious)。font-family 是**軟落差**:會列在報告裡(嚴重度 `minor`、標成 soft),但不扣還原度分數,**也永遠不擋 gate**——`failOn` 含 `minor` 時也一樣,`--baseline` 模式也不把它算「新增」
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
 
-> 設計來源是 Figma 時,報告(Markdown 與本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。
+> 設計來源是 Figma 時,報告(`check --md` 寫出或 `parity report` 重生的 Markdown,以及本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。有設 `designFile` 時它優先於 `figmaFileKey`,snapshot/JSON 來源的報告不會有 Figma 連結。
 
 ## 給設計師的兩個方向
 
@@ -218,7 +227,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 ]
 ```
 
-route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測的視窗寬時,才需要在 target 加 `width` / `height` 覆蓋。
+route 只是報告上的標籤,取好認的名字就行。frame 尺寸 ≠ 想測的視窗時,才需要在 target 加 `width` / `height` 覆蓋。兩個欄位各管各的軸:只給 `width` 時高度用預設的 800,只給 `height` 時寬度用 frame 的寬。
 
 ## Shadow DOM / iframe
 
@@ -229,7 +238,7 @@ route 只是報告上的標籤,取好認的名字就行。frame 寬 ≠ 想測�
 ## 配對策略(以設計端為錨)
 
 1. **自動文字錨定**:設計 TEXT 文字 ↔ 頁面文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)
-2. **圖層名 ↔ id / class / aria-label**:`CTA Button` 自動對上 `class="cta-button"`
+2. **圖層名 ↔ id / class / aria-label**(沒有 aria-label 時改看 `data-testid`):`CTA Button` 自動對上 `class="cta-button"`
 3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)
 4. **手動補漏**:HTML 加 `data-parity="圖層名"`,或 `parity.map.json` 寫 `{ "圖層名": "CSS selector" }`
 5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)
@@ -250,8 +259,10 @@ src/Parity.Engine/        引擎:唯一進入點 FidelityEngine
   DesignSources/          IDesignSource + Figma(REST + 本機快取)/ Json
   ImplementationSources/  IImplementationSource + Web(Playwright)
   Comparison/             Normalizer / Matcher / DiffEngine / ColorDelta(CIEDE2000)
+src/Parity.Report/        報告契約:report.json 型別、ReportWire、還原度分數、baseline 比對
+                          ——沒有任何套件相依,所以沒有 Playwright
 src/Parity.Cli/           dotnet tool 外殼:parity check / init / install-browser、
-                          本機報告 UI(parity serve)與 parity push
+                          本機報告 UI(parity serve)與 parity push(實驗性)
 src/Parity.Storage/       baseline 歷史(EF Core + SQLite),parity baseline 背後的儲存層
 src/Parity.Server/        團隊儀表板外殼(ASP.NET Core)——不上 NuGet
 src/Parity.Server.Data/   它的資料庫(EF Core + SQLite,第一天就走 migrations)
@@ -270,15 +281,26 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
    也才讓「不碰工具的人」有地方可看。要自己部署,不上 NuGet,而且**還在開發中**
    (見下面 M7)。
 
+> **儀表板的資料放哪。** web host 與管理指令(`create-project`、`create-invite`)用同一套規則找 SQLite 資料庫:
+> 先看 `ConnectionStrings:parity`(`appsettings.json` 或環境變數 `ConnectionStrings__parity`),再看
+> `PARITY_SERVER_DB`(檔案路徑),都沒有就是工作目錄下的 `parity-server.db`。這與 .NET 慣例「環境變數蓋設定檔」
+> 相反:`appsettings.json` 裡的連線字串會勝過 `PARITY_SERVER_DB`——要從環境變數覆蓋它,請設
+> `ConnectionStrings__parity`。理由:完整的連線字串是比較明確的設定,而且整合測試注入的連線字串不能被
+> 開發機上的 `PARITY_SERVER_DB` 改道。
+
 ### 鐵則:雲端不跑瀏覽器
 
-`Parity.Server` 唯一的寫入口是 `POST /api/runs`,它收的是**已經跑完的報告**。
+`Parity.Server` 唯一收掃描結果的入口是 `POST /api/runs`(其他寫入端點只管登入、邀請、成員、token 與刪除 run),它收的是**已經跑完的報告**。
 不存在任何「給我一個 URL、我去掃」的端點,將來也不會有:**掃描永遠發生在你自己的機器
 或你的 CI 上**——頁面、登入憑證、localhost 的埠本來就在那裡。
 
 這不是實作細節,而是整個設計的安全主張。它使得儀表板**完全沒有 SSRF 攻擊面**:
 沒有人交給它一個 URL 去抓。而且這條鐵則是靠結構、不是靠自律守住的——
-`Parity.Server.csproj` 永遠不引用 Playwright,伺服器手上根本沒有瀏覽器可以指向任何地方。
+伺服器的專案根本不引用引擎,只引用 `Parity.Report`(報告型別,沒有任何套件相依),
+所以伺服器的建置產物裡既沒有 Playwright 組件、也沒有它的 driver。一條測試沿伺服器的
+ProjectReference 走完整張圖,任何一個專案引用了 Playwright 或引擎就讓 CI 打紅;另一條在
+伺服器端的程式引用了 Playwright 型別、或引擎的擷取端(`FidelityEngine`、`IImplementationSource`,
+以及開 Chromium 的 `ImplementationSources.Web` 底下任何型別)時打紅。
 
 ## 本機報告 UI(M3)
 
@@ -307,31 +329,36 @@ jobs:
       contents: read
       pull-requests: write   # 讓 action 把還原度報告貼成 PR 留言
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 起你的站(或改成部署到 preview URL,讓 config 的 url 指過去)
       - run: |
           npm ci && npm run build
           npm run preview &   # 例:serve 在 localhost:8080
-      - uses: HSU-YU-MING/cornhsu-parity@v1   # @v1 跟隨最新 1.x
+      - uses: HSU-YU-MING/cornhsu-parity@v2   # @v2 跟隨最新 2.x
         with:
           config: parity.config.json
           figma-token: ${{ secrets.FIGMA_TOKEN }}   # 設計來源用本機 JSON 時可省略
 ```
 
 行為:
-- **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
+- **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**,最後一行是連到誤判/漏判回報表單的「Report a misjudgment」——只是連結,不會送出任何東西),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
 - **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
-- **artifact**:`report.json` + Markdown 報告上傳供下載。
+- **artifact**:`report.json` + Markdown 報告上傳供下載(artifact 名稱預設 `parity-report`,可用 `artifact-name` 改;根目錄就是 `report.json` 與 `parity-report.md`)。`report.json` 從設定檔旁邊的 `.parity/report.json`(`check` 寫出的位置)取,`config` 指向子目錄時也一樣。
+- **同一次執行呼叫多次**:優先用 **matrix**(每個網站或設定檔一個 job),每次給不同的 `artifact-name`(例如 `parity-report-${{ matrix.site }}`)。每個名稱各自一個 artifact、各自一則 PR 留言;名稱相同的兩次呼叫,artifact 上傳會撞名。同一個 job 裡呼叫兩次,只在第一次通過時可行:第一次的 gate 失敗,job 就停在那一次的最後一步,第二次根本不會跑(沒有它的報告、留言或 artifact)。
 
-action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report`。
+action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report` / `artifact-name`(預設 `parity-report`;只收英數字與 `.` `_` `-`,最多 100 字,不可以 `-` 開頭、不可以全是點)。
 
-> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org)。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
+> action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org):沒給 `version` 時裝最新的 2.x(`@v2` 不會跳到日後的 3.x),給了就裝那一版。**同一個 job 裡每次呼叫都裝到同一個全域位置,後面的呼叫不能裝比前面低的版本**(`dotnet tool` 拒絕降版)——例如第一次沒給 `version` 裝到最新的 2.x,第二次給 `version: 2.0.0` 就會失敗。同一個 job 裡的呼叫請給同一個 `version`,或改用 matrix。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
+>
+> **從 `@v1` 升級?** `v1` 停在 1.1.0,那一版的 action 在沒給 `version` 時會裝*任何* major 的最新版——沒固定版本的 `@v1` workflow 其實已經在跑 2.x。請改用 `@v2`,照 CHANGELOG 2.0.0 節的「升級必做」逐條處理;暫時想留在 1.x 就給 `version: 1.1.0`。
 
 ## 報告字彙表(給解析 `report.json` 的人)
 
+- **未知的 key** — 消費端必須忽略不認得的 key。2.x 之內 `report.json` 只會**新增**欄位,既有的 key 不刪、不改名、不改型別(那是 3.0 的事)。下面的封閉集在 2.x 之內也不會多成員。
 - `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
 - `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`randomized-id`、`size-implausible`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。
+- `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
 
 ## 回歸把關:baseline(M5)
 
@@ -361,7 +388,8 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 - [ ] **M6**(選配)雲端外殼:公開網址掃描 + SSRF 防護——**明文不做**(2026-07-18 決定)。
   這跟 M7 *不是*同一件事:M7 什麼都不掃。當年否決的理由保留在 [ROADMAP.md](ROADMAP.md)。
 - [ ] **M7** 團隊儀表板外殼(`Parity.Server` + `Parity.Server.Data` + `web/`)——**進行中,
-  尚未發佈。** `parity push` 把跑完的 `report.json` 送到你自己架的伺服器;儀表板把落差
+  尚未發佈。** `parity push`(**實驗性**:伺服器尚未公開部署,指令與伺服器協定在 2.x 內可能隨 minor 版本改變,
+  伺服器正式上線時再納入凍結)把跑完的 `report.json` 送到你自己架的伺服器;儀表板把落差
   用報告裡既有的量測座標畫成工程藍圖(零截圖上傳)、依專案與 route 給總覽與分數趨勢,
   並有帳號 / 專案角色 / 邀請連結。它自己的內部 M1–M4.6 已完成,內部 M5(真的對外部署:
   TLS、網域、託管資料庫)還沒。**它只收報告,永遠不掃描**——見上面的鐵則。
@@ -371,7 +399,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 ## 安全
 
 - Figma token 走環境變數(`env:FIGMA_TOKEN`),不進 log、不進 URL(用 `X-Figma-Token` header)
-- 抓過的 frame 存 `.parity/cache`(已 gitignore),重跑不再打 Figma、可離線比對
+- 抓過的 frame 存 `.parity/cache`(記得把 `.parity/` 加進 `.gitignore`),重跑不再打 Figma、可離線比對
 - 本機報告 UI 只綁 127.0.0.1,另外還擋非預期的 `Host` header(DNS rebinding)與跨來源
   `POST`(CSRF)
 - **團隊儀表板永遠不掃描任何東西**——它只收已完成的報告,所以沒有 SSRF 攻擊面。
@@ -389,8 +417,9 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 同一套哲學(數值檢查、CI 把關)。Parity 回答「**實作跟設計稿一不一樣**」(還原度);
 XamlContrast 回答「**做出來的東西看不看得見**」(WCAG 對比,靜態掃 XAML 原始碼)。
 一個守還原度、一個守可讀性;它的靜態顏色解析也是本專案未來
-`WpfImplementationSource`(桌面 adapter)的預期值地基——見規畫書 4.5 節補記。
+`WpfImplementationSource`(桌面 adapter)的預期值地基——見[專案規畫書](docs/Parity專案規畫書.md) 4.5 節補記。
 
 ## License
 
-MIT
+MIT。NuGet 與 npm 套件另外夾帶第三方元件(Playwright、ImageSharp、SQLite 等;npm 套件還含 .NET runtime),
+各自的授權列在 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)(英文),這份檔也隨 NuGet 套件與每個 npm 平台套件一起散布。

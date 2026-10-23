@@ -10,6 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 登入節流的 KeyedGate 等內部型別要直接測(並發探針看得到 slot 有沒有回收) -->
+    <InternalsVisibleTo Include="Parity.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Parity.Server.Data\Parity.Server.Data.csproj" />
     <!-- dotnet-ef 產 migration 用(migrations 放 Server.Data,startup 是本專案);
          PrivateAssets=all:設計期工具,不進發佈輸出 -->

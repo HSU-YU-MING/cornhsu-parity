@@ -5,7 +5,8 @@ namespace Parity.Engine;
 
 /// <summary>
 /// report.json 的標準序列化設定——契約的一部分(camelCase、字串 enum、null 顯式輸出、
-/// MaxDepth 512 對齊擷取端)。原住在 Parity.Cli 的 ReportJson;網頁外殼動工時移入引擎:
+/// MaxDepth 512 對齊擷取端)。原住在 Parity.Cli 的 ReportJson;網頁外殼動工時移入引擎,後來再搬進
+/// Parity.Report(零套件相依,伺服器只引用這一半):
 /// CLI 落地、serve API、Parity.Server 解析,全部對同一組設定,不各抄一份造成漂移。
 /// </summary>
 public static class ReportWire

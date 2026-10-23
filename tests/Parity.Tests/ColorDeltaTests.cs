@@ -71,6 +71,9 @@ public class RgbaParseTests
     [InlineData("rgb(37 99 235 / 0.5)", 37, 99, 235, 0.5)]
     [InlineData("rgba(37 99 235 / 50%)", 37, 99, 235, 0.5)]
     [InlineData("color(srgb 0.145 0.388 0.922)", 37, 99, 235, 1.0)]
+    [InlineData("#2563EB80", 0x25, 0x63, 0xEB, 0.502)]  // 8 位 hex 的 alpha
+    [InlineData("rgb(100%, 0%, 50%)", 255, 0, 128, 1.0)] // 百分比分量
+    [InlineData("rgb(300, -5, 0)", 255, 0, 0, 1.0)]      // 超界夾回 0–255
     public void Parses_css_colors(string css, int r, int g, int b, double a)
     {
         Assert.True(Rgba.TryParseCss(css, out var c));
@@ -88,6 +91,8 @@ public class RgbaParseTests
     [InlineData("color(display-p3 1 1 1)", 255, 255, 255, 1.0)]
     [InlineData("color(display-p3 1 0 0)", 255, 0, 0, 1.0)]           // 超出 sRGB → clamp 到紅
     [InlineData("color(display-p3 0 1 0 / 50%)", 0, 255, 0, 0.5)]
+    [InlineData("color(display-p3 100% 100% 100%)", 255, 255, 255, 1.0)] // 分量也可以寫百分比(語法接受)
+    [InlineData("color(display-p3 0% 0% 0% / 0.25)", 0, 0, 0, 0.25)]
     public void Parses_wide_gamut_exact(string css, int r, int g, int b, double a)
     {
         Assert.True(Rgba.TryParseCss(css, out var c));
@@ -95,6 +100,19 @@ public class RgbaParseTests
         Assert.Equal((byte)g, c.G);
         Assert.Equal((byte)b, c.B);
         Assert.Equal(a, c.A, 3);
+    }
+
+    // 0% / 100% 落在會被 clamp 的端點,換算比例寫錯(例如 50% 當成 50)也照樣綠——
+    // 換算要用端點以外的值,才看得出「50% = 0.5」
+    [Theory]
+    [InlineData("color(display-p3 50% 25% 75%)", "color(display-p3 0.5 0.25 0.75)", "#893BC6")]
+    [InlineData("color(display-p3 50% 0.25 75% / 50%)", "color(display-p3 0.5 0.25 0.75 / 0.5)", "#893BC680")] // 混寫
+    public void Display_p3_percentages_scale_like_fractions(string percent, string fraction, string hex)
+    {
+        Assert.True(Rgba.TryParseCss(percent, out var fromPercent));
+        Assert.True(Rgba.TryParseCss(fraction, out var fromFraction));
+        Assert.Equal(fromFraction, fromPercent);
+        Assert.Equal(hex, fromPercent.ToHex()); // CSS Color 4:線性化 → P3→sRGB 矩陣 → 編碼
     }
 
     [Theory]
@@ -124,8 +142,26 @@ public class RgbaParseTests
     [InlineData("var(--color)")]
     [InlineData("color(rec2020 1 0 0)")]
     [InlineData("oklch(banana 0 0)")]
+    [InlineData("#12345")]                       // hex 長度不對
+    [InlineData("#ggg")]                         // 不是 hex
+    [InlineData("rgb(1, 2)")]                    // 分量不足
+    [InlineData("rgb(a, b, c)")]
+    [InlineData("rgba(1, 2, 3, x)")]             // alpha 壞掉
+    [InlineData("oklch(0.5 0.1)")]
+    [InlineData("color(display-p3 1 x 0)")]
+    [InlineData("color(display-p3 1 0 0 / x)")]
+    [InlineData("rgb 1 2 3")]                    // 沒有括號
     public void Rejects_unparsable_colors(string? css)
         => Assert.False(Rgba.TryParseCss(css, out _));
+
+    [Fact]
+    public void Hex_carries_alpha_only_when_translucent()
+    {
+        // 報告的 expected/actual 用 ToHex:不透明 6 位、半透明 8 位(README 的 #RRGGBB / #RRGGBBAA)
+        Assert.Equal("#2563EB", new Rgba(0x25, 0x63, 0xEB).ToHex());
+        Assert.Equal("#2563EB80", new Rgba(0x25, 0x63, 0xEB, 0.5).ToHex());
+        Assert.Equal("#2563EB80", new Rgba(0x25, 0x63, 0xEB, 0.5).ToString());
+    }
 
     [Fact]
     public void Fully_transparent_is_transparent()

@@ -33,6 +33,14 @@
     <InternalsVisibleTo Include="Parity.Tests" />
   </ItemGroup>
 
+  <!-- 第三方授權聲明放在套件根目錄:tool 套件夾帶了 Playwright driver(Apache-2.0,含 NOTICE)、
+       Node.js、SQLite 原生檔與 ImageSharp 等,散布時要附上它們的授權。只加在 CLI——
+       放進 Directory.Build.props 會讓其他可打包專案也帶上一份不屬於它們的清單。
+       npm 平台套件由 npm/prepare.mjs 另外複製同一個檔。 -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
   <!-- parity serve:Kestrel 本機報告 UI(只綁 127.0.0.1) -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

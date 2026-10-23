@@ -1,0 +1,100 @@
+name: Bug — it crashed, hung, or behaved wrongly
+description: Anything that isn't about the fidelity verdicts themselves — crashes, wrong exit codes, broken flags, install or browser problems, CI/Action problems.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a wrong verdict (a gap that isn't real, or a real one it missed) use the
+        misjudgment template instead — it asks for different information.
+
+        **Tip:** `parity bug-report` collects the environment fields below on your machine and
+        prints them for you to check and paste (add `--config <path>` for a structural summary of
+        your config — no URLs, routes, selectors, tokens or paths). Parity itself makes no network connection; the
+        link it prints carries that masked text to this form.
+
+        Write in English or 中文, whichever is easier.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `parity version`, or the Action ref you use
+      placeholder: "2.0.0+abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: How you installed it
+      options:
+        - "dotnet tool (NuGet)"
+        - "npx / npm"
+        - "GitHub Action"
+        - "Built from source"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and architecture
+      placeholder: "Windows 11 x64 / macOS 15 arm64 / ubuntu-latest in Actions"
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version (npm channel only)
+      description: Output of `node --version`. The npm channel needs Node 20 or newer.
+      placeholder: "v22.11.0"
+    validations:
+      required: false
+
+  - type: input
+    id: chromium
+    attributes:
+      label: Chromium
+      description: >
+        Did `parity install-browser` succeed, and which revision is installed?
+        (`parity bug-report` prints the revision this version expects and whether it is present.)
+      placeholder: "installed, revision 1243"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact command(s), and the smallest config that still reproduces it (mask URLs and keys).
+      render: text
+      placeholder: |
+        parity check --config parity.config.json --target /pricing
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Everything it printed, including the exit code and any stack trace. Mask URLs and content you would not post publicly.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug-report
+    attributes:
+      label: Output of `parity bug-report` (optional)
+      render: text
+    validations:
+      required: false

@@ -19,7 +19,7 @@ inputs:
     required: false
     default: '.'
   version:
-    description: 'Cornhsu.Parity tool version (omit for latest)'
+    description: 'Cornhsu.Parity tool version (omit for the latest release of this action''s major version, e.g. the latest 2.x for @v2)'
     required: false
     default: ''
   figma-token:
@@ -38,12 +38,16 @@ inputs:
     description: 'Upload the report (report.json + Markdown) as an artifact'
     required: false
     default: 'true'
+  artifact-name:
+    description: 'Name of the uploaded report artifact. It also keys the PR comment: each name keeps its own comment. Give every call its own name when the action runs more than once in a workflow run (prefer a matrix). Letters, digits, ".", "_" and "-" only, 1-100 characters, not starting with "-" and not only dots'
+    required: false
+    default: 'parity-report'
 
 runs:
   using: 'composite'
   steps:
     - name: Setup .NET
-      uses: actions/setup-dotnet@v6
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
         dotnet-version: '10.0.x'
 
@@ -56,10 +60,21 @@ runs:
       env:
         PARITY_VERSION: ${{ inputs.version }}
       run: |
+        # version 帶換行一律拒絕:dotnet 的錯誤訊息會把它原樣印出,換行後的內容落在行首就成了
+        # runner 會解析的 workflow command(::error …)。帶換行的版本本來就裝不起來,提早擋不改變行為
+        case "$PARITY_VERSION" in
+          *$'\n'* | *$'\r'*)
+            echo "parity action: the version input contains a line break; refusing to install." >&2
+            exit 2
+            ;;
+        esac
         if [ -n "$PARITY_VERSION" ]; then
           dotnet tool install --global Cornhsu.Parity --version "$PARITY_VERSION"
         else
-          dotnet tool install --global Cornhsu.Parity
+          # @v2 只跟隨 2.x(介面凍結的承諾):不帶範圍會裝到最新穩定版,3.0.0 一發佈就跨 major
+          # (v1.1.0 的 action.yml 就是這樣,@v1 因此會裝到 2.x——見 RELEASING.md)。
+          # "2.*" 取最高的 2.x 穩定版;發 3.0.0 時這行要跟著改成 "3.*"(ActionYmlTests 會提醒)
+          dotnet tool install --global Cornhsu.Parity --version "2.*"
         fi
         echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
@@ -78,13 +93,54 @@ runs:
         PARITY_CONFIG: ${{ inputs.config }}
         PARITY_TARGET: ${{ inputs.target }}
         PARITY_BASELINE: ${{ inputs.baseline }}
+        PARITY_ARTIFACT_NAME: ${{ inputs.artifact-name }}
       run: |
         set +e
+        # 先清掉這個 job 前一次呼叫留下的暫存($RUNNER_TEMP 共用):這一次若在寫出報告前就失敗,
+        # 不能把上一次的報告當成自己的上傳、貼到自己的留言
+        # ${RUNNER_TEMP:?}:沒設(或是空字串)就讓這一步失敗,絕不退化成 rm -rf /parity-artifact
+        rm -rf -- "${RUNNER_TEMP:?}/parity-artifact" "${RUNNER_TEMP:?}/parity-report.md"
+        # config/target 帶換行(\n 或 \r)一律拒絕,不呼叫 parity:parity 會把它們原樣印到 stderr,
+        # 換行後的內容落在行首就成了 runner 會解析的 workflow command(::add-mask::、::set-output…)。
+        # 訊息刻意不印出 input 本身;當成執行錯誤(exit 2),照常由最後一步擋
+        case "$PARITY_CONFIG$PARITY_TARGET" in
+          *$'\n'* | *$'\r'*)
+            echo "parity action: the config or target input contains a line break; refusing to run." >&2
+            echo "exit=2" >> "$GITHUB_OUTPUT"
+            exit 0
+            ;;
+        esac
+        # artifact-name 會成為 artifact 名稱與 PR 留言 marker 的一部分(marker 又拼進 jq 字串),
+        # 只收 [A-Za-z0-9._-]、1–100 字;bash 的 =~ 是整串比對,換行過不了。字元集內也不收全是點的
+        # (. 與 .. 像路徑)與 - 開頭的(像旗標)。訊息同樣不印出 input
+        if ! [[ "$PARITY_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]{1,100}$ ]] || [[ "$PARITY_ARTIFACT_NAME" =~ ^\.+$ || "$PARITY_ARTIFACT_NAME" == -* ]]; then
+          echo "parity action: artifact-name must be 1-100 characters of A-Z, a-z, 0-9, '.', '_' or '-', must not start with '-' and must not be only dots; refusing to run." >&2
+          echo "exit=2" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         args=(check --config "$PARITY_CONFIG" --md "$RUNNER_TEMP/parity-report.md")
         [ -n "$PARITY_TARGET" ] && args+=(--target "$PARITY_TARGET")
         [ "$PARITY_BASELINE" = "true" ] && args+=(--baseline)
         parity "${args[@]}"
         echo "exit=$?" >> "$GITHUB_OUTPUT"
+        # artifact:check 把 report.json 寫在「設定檔所在目錄」的 .parity/,不是 working-directory
+        # (config 放子目錄時兩者不同)。複製到 runner.temp 底下固定的目錄,上傳步驟只認那個目錄。
+        # 刻意不用 step output 傳路徑:寫進 $GITHUB_OUTPUT 的值只要帶換行,每一行都會變成新的 output
+        # (可以改寫 exit、指定上傳任意檔案)——這一步寫進 $GITHUB_OUTPUT 的只有上面那個數字。
+        # 報告本身也不搬:使用者之後照預設路徑讀它的步驟照舊找得到。
+        # 只複製一般檔案、不跟 symlink:repo 可以 commit 一個 .parity/report.json → /proc/self/environ,
+        # parity 寫入失敗時 symlink 留著,cp 就會把這一步自己的環境(含 FIGMA_TOKEN)複製進 artifact
+        # (指向 /dev/zero 則寫滿磁碟)。.parity 目錄本身是 symlink 也一樣不收。
+        # -f 不能換成 -e:-f 同時擋掉 FIFO 與裝置檔——cp 從沒有寫入端的 FIFO 讀會卡到 job 逾時
+        artifact="$RUNNER_TEMP/parity-artifact"
+        mkdir -p "$artifact"
+        copy_plain() {
+          if [ -f "$1" ] && [ ! -L "$1" ] && [ ! -L "$(dirname -- "$1")" ]; then
+            cp -- "$1" "$2" 2>/dev/null || true
+          fi
+        }
+        copy_plain "$(dirname -- "$PARITY_CONFIG")/.parity/report.json" "$artifact/report.json"
+        copy_plain "$RUNNER_TEMP/parity-report.md" "$artifact/parity-report.md"
 
     # 把還原度報告貼成 PR 留言(同一則留言反覆更新,不洗版)。
     # continue-on-error:fork PR 的 GITHUB_TOKEN 唯讀,貼留言會 403——那是預期的,
@@ -96,34 +152,51 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
+        PARITY_ARTIFACT_NAME: ${{ inputs.artifact-name }}
       run: |
         report="$RUNNER_TEMP/parity-report.md"
         out="$RUNNER_TEMP/parity-comment.md"
+        # 名稱會拼進下面 jq 的字串:check 步驟驗過了,這裡再驗一次(同一條規則),不靠步驟順序
+        if ! [[ "$PARITY_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]{1,100}$ ]] || [[ "$PARITY_ARTIFACT_NAME" =~ ^\.+$ || "$PARITY_ARTIFACT_NAME" == -* ]]; then
+          echo "parity action: invalid artifact-name; not commenting." >&2
+          exit 0
+        fi
         [ -f "$report" ] || { echo "no report to post"; exit 0; }
+        # 每個 artifact-name 各自一則留言(matrix、同一個 job 呼叫多次時互不覆蓋)。
+        # 預設名稱沿用 1.x 的 marker:升級後照樣更新 PR 上原本那則
         marker='<!-- parity-report -->'
+        [ "$PARITY_ARTIFACT_NAME" = parity-report ] || marker="<!-- parity-report:$PARITY_ARTIFACT_NAME -->"
         # GitHub 留言上限 ~65536 字,超過就截斷並附提示(完整內容在 artifact)
         if [ "$(wc -c < "$report")" -gt 60000 ]; then
-          { echo "$marker"; head -c 60000 "$report"; printf '\n\n<sub>⚠️ Report truncated because it exceeds the comment size limit — see the parity-report artifact on this workflow run for the full version.</sub>\n'; } > "$out"
+          # 截掉的部分包括報告的最後一行——「回報誤判」的連結(MarkdownReport 保證它在最後一行):補回來
+          { echo "$marker"; head -c 60000 "$report"; printf '\n\n<sub>⚠️ Report truncated because it exceeds the comment size limit — see the %s artifact on this workflow run for the full version.</sub>\n\n' "$PARITY_ARTIFACT_NAME"; tail -n 1 "$report"; } > "$out"
         else
           { echo "$marker"; cat "$report"; } > "$out"
         fi
         pr="$PR_NUMBER"
-        existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
-          --jq 'map(select(.body | startswith("<!-- parity-report -->"))) | .[0].id // empty')
+        # --paginate:不分頁只看得到第一頁(30 則,舊的在前),PR 留言一多就找不到舊留言、每次都發新的。
+        # --jq 是逐頁套用,所以逐筆輸出 id,再在 shell 裡取第一筆(最舊的那則)。
+        # 只認 github-actions[bot] 自己的留言(GH_TOKEN 是 github.token):任何人都能搶先貼一則以 marker
+        # 開頭的留言,不看作者的話 bot 會去改那則——改不了(403)就永遠貼不上,改得了就是改到別人的內容。
+        # startswith 比的是整個 marker(含結尾的 " -->"),site-a 不會吃到 site-a-b 的留言
+        ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
+          --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("'"$marker"'"))) | .id')
+        existing=${ids%%$'\n'*}
         if [ -n "$existing" ]; then
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$out" >/dev/null
         else
           gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -F body=@"$out" >/dev/null
         fi
 
+    # check 沒跑(前面的步驟失敗)就不上傳:$RUNNER_TEMP 裡可能是同一個 job 前一次呼叫的報告。
+    # check 只要跑了,每條路都會寫 exit=…
     - name: Upload report
-      if: ${{ always() && inputs.upload-report == 'true' }}
-      uses: actions/upload-artifact@v7
+      if: ${{ always() && inputs.upload-report == 'true' && steps.check.outputs.exit != '' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: parity-report
-        path: |
-          ${{ inputs.working-directory }}/.parity/report.json
-          ${{ runner.temp }}/parity-report.md
+        name: ${{ inputs.artifact-name }}
+        # check 步驟複製好的固定目錄(report.json + parity-report.md);路徑不來自任何 step output
+        path: ${{ runner.temp }}/parity-artifact
         if-no-files-found: ignore
 
     # 報告貼完了,現在才依 gate 結論決定 job 成敗

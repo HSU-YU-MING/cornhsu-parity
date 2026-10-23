@@ -1,6 +1,8 @@
 # .NET
 bin/
 obj/
+# RELEASING.md 本機乾跑的 pack 輸出
+artifacts/
 *.user
 .vs/
 
