@@ -45,7 +45,7 @@ public sealed class ImageDesignSource(string imagePath) : IDesignSource
         {
             // 認得是 PNG/JPEG,內容卻壞了(截斷、CRC 錯):ImageSharp 的原文不帶檔名
             throw new InvalidOperationException(
-                $"designImage could not be decoded: {imagePath} looks like a PNG or JPEG but is damaged ({ex.Message}). Export it again.");
+                $"designImage could not be decoded: {imagePath} looks like a PNG or JPEG but is damaged: {ex.Message.TrimEnd().TrimEnd('.', '!', '?')}. Export it again.");
         }
         using (image)
             return Fill(root, image);

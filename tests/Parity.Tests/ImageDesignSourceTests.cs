@@ -186,6 +186,7 @@ public class ImageDesignSourceTests
     [Theory]
     [InlineData("png")]
     [InlineData("jpeg")]
+    [InlineData("png-bad-crc")]
     public async Task A_damaged_png_or_jpeg_names_the_file(string format)
     {
         // 審查實證:截斷的 PNG/JPEG 原本只印 ImageSharp 的原文(「PNG Image does not contain a data chunk.」),
@@ -195,13 +196,23 @@ public class ImageDesignSourceTests
             using var stream = new MemoryStream();
             using (var img = TestImage())
             {
-                if (format == "png") await img.SaveAsPngAsync(stream);
+                if (format.StartsWith("png", StringComparison.Ordinal)) await img.SaveAsPngAsync(stream);
                 else await img.SaveAsJpegAsync(stream);
             }
-            await File.WriteAllBytesAsync(path, stream.ToArray()[..(int)(stream.Length * 0.4)]);
+            var bytes = stream.ToArray();
+            if (format == "png-bad-crc")
+            {
+                // 壞掉的 CRC:ImageSharp 的訊息是 "CRC Error. PNG IDAT chunk is corrupt!"——結尾自己帶標點
+                var idat = bytes.AsSpan().IndexOf("IDAT"u8);
+                bytes[idat + 6] ^= 0xFF;
+                await File.WriteAllBytesAsync(path, bytes);
+            }
+            else await File.WriteAllBytesAsync(path, bytes[..(int)(bytes.Length * 0.4)]);
         });
 
         Assert.Contains("damaged", message);
+        // 驗證者:ImageSharp 的原文自帶句尾標點,原本包進括號再加句點,變成「corrupt!).」這種重複的標點
+        Assert.DoesNotMatch(@"[.!?]\)|[.!?][.!?]", message);
     }
 
     [Fact]
