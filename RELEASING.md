@@ -131,10 +131,22 @@ git tag v2 v2.0.0 && git push origin v2      # @v2 的使用者從這裡開始�
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
 
 ```sh
-dotnet pack Parity.slnx -c Release -o ./artifacts
-dotnet tool install --global --add-source ./artifacts Cornhsu.Parity --version 0.1.0
-parity version && parity help
-dotnet tool uninstall --global Cornhsu.Parity
+v=0.0.0-local.$(date +%s)
+dotnet pack Parity.slnx -c Release -o ./artifacts -p:Version=$v
+dotnet tool install --tool-path ./artifacts/tool --add-source ./artifacts Cornhsu.Parity --version $v
+./artifacts/tool/parity version && ./artifacts/tool/parity help
+rm -rf ./artifacts    # 用完整個刪掉(.gitignore 已排除 artifacts/)
 ```
+
+2026-10-23 照上面跑過一次:pack 出 `Cornhsu.Parity.0.0.0-local.<時間戳>.nupkg`(約 237 MB),裝到 `./artifacts/tool`,
+`parity version` 印 `parity 0.0.0-local.<時間戳>+<commit>`。三個坑(舊版指令三個都踩):
+
+- **一定要帶 `--version`**:不帶的話,本地這個預覽版號不會被選,會從 nuget.org 裝到**已發佈的正式版**——
+  看起來裝成功了,測的卻不是你剛 pack 的東西。舊版指令寫死 `--version 0.1.0`,裝到的正是 nuget.org 上的 0.1.0
+  (pack 不帶 `-p:Version` 時產物是 csproj 的 `0.0.0-dev`,根本沒有 0.1.0)。
+- **每次用新的版本號**(上面用時間戳):同一個版本號第二次 pack 再裝,可能拿到先前裝過、快取住的那一份。
+- **用 `--tool-path`,不要 `--global`**:`--global` 會跟你已經裝好的 parity 衝突(已安裝就失敗,或把你日常用的那一份換掉)。
+
+npm 通路沒有本機乾跑的指令(要各 RID `dotnet publish` 再跑 `npm/prepare.mjs`),發佈前靠 release.yml 的 npm job。
 
 > NuGet 套件約 237 MB（`PlaywrightPlatform=all` 收齊五平台 driver,近 nuget.org 250 MB 上限);npm 平台子套件各約 129 MB（已刪掉 Playwright 自帶 Node、改用使用者現成 Node）。兩者第一次都仍需 `parity install-browser` 下載 Chromium 本體。
