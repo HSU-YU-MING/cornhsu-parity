@@ -9,8 +9,9 @@ namespace Parity.Cli;
 /// <summary>
 /// <c>parity bug-report</c>(2.0.0,實驗性,不列入凍結)。在本機整理診斷資訊,印出來給使用者看,
 /// 再給一個預填好的 GitHub issue 網址(錯誤回報範本)。
-/// **鐵則:不自動送出任何資料**——不連網;網址只印出來,<c>--open</c> 時才交給瀏覽器開(開了也只是表單,
-/// 使用者自己看過、自己按送出)。可收:版本、作業系統與架構、.NET、Node、Playwright 與 Chromium、安裝通路,
+/// **鐵則:不自動送出任何資料**——Parity 本身不連網,網址只印出來。要講準確:遮罩過的報告全文在網址的
+/// query string 裡,使用者打開網址(自己點,或 <c>--open</c> 交給瀏覽器)時,這段文字就會送到 github.com、
+/// 也會留在瀏覽器紀錄;issue 要使用者自己按送出才會建立。可收:版本、作業系統與架構、.NET、Node、Playwright 與 Chromium、安裝通路,
 /// 以及設定檔的結構摘要(<see cref="ConfigSummary"/>)。整份文字最後再過一次 <see cref="Redaction"/>。
 /// </summary>
 internal static partial class BugReportCommand
@@ -85,10 +86,13 @@ internal static partial class BugReportCommand
             Console.WriteLine("(The full report is too long for a link — the link carries the version and environment fields only. " +
                 "Paste the text above into the \"Output of parity bug-report\" field.)");
         if (opts.ContainsKey("--open"))
-            Console.WriteLine(OpenInBrowser(url) ? "Opened in your browser — nothing is submitted until you press the button there."
+            Console.WriteLine(OpenInBrowser(url)
+                ? "Opened in your browser. The masked report above travels in the link's query string, so github.com now has it " +
+                  "and it stays in your browser history; no issue exists until you submit the form."
                 : "Could not open a browser; copy the link above instead.");
         else
-            Console.WriteLine("Nothing was opened or sent. Pass --open to open the link in your browser.");
+            Console.WriteLine("Nothing was opened or sent. Opening the link (or passing --open) sends the masked report above to " +
+                "github.com in the link's query string and leaves it in your browser history; no issue exists until you submit the form.");
         return 0;
     }
 

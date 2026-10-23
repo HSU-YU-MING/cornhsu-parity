@@ -119,6 +119,11 @@ public class BugReportTests
             Assert.Equal(0, r.ExitCode);
             var link = System.Text.RegularExpressions.Regex.Match(r.Out, @"https://github\.com/\S+").Value;
             Assert.Equal([link], opened);
+            // 驗證者:「不送任何資料」在 --open 時講過頭——遮罩過的報告在網址的 query string 裡,開了就送到 github.com、
+            // 也留在瀏覽器紀錄;issue 要使用者自己按送出才會建立。照實說
+            Assert.Contains("github.com", r.Out[r.Out.IndexOf("Opened", StringComparison.Ordinal)..]);
+            Assert.Contains("browser history", r.Out);
+            Assert.Contains("until you submit", r.Out);
         }
         finally { BugReportCommand.OpenInBrowser = previous; }
     }
@@ -262,6 +267,10 @@ public class BugReportTests
             var usage = Array.FindIndex(lines, l => l.Contains("parity bug-report [--config <path>] [--open]"));
             Assert.True(usage >= 0, $"`{string.Join(' ', args)}` 找不到 bug-report 的用法行");
             Assert.Contains("(experimental)", lines[usage + 1]);
+            var help = string.Join(" ", lines.Skip(usage).Take(9).Select(l => l.Trim()));
+            Assert.Contains("query string", help);
+            Assert.Contains("browser history", help);
+            Assert.DoesNotContain("Nothing is sent", help);
         }
     }
 }

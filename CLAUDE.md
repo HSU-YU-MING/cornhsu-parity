@@ -71,8 +71,10 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
   `X-Parity-*` 標頭、HTTP 狀態碼、伺服器拒收規則,job summary 內容)。**何時納入凍結:Parity.Server 公開部署
   (網頁外殼 M5)的那一版**——CHANGELOG 要寫明「push 自本版起凍結」,並拿掉 `--help` 的 `(experimental)`;
   在那之前改 push 的介面走 minor。`report.json` 不受影響,一直是凍結面 4。
-- **鐵則:`parity bug-report`(與日後任何「讓使用者回報」的功能)不得自動送出任何資料。** 不連網;只在本機整理、
-  印出來給使用者看,網址只印出來(`--open` 才交給瀏覽器,送不送由使用者在 GitHub 上按)。不收網址、route、selector、
+- **鐵則:`parity bug-report`(與日後任何「讓使用者回報」的功能)不得自動送出任何資料。** Parity 本身不連網;只在本機
+  整理、印出來給使用者看,網址只印出來。**對外的說法要準確**:遮罩過的報告全文放在網址的 query string 裡,打開網址
+  (使用者自己點,或 `--open` 交給瀏覽器)時就會送到 github.com、留在瀏覽器紀錄;issue 要使用者自己按送出才會建立。
+  不要寫成「不送任何資料」。不收網址、route、selector、
   節點名稱、文字、Figma fileKey、token、檔案路徑(遮成 `<path>`)、環境變數內容:設定檔只經 `ConfigSummary` 的白名單
   欄位,整份文字再過 `Redaction`。`BugReportTests` 用一份塞滿秘密的設定檔斷言輸出裡一個都沒有——改這兩個類別時它必須綠。
   bug-report 是實驗性的,不在六面凍結內。

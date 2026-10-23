@@ -109,8 +109,9 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
   (一律遮成 `<path>`)、環境變數的內容——摘要只讀白名單欄位;外部來源的自由文字也只收白名單形狀(Node 的輸出只收
   `v20.11.1` 這種版本字串、Chromium 目錄只收數字 revision,其他印 `unrecognized`);整份文字最後再過一次遮罩
   (網址含沒有 scheme 的、email、Windows/UNC/Unix/`~` 路徑含有空白的,以及任何帶斜線的字)。最後印一個預填好的
-  GitHub issue 網址(錯誤回報範本);太長時網址只帶摘要欄位,提示把全文貼上。**不連網、不送任何資料**:預設只印網址,
-  `--open` 才交給瀏覽器開,送不送由使用者決定。
+  GitHub issue 網址(錯誤回報範本);太長時網址只帶摘要欄位,提示把全文貼上。**Parity 本身不連網**,預設只印網址;要說準確:遮罩過的報告全文在網址的
+  query string 裡,打開網址(自己點,或 `--open` 交給瀏覽器)時就會送到 github.com、也會留在瀏覽器紀錄,issue 要使用者
+  自己按送出才會建立。
 - **新增:報告裡的回報連結**(none:Markdown 與本機 UI 不屬於凍結面)。`check --md`、`parity report` 的 Markdown 與
   Action 的 PR 留言最後一行是「Report a misjudgment」,連到誤判/漏判範本的預填網址(`issues/new?template=1-misjudgment.yml`),
   並提醒貼報告片段前先遮掉內部網址與內容;`parity serve` 的本機報告 UI 頂列也有同一個連結。只是連結:工具不連網、

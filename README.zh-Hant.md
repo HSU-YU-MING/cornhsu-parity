@@ -99,7 +99,8 @@ parity snapshot            # 把「現在跑著的畫面」凍結成設計基準
 parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
 parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
 parity bug-report          # (實驗性)整理版本/作業系統/Node/Chromium 資訊並印出,附預填好的 GitHub issue 連結。
-                           #   不送出任何東西;--config 加上設定檔的結構摘要(不含網址、route、key、token、路徑)
+                           #   Parity 本身不連網;打開連結時遮罩過的報告會跟著網址送到 github.com,按送出才會建立 issue。
+                           #   --config 加上設定檔的結構摘要(不含網址、route、key、token、路徑)
 ```
 
 在這個 repo 裡開發時:

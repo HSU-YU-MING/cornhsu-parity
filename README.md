@@ -108,7 +108,9 @@ parity lint                # Design lint: are the design file's values inside th
 parity check --reverse     # Reverse view, for a designer redrawing an existing page:
                            #   how does my draft differ from what ships? (never gates)
 parity bug-report          # (experimental) Collect version / OS / Node / Chromium info and print
-                           #   it with a pre-filled GitHub issue link. Sends nothing; --config adds a
+                           #   it with a pre-filled GitHub issue link. Parity itself connects to nothing;
+                           #   opening the link sends the masked report to github.com (it rides in
+                           #   the URL). No issue until you submit the form. --config adds a
                            #   structural summary without URLs, routes, keys, tokens or paths
 ```
 

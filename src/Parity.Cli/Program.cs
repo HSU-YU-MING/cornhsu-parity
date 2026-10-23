@@ -793,8 +793,9 @@ internal static class Usage
     public const string BugReport = """
           parity bug-report [--config <path>] [--open]
               (experimental) Collect diagnostics on this machine for a bug report and print them, plus a link that
-              opens a pre-filled GitHub issue. Nothing is sent: there is no network access, and the link is only
-              printed (--open hands it to your browser; you still review and submit the form yourself).
+              opens a pre-filled GitHub issue. Parity makes no network connection and only prints the link. The masked
+              report is in the link's query string: opening it (yourself, or with --open) sends that text to github.com
+              and leaves it in your browser history; no issue is created until you submit the form.
               Collected: Parity version, OS and architecture, .NET, Node, Playwright and Chromium revision, install
               channel; with --config, a structural summary (counts, source types, tolerances, gate and compare
               settings). Never collected: URLs, routes, selectors, node names, text, Figma keys, tokens, file paths
