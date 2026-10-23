@@ -106,7 +106,9 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
   commit)、作業系統與架構、.NET、Playwright driver 實際用的 Node、Playwright 版本、Chromium 預期的 revision 與是否
   已安裝、安裝通路;給 `--config` 時再加設定檔的**結構摘要**(targets 數、網址種類、設計來源類型、tolerances、
   failOn、minMatchRate、compare)。**絕對不收**網址、route、selector、節點名稱、文字、Figma fileKey、token、檔案路徑
-  (一律遮成 `<path>`)、環境變數的內容——摘要只讀白名單欄位,整份文字送出前再過一次遮罩。最後印一個預填好的
+  (一律遮成 `<path>`)、環境變數的內容——摘要只讀白名單欄位;外部來源的自由文字也只收白名單形狀(Node 的輸出只收
+  `v20.11.1` 這種版本字串、Chromium 目錄只收數字 revision,其他印 `unrecognized`);整份文字最後再過一次遮罩
+  (網址含沒有 scheme 的、email、Windows/UNC/Unix/`~` 路徑含有空白的,以及任何帶斜線的字)。最後印一個預填好的
   GitHub issue 網址(錯誤回報範本);太長時網址只帶摘要欄位,提示把全文貼上。**不連網、不送任何資料**:預設只印網址,
   `--open` 才交給瀏覽器開,送不送由使用者決定。
 - **新增:報告裡的回報連結**(none:Markdown 與本機 UI 不屬於凍結面)。`check --md`、`parity report` 的 Markdown 與

@@ -13,7 +13,7 @@ namespace Parity.Cli;
 /// 使用者自己看過、自己按送出)。可收:版本、作業系統與架構、.NET、Node、Playwright 與 Chromium、安裝通路,
 /// 以及設定檔的結構摘要(<see cref="ConfigSummary"/>)。整份文字最後再過一次 <see cref="Redaction"/>。
 /// </summary>
-internal static class BugReportCommand
+internal static partial class BugReportCommand
 {
     /// <summary>預填網址的長度上限:GitHub 與瀏覽器對很長的網址不可靠,超過就只帶摘要欄位。</summary>
     internal const int MaxUrlLength = 6000;
@@ -160,8 +160,10 @@ internal static class BugReportCommand
             foreach (var dir in Directory.EnumerateDirectories(bundled).Where(d => Path.GetFileName(d).Contains(BundledNodeRid(), StringComparison.Ordinal)))
                 candidates.Add((Path.Combine(dir, OperatingSystem.IsWindows() ? "node.exe" : "node"), "bundled with this package"));
         candidates.Add(("node", "on PATH"));
+        // 只收版本字串的形狀(v20、v20.11.1):PLAYWRIGHT_NODEJS_PATH 可以指向任何東西,它印什麼都不能原樣進報告
         foreach (var (exe, source) in candidates)
-            if (Run(exe, "--version") is { } version) return $"{version} ({source})";
+            if (Run(exe, "--version") is { } output)
+                return NodeVersionShape().IsMatch(output) ? $"{output} ({source})" : $"unrecognized output ({source})";
         return "not found";
     }
 
@@ -178,7 +180,8 @@ internal static class BugReportCommand
         try
         {
             using var pkg = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, ".playwright", "package", "package.json")));
-            version = pkg.RootElement.GetProperty("version").GetString() ?? version;
+            var raw = pkg.RootElement.GetProperty("version").GetString() ?? "";
+            version = PackageVersionShape().IsMatch(raw) ? raw : "unrecognized";
         }
         catch (Exception)
         {
@@ -189,20 +192,25 @@ internal static class BugReportCommand
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(browsersJson));
-            expected = doc.RootElement.GetProperty("browsers").EnumerateArray()
+            var raw = doc.RootElement.GetProperty("browsers").EnumerateArray()
                 .FirstOrDefault(b => b.GetProperty("name").GetString() == "chromium").GetProperty("revision").GetString();
+            expected = raw is not null && RevisionShape().IsMatch(raw) ? raw : null;
         }
         catch (Exception)
         {
         }
 
-        var installed = InstalledChromiumRevisions();
-        var custom = Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH") is { Length: > 0 } ? "; PLAYWRIGHT_BROWSERS_PATH is set" : "";
+        // 目錄名只收數字 revision;其他名字(使用者自己放的資料夾)只計數,不印
+        var dirs = InstalledChromiumRevisions();
+        var installed = dirs.Where(d => RevisionShape().IsMatch(d)).ToList();
+        var unrecognized = dirs.Count - installed.Count;
+        var list = (installed.Count == 0 ? "none" : string.Join(", ", installed)) + (unrecognized > 0 ? $"; {unrecognized} unrecognized" : "");
+        var custom = Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH") is { Length: > 0 } ? "; a custom Playwright browser directory is configured" : "";
         var chromium = expected is null
-            ? $"expected revision unknown; installed: {(installed.Count == 0 ? "none" : string.Join(", ", installed))}{custom}"
+            ? $"expected revision unknown; installed: {list}{custom}"
             : installed.Contains(expected)
                 ? $"revision {expected} installed{custom}"
-                : $"revision {expected} NOT installed (installed: {(installed.Count == 0 ? "none" : string.Join(", ", installed))}) — run `parity install-browser`{custom}";
+                : $"revision {expected} NOT installed (installed: {list}) — run `parity install-browser`{custom}";
         return (version, chromium);
     }
 
@@ -227,6 +235,15 @@ internal static class BugReportCommand
             return [];
         }
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^v\d+(\.\d+)*$")]
+    private static partial System.Text.RegularExpressions.Regex NodeVersionShape();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\d+$")]
+    private static partial System.Text.RegularExpressions.Regex RevisionShape();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$")]
+    private static partial System.Text.RegularExpressions.Regex PackageVersionShape();
 
     /// <summary>在本機跑一個指令取第一行輸出(5 秒逾時);找不到或失敗回 null。</summary>
     private static string? Run(string exe, string arg)

@@ -24,9 +24,14 @@ internal static partial class Redaction
             text = text.Replace(value, mask, StringComparison.OrdinalIgnoreCase);
         }
         text = UrlPattern().Replace(text, "<url>");
+        text = EmailPattern().Replace(text, "<email>");
+        text = SchemelessUrlPattern().Replace(text, "<url>");
         text = WindowsPathPattern().Replace(text, "<path>");
         text = UncPathPattern().Replace(text, "<path>");
+        text = HomePathPattern().Replace(text, "<path>");
         text = UnixPathPattern().Replace(text, "<path>");
+        // 最後一網打盡:剩下的字裡只要還帶 \ 或 /(有空白的路徑被切開的後半段、相對路徑),整個字都當路徑
+        text = AnySlashToken().Replace(text, "<path>");
         return text;
     }
 
@@ -47,13 +52,27 @@ internal static partial class Redaction
     [GeneratedRegex(@"\b[A-Za-z][A-Za-z0-9+.\-]*://\S+")]
     private static partial Regex UrlPattern();
 
+    [GeneratedRegex(@"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")]
+    private static partial Regex EmailPattern();
+
+    // 沒有 scheme 的網址:www.開頭,或「主機名.頂級網域」後面接 :port 或 /路徑
+    [GeneratedRegex(@"\bwww\.[^\s""'<>|]+|\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d+)?/[^\s""'<>|]*")]
+    private static partial Regex SchemelessUrlPattern();
+
     [GeneratedRegex(@"\b[A-Za-z]:[\\/][^\s""'<>|]*")]
     private static partial Regex WindowsPathPattern();
+
+    [GeneratedRegex(@"(?<!\S)~[\\/][^\s""'<>|]*")]
+    private static partial Regex HomePathPattern();
+
+    [GeneratedRegex(@"[^\s<>]*[\\/][^\s<>]*")]
+    private static partial Regex AnySlashToken();
 
     [GeneratedRegex(@"\\\\[^\s\\""'<>|]+\\[^\s""'<>|]*")]
     private static partial Regex UncPathPattern();
 
-    // 至少兩段的 /a/b 才算路徑:避免把「x64/arm64」這種用語或單一的 / 吃掉
+    // 絕對 Unix 路徑(至少兩段 /a/b)。後面的 AnySlashToken 會再把任何帶 / 或  的字整個遮掉——
+    // bug-report 的文字裡沒有需要保留斜線的內容;日後若有,要先在這裡挑掉例外
     [GeneratedRegex(@"(?<![\w.~-])/(?:[^\s/""'<>|]+/)+[^\s/""'<>|]*")]
     private static partial Regex UnixPathPattern();
 

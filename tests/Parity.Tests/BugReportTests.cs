@@ -166,6 +166,88 @@ public class BugReportTests
     public void Redaction_masks_paths_and_urls_and_leaves_plain_text(string input, string expected)
         => Assert.Equal(expected, Redaction.Apply(input, []));
 
+    [Theory]
+    [InlineData(@"v20 C:\Program Files\Secret Dir\node.exe")]          // 有空白的 Windows 路徑
+    [InlineData("v20 ~/alice/secret-tilde")]                           // ~ 開頭
+    [InlineData("v20 www.secret-host.example.com/path")]               // 沒有 scheme 的網址
+    [InlineData("v20 alice@corp-secret.example.com")]                  // email
+    [InlineData("v20 /home/alice smith-secret/proj")]                  // 有空白的 Unix 路徑
+    [InlineData(@"v20 \?\C:\Users\alice-ext\x")]
+    [InlineData("v20 //fileserver-secret/share/x")]
+    [InlineData("v20 http://[::1]:8080/secret-v6 https://例子.測試/x")]
+    [InlineData(@"v20 Users\alice-rel\proj")]                         // 相對的反斜線路徑
+    [InlineData(@"v20 \server-only-secret")]
+    public void Redaction_masks_the_free_text_shapes_the_verifier_found(string input)
+    {
+        // 驗證者用 node shim 把這些字串塞進 `node --version` 的輸出。bug-report 現在只收白名單形狀的版本字串,
+        // 這一層是第二道:就算哪天又有自由文字進來,這些形狀也要遮掉
+        var masked = Redaction.Apply(input, []);
+
+        Assert.StartsWith("v20 ", masked);
+        foreach (var leak in new[] { "secret", "alice", "例子", "Program Files", "Secret Dir" })
+            Assert.DoesNotContain(leak, masked, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Free_text_from_node_and_the_browser_directory_never_reaches_the_report()
+    {
+        // 驗證者的攻擊:PLAYWRIGHT_NODEJS_PATH 指向一個會印出秘密的 shim、瀏覽器目錄裡放 chromium-<秘密> 的資料夾、
+        // 設定檔塞滿網址/UNC/中文/註解、cwd 也是秘密名稱。node 的輸出只收 ^v\d+(\.\d+)*$,revision 只收 ^\d+$
+        using var dir = new TempDir();
+        var shim = OperatingSystem.IsWindows()
+            ? dir.Write(Path.Combine("bin-NODESHIMDIR", "node.cmd"), "@echo v20.11.1 NODESHIMSECRET ~/tilde-node-secret/bin\r\n")
+            : dir.Write(Path.Combine("bin-NODESHIMDIR", "node"), "#!/bin/sh\necho 'v20.11.1 NODESHIMSECRET ~/tilde-node-secret/bin'\n");
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(shim, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var browsers = Directory.CreateDirectory(dir.File("browsers-BROWSERDIRSECRET")).FullName;
+        Directory.CreateDirectory(Path.Combine(browsers, "chromium-REVDIRSECRET"));
+        Directory.CreateDirectory(Path.Combine(browsers, "chromium-999"));
+        var cwd = Directory.CreateDirectory(dir.File("CWDSECRETDIR")).FullName;
+        var config = dir.Write(Path.Combine("ALICESECRETHOME", "proj-SECRETPROJ", "parity.config.json"), """
+            {
+              // top comment https://top-comment-secret.example.com/x?token=COMMENTTOKEN
+              "figmaFileKey": "https://www.figma.com/design/FIGMAKEYINURL123/My-File-SECRETNAME?node-id=1-2",
+              "designToken": "figd_LITERALSECRET-xyz-0123456789",
+              "mapFile": "\\\\mapserver-secret\\maps-secret\\parity.map.json",
+              "tokensFile": "C:/Users/alicesecret/tokens-secret.json",
+              "baselineFile": "~/baseline-tilde-secret.db",
+              "ignore": [".ignore-secret-selector", "#IDSECRETSEL"],
+              "targets": [
+                { "route": "/route-secret/結帳秘密", "frame": "Frame SECRETFRAMENAME", "url": "https://user:PASSWORDSECRET@stage-secret.example.com:8443/p?token=QUERYTOKENSECRET#fragsecret", "width": 375 },
+                { "route": "/r2", "frame": "12:34", "url": "\\\\uncserver-secret\\share-secret\\index.html" },
+                { "route": "/r5", "frame": "", "url": "http://例子秘密.測試/路徑秘密?token=中文TOKEN秘密" },
+                { "route": "/r7", "frame": "", "url": "cdp:http://localhost:9222#window-secret-title" },
+                { "route": "/r8", "frame": "", "url": "./relative-secret/page.html", "height": 900 },
+                { "route": "/r10", "frame": "", "url": "intranet-host-secret:8080/x" }
+              ],
+              "tolerances": { "sizePx": 3 /* \\cmtserver\share TOLCOMMENTSECRET */ },
+              "gate": { "failOn": ["critical", "serious"], "minMatchRate": 0.8 },
+              "compare": { "position": "relative" }
+            }
+            """);
+        using var env = new EnvScope()
+            .Set("FIGMA_TOKEN", "ENVFIGMASECRET_abcdef123").Set("GITHUB_TOKEN", "ghp_ENVGHSECRET0123456789")
+            .Set("PARITY_TOKEN", "ENVPARITYTOKSECRET99").Set("PARITY_SERVER", "https://parity-server-secret.example")
+            .Set("MY_PRIVATE_THING", "PRIVATEVALSECRET")
+            .Set("PLAYWRIGHT_BROWSERS_PATH", browsers).Set("PLAYWRIGHT_NODEJS_PATH", shim);
+        using var inCwd = new CwdScope(cwd);
+
+        var r = await Cli.RunAsync("bug-report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        var all = Everything(r);
+        foreach (var secret in new[]
+        {
+            "SECRET", "秘密", "例子", "測試", "PASSWORD", "QUERYTOKEN", "FIGMAKEYINURL123", "figd_", "mapserver", "alicesecret", "tilde",
+            "uncserver", "cmtserver", "stage-secret", "localhost:9222", "relative-secret", "intranet-host", "ghp_", "PRIVATEVAL", "IDSECRETSEL",
+            "12:34", "結帳", "fragsecret", "COMMENTTOKEN", "NODESHIM", "browsers-", dir.Path, Path.GetFileName(dir.Path),
+        })
+            Assert.False(all.Contains(secret, StringComparison.OrdinalIgnoreCase), $"輸出裡出現了不該有的內容:{secret}");
+        Assert.Contains("Node: unrecognized output", r.Out);
+        Assert.Contains("999", r.Out);              // 數字 revision 照列
+        Assert.Contains("1 unrecognized", r.Out);   // 不是數字的目錄只計數
+    }
+
     [Fact]
     public void Redaction_masks_known_sensitive_values_wherever_they_appear()
         => Assert.Equal("token <redacted> and <redacted>!", Redaction.Apply("token s3cr3t-value and s3cr3t-value!", ["s3cr3t-value"]));
