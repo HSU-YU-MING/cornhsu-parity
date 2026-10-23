@@ -629,9 +629,14 @@ public class ActionYmlTests
     {
         using var dir = new TempDir();
 
-        var r = RunCommentStep(dir.Path, "site-a", "", report: new string('x', 60_001));
+        // 報告的最後一行是回報連結(MarkdownReport 保證);截斷時它會被截掉——驗證者指出,所以截斷後要補回來
+        var feedback = $"<sub>Is a verdict wrong? [Report a misjudgment]({Parity.Engine.FeedbackLinks.Misjudgment}) — mask internal URLs and content before pasting any of this report.</sub>";
+        var r = RunCommentStep(dir.Path, "site-a", "", report: new string('x', 60_001) + "\n\n" + feedback + "\n");
 
         Assert.Contains("see the site-a artifact", r.Body);
+        var lines = r.Body.TrimEnd().Split('\n');
+        Assert.Equal(feedback, lines[^1]);                      // 回報連結仍是最後一行
+        Assert.Contains("Report truncated", lines[^2] + lines[^3]); // 截斷說明緊接在前
     }
 
     [Theory]

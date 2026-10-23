@@ -168,7 +168,8 @@ runs:
         [ "$PARITY_ARTIFACT_NAME" = parity-report ] || marker="<!-- parity-report:$PARITY_ARTIFACT_NAME -->"
         # GitHub 留言上限 ~65536 字,超過就截斷並附提示(完整內容在 artifact)
         if [ "$(wc -c < "$report")" -gt 60000 ]; then
-          { echo "$marker"; head -c 60000 "$report"; printf '\n\n<sub>⚠️ Report truncated because it exceeds the comment size limit — see the %s artifact on this workflow run for the full version.</sub>\n' "$PARITY_ARTIFACT_NAME"; } > "$out"
+          # 截掉的部分包括報告的最後一行——「回報誤判」的連結(MarkdownReport 保證它在最後一行):補回來
+          { echo "$marker"; head -c 60000 "$report"; printf '\n\n<sub>⚠️ Report truncated because it exceeds the comment size limit — see the %s artifact on this workflow run for the full version.</sub>\n\n' "$PARITY_ARTIFACT_NAME"; tail -n 1 "$report"; } > "$out"
         else
           { echo "$marker"; cat "$report"; } > "$out"
         fi
