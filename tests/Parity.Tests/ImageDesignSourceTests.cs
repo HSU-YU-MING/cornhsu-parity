@@ -1,7 +1,13 @@
+using System.Security.Cryptography;
 using Parity.Engine.DesignSources;
 using Parity.Engine.DesignSources.Image;
 using Parity.Engine.Model;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Metadata.Profiles.Exif;
+using SixLabors.ImageSharp.Metadata.Profiles.Icc;
 using SixLabors.ImageSharp.PixelFormats;
 
 namespace Parity.Tests;
@@ -269,6 +275,150 @@ public class ImageDesignSourceTests
             Assert.Null(root.Children[2].Fill);                            // TEXT 不取樣(反鋸齒會混色)
             Assert.NotNull(root.Fill);                                     // 根框取樣到白
             Assert.Equal("#FFFFFF", root.Fill!.Value.ToHex());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // ── 不讀中繼資料(GHSA-gwg2-r3hj-4w44:ICC 的 CLUT 依未驗證的尺寸配置記憶體)──
+
+    /// <summary>
+    /// 最小的合法 ICC v2 設定檔:128 位元組檔頭 + 一個 A2B0 標籤(lut8,帶 2×2×2 的 CLUT)。
+    /// 3.1 線的 ICC 標籤型別是 internal,只能手刻位元組;內容是良性的,只用來確認「解碼器看得到它」。
+    /// </summary>
+    private static byte[] IccProfileWithClut()
+    {
+        const int lutSize = 48 + 256 * 3 + 8 * 3 + 256 * 3; // 型別頭與矩陣、輸入表、CLUT、輸出表
+        const int tagOffset = 128 + 4 + 12;                  // 檔頭、標籤數、一筆標籤表
+        var b = new byte[tagOffset + lutSize];
+        void U32(int at, uint v) { b[at] = (byte)(v >> 24); b[at + 1] = (byte)(v >> 16); b[at + 2] = (byte)(v >> 8); b[at + 3] = (byte)v; }
+        void U16(int at, ushort v) { b[at] = (byte)(v >> 8); b[at + 1] = (byte)v; }
+        void Sig(int at, string s) { for (var i = 0; i < 4; i++) b[at + i] = (byte)s[i]; }
+
+        U32(0, (uint)b.Length); b[8] = 2; b[9] = 0x10;                 // 大小、版本 2.1
+        Sig(12, "mntr"); Sig(16, "RGB "); Sig(20, "XYZ ");               // 顯示器、RGB、PCS = XYZ
+        U16(24, 2026); U16(26, 1); U16(28, 1); Sig(36, "acsp");
+        U32(68, 63190); U32(72, 65536); U32(76, 54061);                 // D50 白點(s15Fixed16)
+        U32(128, 1); Sig(132, "A2B0"); U32(136, tagOffset); U32(140, lutSize);
+
+        var t = tagOffset;
+        Sig(t, "mft1"); b[t + 8] = 3; b[t + 9] = 3; b[t + 10] = 2;     // 3 進 3 出、每軸 2 格
+        U32(t + 12, 65536); U32(t + 28, 65536); U32(t + 44, 65536);     // 單位矩陣
+        var p = t + 48;
+        for (var c = 0; c < 3; c++) for (var i = 0; i < 256; i++) b[p++] = (byte)i;
+        for (var g = 0; g < 8; g++) for (var c = 0; c < 3; c++) b[p++] = (byte)(((g >> (2 - c)) & 1) * 255);
+        for (var c = 0; c < 3; c++) for (var i = 0; i < 256; i++) b[p++] = (byte)i;
+        return b;
+    }
+
+    /// <summary>64×48 漸層;<paramref name="alpha"/> 時左 1/4 全透明、次 1/4 半透明。</summary>
+    private static Image<Rgba32> Gradient(bool alpha)
+    {
+        var img = new Image<Rgba32>(64, 48);
+        for (var y = 0; y < 48; y++)
+            for (var x = 0; x < 64; x++)
+                img[x, y] = new Rgba32((byte)(x * 4), (byte)(y * 5), (byte)((x + y) * 2),
+                    alpha ? (byte)(x < 16 ? 0 : x < 32 ? 128 : 255) : (byte)255);
+        return img;
+    }
+
+    /// <summary>
+    /// 各種帶中繼資料、或其解讀可能影響像素的 PNG/JPEG:內嵌 ICC(PNG iCCP、JPEG APP2)、
+    /// RGB 與 CMYK JPEG(Adobe APP14 的色彩轉換旗標)、調色盤 PNG 的 tRNS 透明、JPEG 的 EXIF 方向。
+    /// </summary>
+    private static async Task<string> WriteMetadataFixture(string dir, string name)
+    {
+        var path = Path.Combine(dir, name);
+        using var img = Gradient(alpha: name.EndsWith(".png", StringComparison.Ordinal));
+        switch (name)
+        {
+            case "icc.png":
+                img.Metadata.IccProfile = new IccProfile(IccProfileWithClut());
+                await img.SaveAsPngAsync(path);
+                break;
+            case "icc.jpg":
+                img.Metadata.IccProfile = new IccProfile(IccProfileWithClut());
+                await img.SaveAsJpegAsync(path);
+                break;
+            case "icc-rgb.jpg":
+                img.Metadata.IccProfile = new IccProfile(IccProfileWithClut());
+                await img.SaveAsJpegAsync(path, new JpegEncoder { ColorType = JpegEncodingColor.Rgb });
+                break;
+            case "cmyk.jpg":
+                await img.SaveAsJpegAsync(path, new JpegEncoder { ColorType = JpegEncodingColor.Cmyk });
+                break;
+            case "palette-trns.png":
+                await img.SaveAsPngAsync(path, new PngEncoder { ColorType = PngColorType.Palette });
+                break;
+            case "exif.jpg":
+                img.Metadata.ExifProfile = new ExifProfile();
+                img.Metadata.ExifProfile.SetValue(ExifTag.Orientation, (ushort)6);
+                await img.SaveAsJpegAsync(path);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(name), name, null);
+        }
+        return path;
+    }
+
+    private static string PixelHash(Image<Rgba32> img)
+    {
+        var bytes = new byte[img.Width * img.Height * 4];
+        img.CopyPixelDataTo(bytes);
+        return $"{img.Width}x{img.Height}:{Convert.ToHexString(SHA256.HashData(bytes))}";
+    }
+
+    /// <summary>改動前的解碼設定:同一組 PNG/JPEG 解碼器,不跳過中繼資料。</summary>
+    private static DecoderOptions WithMetadata => new() { Configuration = ImageDesignSource.PngAndJpegOnly.Configuration };
+
+    [Theory]
+    [InlineData("icc.png")]
+    [InlineData("icc.jpg")]
+    [InlineData("icc-rgb.jpg")]
+    [InlineData("cmyk.jpg")]
+    [InlineData("palette-trns.png")]
+    [InlineData("exif.jpg")]
+    public async Task Skipping_metadata_leaves_the_decoded_pixels_unchanged(string fixture)
+    {
+        // SkipMetadata 不能只是「看起來無害」:漏讀 APP14 會把 RGB/CMYK JPEG 解成別的顏色,漏讀 tRNS 會讓透明
+        // 變不透明——取樣就靜靜地取錯色。逐位元比對改動前後解碼出的 Rgba32 像素
+        var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = await WriteMetadataFixture(dir, fixture);
+            using var before = SixLabors.ImageSharp.Image.Load<Rgba32>(WithMetadata, path);
+            using var after = await ImageDesignSource.LoadPixelsAsync(path);
+
+            Assert.Equal(PixelHash(before), PixelHash(after));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("icc.png")]
+    [InlineData("icc.jpg")]
+    [InlineData("exif.jpg")]
+    public async Task Decoded_design_images_carry_no_icc_or_exif_profile(string fixture)
+    {
+        // GHSA-gwg2-r3hj-4w44:3.1.12 在讀 IccProfile.Entries 時才解析 CLUT。設計圖解碼後不留任何 ICC,
+        // 這條路就不存在。PNG 要特別測:3.1.12 的 PNG 解碼器不理 SkipMetadata,iCCP 照收(2026-10-23 實測),
+        // 是 LoadPixelsAsync 解碼後丟掉的
+        var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = await WriteMetadataFixture(dir, fixture);
+            using (var withMetadata = SixLabors.ImageSharp.Image.Load<Rgba32>(WithMetadata, path))
+            {
+                // fixture 自證:不跳過中繼資料時解碼器確實讀得到,下面的 null 才有意義
+                if (fixture.StartsWith("icc", StringComparison.Ordinal)) Assert.NotNull(withMetadata.Metadata.IccProfile);
+                else Assert.NotNull(withMetadata.Metadata.ExifProfile);
+            }
+
+            using var image = await ImageDesignSource.LoadPixelsAsync(path);
+
+            Assert.Null(image.Metadata.IccProfile);
+            Assert.Null(image.Metadata.ExifProfile);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }

@@ -261,6 +261,10 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
 - **打包:NuGet 與 npm 套件附上第三方授權聲明**(none:行為不變)。新增 `THIRD-PARTY-NOTICES.md`(各通路夾帶的
   第三方元件與授權),放在 NuGet 套件根目錄與每個 npm 平台套件裡;npm 的平台套件與主套件也補上 `LICENSE`。
   另外 tool 套件不再夾帶沒有用到的 `System.IO.Hashing.dll`(SourceLink 的傳遞相依帶進來的)。
+- **安全:設計圖解碼不再讀中繼資料,關閉 ICC 解析路徑**(patch:像素不變)。`designImage` 解碼時不讀 ICC／EXIF／
+  XMP／IPTC(取樣只用像素),解碼後也不留 ICC 設定檔。ImageSharp 3.1.12 的 ICC CLUT 記憶體配置(GHSA-gwg2-r3hj-4w44,
+  3.1 線沒有修補版)要讀設定檔內容才會觸發:Parity 原本就不讀,現在設計圖上也沒有可讀的。改動前後解碼出的像素
+  逐位元相同(測試以帶 ICC、EXIF、Adobe APP14、tRNS 的 PNG/JPEG 鎖住)。
 
 **網頁外殼動工(M1:報告進得來)**——引擎/外殼分離的第二家外殼:一個只收報告、
 只給人看的團隊儀表板。**鐵則:雲端不跑瀏覽器**——伺服器唯一收掃描結果的入口只收「已完成的報告」

@@ -217,17 +217,28 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 - **相依漏洞:2026-10-22 實掃只剩 `SixLabors.ImageSharp` 3.1.12 一個套件**(`dotnet list Parity.slnx
   package --vulnerable --include-transitive`;2026-08-26 那次是 0 個,這五個 advisory 是 2026-10-07 才公布的)。
   `SQLitePCLRaw` 手動 pin 到 3.0.5 蓋掉 EF Sqlite 傳遞進來的 NU1903 版本,dependabot 每月盯著。
-  - **ImageSharp:刻意不修,留帳**。五個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w;
-    中:wmxv-xphr-5c9g、gwg2-r3hj-4w44)的修補版都只有 **4.1.2**,3.1.x 沒有修補版(nuget.org 上 3.1 線
-    最後一版就是 3.1.12),而 4.x 的授權問題見上面「地雷 → 其他」那條,不升。
-  - **暴露面**:Parity 只在 `designImage` 模式呼叫 `Image.LoadAsync<Rgba32>`(`ImageDesignSource.cs`),
-    只解碼、不做任何影像處理或編碼。所以 HistogramEqualization(j3p4)與兩個 TIFF CCITT **編碼器**
-    (j9gm、jjfr)三個高風險項目都碰不到;碰得到的是兩個中風險的**解碼**項目:BigTIFF IFD 讓解碼卡住
-    (wmxv,`LoadAsync` 依內容自動判格式,副檔名是 .png 的 TIFF 也會走到)與 ICC CLUT 依未驗證尺寸配置記憶體
-    (gwg2)。兩者都是 DoS,輸入是使用者自己 repo 裡的檔案——在 CI 裡能改那個檔的人本來就能改 workflow,
-    增量風險低。
-  - **2.0.0 起只註冊 PNG/JPEG 解碼器**(`ImageDesignSource.PngAndJpegOnly`):BigTIFF 那條(wmxv)碰不到了,
-    剩下的是 PNG/JPEG 內嵌 ICC 的 CLUT 配置(gwg2,中風險 DoS)。**重新評估的時機**:3.1.x 出修補版就升。
+  - **ImageSharp:2.0.0 維持 3.1.12,不升 4.x**(使用者 2026-10-23 決定:加 `SkipMetadata` 關掉 ICC 路徑,
+    升 4.x 之後再評估)。五個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w;中:wmxv-xphr-5c9g、
+    gwg2-r3hj-4w44)的修補版都只有 **4.1.2**,3.1 線沒有修補版(nuget.org 上最後一版就是 3.1.12);
+    **4.x 建置時需要 Six Labors 的授權金鑰**(上面「地雷 → 其他」那條;#19 與 dependabot PR #54 都因此全紅)。
+    PR #54 與 `dependabot.yml` 都先不動,等升 4.x 的決定。
+  - **逐條暴露面**(Parity 只在 `designImage` 模式解碼一張圖,`ImageDesignSource.LoadPixelsAsync`;
+    不做任何影像處理、不編碼):
+    - j3p4-wp97-rph4(高,HistogramEqualization 的直方圖索引越界):要對解碼出的 float TIFF 呼叫
+      `HistogramEqualization()`。Parity 沒有用任何影像處理 → **碰不到**
+    - j9gm-c75j-xc9q、jjfr-hcj7-qf5w(高,TIFF CCITT T4／T6 **編碼器**越界寫):要用 `TiffEncoder` 編 1-bit
+      CCITT 壓縮的 TIFF。Parity 不編任何圖 → **碰不到**
+    - wmxv-xphr-5c9g(中,BigTIFF 的 IFD 讓解碼卡住):要解碼 TIFF。2.0.0 起只註冊 PNG/JPEG 解碼器,副檔名
+      是 .png 的 TIFF 也擋得住(判格式看內容)→ **碰不到**
+    - gwg2-r3hj-4w44(中,ICC CLUT 依未驗證的尺寸配置記憶體):PNG(iCCP)與 JPEG(APP2)都能內嵌 ICC。
+      2026-10-23 照 advisory 的形狀手刻一份 mpet／clut 截斷的 ICC 實測:3.1.12 **解碼本身不會走到**——解碼只
+      解析 128 位元組的檔頭,CLUT 要到讀 `IccProfile.Entries` 才配置(實測 64 MB),advisory 對 1.x～3.x 也是
+      這樣寫;Parity 從來不讀中繼資料,所以原本就沒有觸發。2.0.0 再把路關掉:`SkipMetadata = true`(JPEG 不再
+      保留 ICC／EXIF),而 **3.1.12 的 PNG 解碼器不理 SkipMetadata、iCCP 照收**,所以 `LoadPixelsAsync` 解碼後
+      再把 `IccProfile` 設成 null → **碰不到**。`ImageDesignSourceTests` 鎖住兩件事:改動前後解碼出的像素雜湊
+      相同(ICC、Adobe APP14 的 RGB／CMYK JPEG、調色盤 tRNS、EXIF 共 6 種 fixture),解碼後沒有 ICC／EXIF。
+  - **重新評估的時機**:決定升 4.x(取得授權金鑰)時,或 3.1 線出修補版時。要加任何讀圖片中繼資料、做影像
+    處理或編碼的程式碼之前,先回來看這張表——上面的「碰不到」都建立在「只解碼、只取像素」上。
 - **auto-name 通用名假配對**(ROADMAP 有完整留帳):「Content」這種通用圖層名會撞到
   無關頁面的 `#content`。尺寸合理性防線(面積比 >16 拒配)只擋得住量級差很多的;
   **`auto-container`(LCA 推論)不經這道防線**。要根治得上語意層，動工前先蒐集更多野生樣本。
