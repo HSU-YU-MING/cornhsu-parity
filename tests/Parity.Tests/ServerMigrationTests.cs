@@ -24,8 +24,14 @@ public class ServerMigrationTests
         var now = DateTimeOffset.UtcNow;
         AppUser User(string email, int failures, DateTimeOffset? lockoutEnd) => new()
         {
-            Id = Guid.NewGuid(), UserName = email, Email = email, NormalizedEmail = email.ToUpperInvariant(),
-            NormalizedUserName = email.ToUpperInvariant(), AccessFailedCount = failures, LockoutEnd = lockoutEnd, LockoutEnabled = true,
+            Id = Guid.NewGuid(),
+            UserName = email,
+            Email = email,
+            NormalizedEmail = email.ToUpperInvariant(),
+            NormalizedUserName = email.ToUpperInvariant(),
+            AccessFailedCount = failures,
+            LockoutEnd = lockoutEnd,
+            LockoutEnabled = true,
         };
         db.Users.AddRange(
             User("counting@t.local", 2, null),                      // 錯過 2 次、還沒鎖
