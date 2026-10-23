@@ -124,6 +124,9 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
 **產品 bug 修正(2026-10-22 稽核)**——每條標出它單獨來看的 semver 判讀。會讓原本接受的輸入變成錯誤、
 或改變量測/gate 結果的修法,列在上面的「破壞性變更」。
 
+- **修正:`parity serve`/`parity map` 等伺服器真的在監聽才印網址、開瀏覽器**(patch)。以前在啟動 Kestrel
+  之前就印 `report UI:` 並開瀏覽器,慢一點的機器上瀏覽器會先吃到 connection refused;埠被占用時也會先印出
+  一個連不上的網址才失敗。現在先啟動、再印網址,埠被占用時在印網址之前就以 exit 2 結束。
 - **修正:npm 啟動腳本認得 win32-arm64 與 linux-arm64**(patch)。這兩個平台包 1.1.0 就有發佈,
   但啟動腳本的平台表只有 4 筆,`npx cornhsu-parity` 在這兩個平台印「沒有預先建置版本」並 exit 1。
   新增測試要求啟動腳本的平台表與 `npm/prepare.mjs` 一一對應。

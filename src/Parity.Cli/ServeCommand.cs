@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Parity.Engine;
 
@@ -168,19 +169,24 @@ internal static class ServeCommand
             watchers = StartWatchers(session, state);
 
         var url = $"http://127.0.0.1:{port}/{(mapMode ? "#map" : "")}";
-        Console.WriteLine($"\nreport UI: \x1b[1m{url}\x1b[0m{(watch ? " (watch mode)" : "")}");
-        Console.WriteLine("Ctrl+C to stop.");
-
-        if (mapMode || opts.ContainsKey("--open"))
-            TryOpenBrowser(url);
-
         try
         {
-            await app.RunAsync();
+            // 先真的開始監聽,才印網址、開瀏覽器:印出來的網址當下就要連得上(map 與 --open 會立刻開瀏覽器,
+            // 以前在 RunAsync 之前就印,慢一點的機器上瀏覽器會先吃到 connection refused);
+            // 埠被占用之類的啟動錯誤也因此在印網址之前就丟出來
+            await app.StartAsync();
+            Console.WriteLine($"\nreport UI: \x1b[1m{url}\x1b[0m{(watch ? " (watch mode)" : "")}");
+            Console.WriteLine("Ctrl+C to stop.");
+
+            if (mapMode || opts.ContainsKey("--open"))
+                TryOpenBrowser(url);
+
+            await app.WaitForShutdownAsync();
         }
         finally
         {
             foreach (var w in watchers) w.Dispose();
+            await app.DisposeAsync();
         }
         return 0;
     }

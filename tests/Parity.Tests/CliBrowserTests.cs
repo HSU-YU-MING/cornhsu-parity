@@ -539,6 +539,33 @@ public class CliBrowserTests
         return await http.SendAsync(req);
     }
 
+    [Fact]
+    public async Task Serve_fails_on_a_busy_port_before_printing_the_url()
+    {
+        // 網址要等真的在監聽才印(map 與 --open 會立刻拿它開瀏覽器,測試也靠這一行判斷可以連了);
+        // 埠被占用時要在印網址之前就以 exit 2 結束,不能先印出一個連不上的網址
+        using var dir = new TempDir();
+        var config = BoxProject(dir);
+        var occupied = new TcpListener(IPAddress.Loopback, 0);
+        occupied.Start();
+        try
+        {
+            var port = ((IPEndPoint)occupied.LocalEndpoint).Port;
+            using var serve = ServeProcess.Start(config, port);
+
+            var exit = await serve.WaitForExitAsync(TimeSpan.FromSeconds(120));
+            if (serve.Stderr.Contains("install-browser", StringComparison.OrdinalIgnoreCase)) { Console.WriteLine(Skipped); return; }
+            Assert.True(exit is not null, $"埠被占用時 parity serve 沒有結束。stdout:\n{serve.Stdout}\nstderr:\n{serve.Stderr}");
+            Assert.Equal(2, exit);
+            Assert.DoesNotContain("report UI:", serve.Stdout);
+            Assert.Contains("error", serve.Stderr, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            occupied.Stop();
+        }
+    }
+
     private static int FreeLoopbackPort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -623,6 +650,14 @@ public class CliBrowserTests
             if (done != _listening.Task) return false;
             if (!_listening.Task.Result) _process.WaitForExit(); // 已結束:等 stderr 收齊
             return _listening.Task.Result;
+        }
+
+        public async Task<int?> WaitForExitAsync(TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            try { await _process.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException) { return null; }
+            return _process.ExitCode;
         }
 
         public void Dispose()
