@@ -329,7 +329,7 @@ jobs:
       contents: read
       pull-requests: write   # 讓 action 把還原度報告貼成 PR 留言
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 起你的站(或改成部署到 preview URL,讓 config 的 url 指過去)
       - run: |
           npm ci && npm run build

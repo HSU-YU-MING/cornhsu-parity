@@ -385,7 +385,7 @@ jobs:
       contents: read
       pull-requests: write   # lets the action post the fidelity report as a PR comment
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Start your site (or deploy to a preview URL and point the config's url at it)
       - run: |
           npm ci && npm run build
