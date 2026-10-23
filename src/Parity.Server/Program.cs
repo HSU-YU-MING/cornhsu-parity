@@ -52,8 +52,8 @@ builder.Services.AddSingleton(sp =>
     return new LoginGuard(
         sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityOptions>>().Value.Lockout,
         sp.GetService<TimeProvider>() ?? TimeProvider.System,
-        config.GetValue("Parity:Login:PerIpPerMinute", LoginGuard.DefaultPerIpPerMinute),
-        config.GetValue("Parity:Login:PerEmailPerMinute", LoginGuard.DefaultPerEmailPerMinute));
+        LoginGuard.LimitFrom(config, LoginGuard.PerIpKey, LoginGuard.DefaultPerIpPerMinute),
+        LoginGuard.LimitFrom(config, LoginGuard.PerEmailKey, LoginGuard.DefaultPerEmailPerMinute));
 });
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
@@ -74,6 +74,9 @@ builder.Services.AddAuthorization();
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 20 * 1024 * 1024);
 
 var app = builder.Build();
+// 啟動時就建立 LoginGuard:額度設錯(0、負數、不是整數)直接起不來、訊息點名設定鍵。
+// 原本第一次登入才建立,設錯時伺服器照常啟動、每次登入都 500
+app.Services.GetRequiredService<LoginGuard>();
 
 using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.Migrate();

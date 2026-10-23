@@ -643,6 +643,34 @@ public class ServerEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, victim.Status);
     }
 
+    [Theory]
+    [InlineData("Parity:Login:PerIpPerMinute", "0")]
+    [InlineData("Parity:Login:PerIpPerMinute", "-5")]
+    [InlineData("Parity:Login:PerEmailPerMinute", "abc")]
+    [InlineData("Parity:Login:PerEmailPerMinute", "1.5")]
+    public void A_bad_login_limit_stops_the_server_at_startup_and_names_the_setting(string key, string value)
+    {
+        // 驗證者實證:Parity__Login__PerIpPerMinute=0 時伺服器照常啟動,每次登入卻都 500(LoginGuard 第一次被
+        // 要用時才建立、才丟例外)。現在啟動時就解析與驗證,設錯直接起不來,訊息點名設定鍵
+        using var factory = _factory.WithWebHostBuilder(b => b.UseSetting(key, value));
+
+        var ex = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        var messages = string.Join(" | ", Unwrap(ex).Select(e => e.Message));
+        Assert.Contains(key, messages);
+        Assert.Contains($"\"{value}\"", messages);
+    }
+
+    private static IEnumerable<Exception> Unwrap(Exception ex)
+    {
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            yield return e;
+            if (e is AggregateException agg)
+                foreach (var inner in agg.InnerExceptions.SelectMany(Unwrap)) yield return inner;
+        }
+    }
+
     [Fact]
     public async Task Login_is_rate_limited_per_email_the_same_way_for_real_and_unknown_accounts()
     {

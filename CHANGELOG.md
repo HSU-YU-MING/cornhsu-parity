@@ -202,7 +202,7 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
     Identity 的 AccessFailedCount/LockoutEnd。沒有容量上限,也就沒有淘汰。
   - 同一個正規化 email 的登入在伺服器內一次只跑一個,並發下計數正確。
   - 登入額度:每個用戶端 IP 每分鐘 20 次、每個 email 每分鐘 10 次(一分鐘滑動視窗;設定
-    `Parity:Login:PerIpPerMinute`、`Parity:Login:PerEmailPerMinute`),超過回 429 + `Retry-After`,在任何查詢
+    `Parity:Login:PerIpPerMinute`、`Parity:Login:PerEmailPerMinute`;設錯——0、負數、不是整數——伺服器啟動時就失敗並點名設定鍵),超過回 429 + `Retry-After`,在任何查詢
     與密碼驗證之前擋下,存在與否一視同仁。
   - 實測(審查者的腳本,真伺服器):額度放寬時,6 組真帳號與 6 組不存在 email 的 40 次並發都是 4 次 incorrect、
     36 次鎖定;預設額度下,40 次並發只有 10 次進到驗證(4 incorrect、6 鎖定、30 次 429)。灌 10,001 個假 email:

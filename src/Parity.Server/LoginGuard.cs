@@ -25,6 +25,21 @@ internal sealed class LoginGuard : IDisposable
 {
     public const int DefaultPerIpPerMinute = 20;
     public const int DefaultPerEmailPerMinute = 10;
+    public const string PerIpKey = "Parity:Login:PerIpPerMinute";
+    public const string PerEmailKey = "Parity:Login:PerEmailPerMinute";
+
+    /// <summary>
+    /// 讀一個額度設定:沒設 = 預設值;設了就必須是正整數(十進位數字),否則丟出點名設定鍵與原值的錯。
+    /// 環境變數的寫法是把冒號換成兩個底線(<c>Parity__Login__PerIpPerMinute</c>)。
+    /// </summary>
+    public static int LimitFrom(IConfiguration config, string key, int fallback)
+    {
+        if (config[key] is not { } raw) return fallback;
+        if (int.TryParse(raw, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value) && value > 0)
+            return value;
+        throw new InvalidOperationException(
+            $"configuration {key} (environment variable {key.Replace(":", "__")}) must be a positive integer (got \"{raw}\").");
+    }
 
     private readonly LockoutOptions _lockout;
     private readonly TimeProvider _time;
@@ -34,9 +49,8 @@ internal sealed class LoginGuard : IDisposable
 
     public LoginGuard(LockoutOptions lockout, TimeProvider time, int perIpPerMinute, int perEmailPerMinute)
     {
-        if (perIpPerMinute <= 0 || perEmailPerMinute <= 0)
-            throw new InvalidOperationException(
-                $"Parity:Login:PerIpPerMinute and Parity:Login:PerEmailPerMinute must be positive (got {perIpPerMinute} and {perEmailPerMinute}).");
+        if (perIpPerMinute <= 0) throw new ArgumentOutOfRangeException(nameof(perIpPerMinute), perIpPerMinute, $"{PerIpKey} must be positive.");
+        if (perEmailPerMinute <= 0) throw new ArgumentOutOfRangeException(nameof(perEmailPerMinute), perEmailPerMinute, $"{PerEmailKey} must be positive.");
         _lockout = lockout;
         _time = time;
         _perIp = PerMinute(perIpPerMinute);
