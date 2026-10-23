@@ -97,6 +97,17 @@ git tag v1 v1.0.0 && git push origin v1
 
 - [ ] 實際發版日不是 2026-10-22 的話,改 CHANGELOG 的標題日期(只改日期,版號不動)
 - [ ] `pwsh scripts/verify-readme-facts.ps1` 綠燈(CI 也會跑)
+- [ ] **建立 `misjudgment` 標籤**(誤判/漏判範本 `1-misjudgment.yml` 要掛的標籤;repo 上沒有的標籤 GitHub 會**靜靜略過**,
+      回報就不帶標籤)。`bug`、`enhancement` 已經在 repo 上(GitHub 的預設標籤,2026-10-23 查過),不用建:
+
+```sh
+gh label create misjudgment -R HSU-YU-MING/cornhsu-parity --description "Parity reported a gap that isn't real, missed a real one, or graded/matched it wrong" --color D93F0B
+```
+
+- [ ] issue 範本(`.github/ISSUE_TEMPLATE/`)要 **merge 進 master 之後**才生效:在那之前,報告裡的「Report a misjudgment」
+      與 `parity bug-report` 印的預填網址(`issues/new?template=…`)都找不到範本,只會開到一般的新 issue 頁,
+      預填與標籤都不會生效。
+      所以順序是:這個分支 merge 進 master → 建標籤 → 推版號 tag。
 - [ ] 推版號 tag,等 release.yml 發完 NuGet + npm,再建移動式 `v2`:
 
 ```sh
