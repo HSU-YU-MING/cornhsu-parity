@@ -203,7 +203,8 @@ push 與 Parity.Server 之間的協定(`X-Parity-*` 標頭、HTTP 狀態碼、�
   - 存在與不存在的 email 走同一條路:失敗次數與鎖定記在 db 的 `LoginThrottles` 表(以正規化 email 為鍵,新
     migration),兩邊都是查使用者、查這一列、驗一次密碼、寫這一列;鎖定中也驗一次、不寫。語意照 Identity:
     第 5 次失敗鎖 5 分鐘(`IdentityOptions.Lockout`)、鎖上時計數歸零、鎖定中不累計、成功登入清掉。真帳號不再用
-    Identity 的 AccessFailedCount/LockoutEnd。沒有容量上限,也就沒有淘汰。
+    Identity 的 AccessFailedCount/LockoutEnd——升級時的 migration 把它們的現況(計數 > 0、或鎖定還沒到期)搬進新表,
+    被鎖的人不會一升級就解鎖。沒有容量上限,也就沒有淘汰。
   - 同一個正規化 email 的登入在伺服器內一次只跑一個,並發下計數正確。
   - 登入額度:每個用戶端 IP 每分鐘 20 次、每個 email 每分鐘 10 次(一分鐘滑動視窗;設定
     `Parity:Login:PerIpPerMinute`、`Parity:Login:PerEmailPerMinute`;設錯——0、負數、不是整數——伺服器啟動時就失敗並點名設定鍵),超過回 429 + `Retry-After`,在任何查詢
