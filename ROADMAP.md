@@ -94,8 +94,9 @@
   - **「跟上次比」只有 parity 的 run 有**——XamlContrast 的 run 打 `/api/runs/{id}/changes` 回 404。要做的話身分照
     XamlContrast 的 baseline 鍵(`file|element|fg|bg`,不含行號),但伺服器沒有引用它的組件,鍵的寫法變了
     (XamlContrast 的 `keyVersion` 遞增)要兩邊一起改,所以等有人真的要再做。
-  - **色塊只畫原文就是色碼或具名色的值**:`{DynamicResource Fg}` 這類資源鍵,報告裡沒有解析後的色值,儀表板不猜。
-    XamlContrast 1.x 若在 JSON 補上解析後的色值(只增欄位,minor),這裡再接上。
+  - ~~**色塊只畫原文就是色碼或具名色的值**~~ **已接上(2026-10-26)**:XamlContrast 1.1 的 JSON 每筆多了 `colors`
+    (比值實際用的、合成之後的不透明色),詳情頁在每個主題的比值旁畫「Aa」樣本,與 XamlContrast 的 HTML 報告同一個呈現。
+    1.0 的報告沒有 `colors`,照舊只畫原文就是色碼的值。
   - XamlContrast 報告的 `file` 是相對**稽核根目錄**、不是 repo 根目錄,所以問題清單不連回 GitHub 的檔案。
 - **登入端點的剩餘限制**(2026-10-22,#21 審查後):存在與不存在的 email 已共用 `LoginThrottles` 表、依 email
   序列化、IP/email 兩層額度(實測見 CHANGELOG 2.0.0)。還剩:時序差沒有歸零(同一個 email 反覆失敗時不存在的 email 慢 0–1.5 ms,原因未定位;攻擊者照「新帳號試 5 次」量分不出來);

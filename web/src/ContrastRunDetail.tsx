@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchContrastReport } from './api'
-import type { ContrastCategory, ContrastFinding, ContrastReport, ContrastRunMeta, Me } from './types'
+import type {
+  ContrastCategory, ContrastColourPair, ContrastFinding, ContrastReport, ContrastRunMeta, Me,
+} from './types'
 import { DeleteRunButton, MetaCells } from './RunHead'
 import { literalColour } from './colour'
 
@@ -155,8 +157,8 @@ function FindingsTable({ rows }: { rows: ContrastFinding[] }) {
             <td className="m">{f.element}</td>
             <td><Colour value={f.fg} /></td>
             <td><Colour value={f.bg} /></td>
-            <Ratio value={f.ratioDark} threshold={f.threshold} />
-            <Ratio value={f.ratioLight} threshold={f.threshold} />
+            <Ratio value={f.ratioDark} threshold={f.threshold} pair={f.colors?.dark} />
+            <Ratio value={f.ratioLight} threshold={f.threshold} pair={f.colors?.light} />
             <td className="m num">{f.threshold === 0 ? '—' : `${f.threshold}:1`}</td>
             <td className="dim" style={{ fontSize: '0.78rem' }}>{note(f)}</td>
           </tr>
@@ -166,10 +168,23 @@ function FindingsTable({ rows }: { rows: ContrastFinding[] }) {
   )
 }
 
-function Ratio({ value, threshold }: { value: number | null; threshold: number }) {
+/* 比值;XamlContrast 1.1 的報告另帶這個主題實際比的那兩個色(合成之後),旁邊畫一個「Aa」樣本——
+   跟 XamlContrast 的 HTML 報告同一個呈現。1.0 的報告沒有 colors,只印數字 */
+function Ratio({ value, threshold, pair }: { value: number | null; threshold: number; pair?: ContrastColourPair | null }) {
   if (value === null) return <td className="m num dim">—</td>
-  return <td className={`m num ${threshold > 0 && value < threshold ? 'below' : ''}`}>{value.toFixed(2)}</td>
+  const sample = pair && HEX.test(pair.fg) && HEX.test(pair.bg) ? pair : null
+  return (
+    <td className={`m num ${threshold > 0 && value < threshold ? 'below' : ''}`}>
+      {sample && (
+        <span className="aa" style={{ color: sample.fg, background: sample.bg }}
+          title={`${sample.fg} on ${sample.bg}`}>Aa</span>
+      )}
+      {value.toFixed(2)}
+    </td>
+  )
 }
+
+const HEX = /^#[0-9A-Fa-f]{6}$/
 
 function Colour({ value }: { value: string }) {
   // 具名色(White、Gray…)也是原文色值;WPF 與 CSS 的具名色都出自 X11 那一套,交給瀏覽器認
