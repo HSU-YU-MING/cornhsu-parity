@@ -85,6 +85,10 @@ dotnet tool install -g Cornhsu.Parity
 > 每個平台包因此至少省下 88 MB。這份 Node 必須是 **20 以上**——內附 Playwright driver 的下限
 > (`engines.node` 也這樣宣告)。
 
+> **`parity check` 預設會送匿名使用統計**(只有計數與分數區間,用於碩士論文)。送什麼、為什麼、
+> 每一種關掉的方法,見[匿名使用統計](#匿名使用統計)。想先看會送出的內容、什麼都不送:
+> `parity check --stats-preview`。
+
 ## 快速開始
 
 ```sh
@@ -92,6 +96,7 @@ parity init                # 產生 parity.config.json 範本
 parity install-browser     # 下載 Playwright Chromium:第一次使用時,以及升級後 check 說 Chromium 沒裝時
 export FIGMA_TOKEN=...     # scope 只需 file_content:read
 parity check               # 比對,輸出報告 + exit code
+                           #   (--stats-preview:印出這次會送的匿名統計,什麼都不送)
 parity report              # 從既有 report.json 重生 Markdown 報告(免重掃;--md 寫檔,預設印 stdout)
 parity snapshot            # 把「現在跑著的畫面」凍結成設計基準——重構/改版守門,不需要 Figma
                            #   (--stabilize 連拍 3 次,把「會動」的區域——廣告輪播、動畫、
@@ -99,7 +104,7 @@ parity snapshot            # 把「現在跑著的畫面」凍結成設計基準
 parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
 parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
 parity bug-report          # (實驗性)整理版本/作業系統/Node/Chromium 資訊並印出,附預填好的 GitHub issue 連結。
-                           #   Parity 本身不連網;打開連結時遮罩過的報告會跟著網址送到 github.com,按送出才會建立 issue。
+                           #   bug-report 本身不連網;打開連結時遮罩過的報告會跟著網址送到 github.com,按送出才會建立 issue。
                            #   --config 加上設定檔的結構摘要(不含網址、route、key、token、路徑)
 ```
 
@@ -132,7 +137,8 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "gate": {
     "failOn": ["critical", "serious"],       // minor / medium / serious / critical 任選,一個字串放一個等級
     "minMatchRate": 0                        // 選配:配對率低於此值(0–1)→ exit 3,見下方說明;0 = 不設門檻
-  }
+  },
+  "stats": { "share": true }                 // 選配:false = 不送匿名使用統計;見下方「匿名使用統計」(也有 projectId)
 }
 ```
 
@@ -382,8 +388,9 @@ jobs:
 - **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
 - **artifact**:`report.json` + Markdown 報告上傳供下載(artifact 名稱預設 `parity-report`,可用 `artifact-name` 改;根目錄就是 `report.json` 與 `parity-report.md`)。`report.json` 從設定檔旁邊的 `.parity/report.json`(`check` 寫出的位置)取,`config` 指向子目錄時也一樣。
 - **同一次執行呼叫多次**:優先用 **matrix**(每個網站或設定檔一個 job),每次給不同的 `artifact-name`(例如 `parity-report-${{ matrix.site }}`)。每個名稱各自一個 artifact、各自一則 PR 留言;名稱相同的兩次呼叫,artifact 上傳會撞名。同一個 job 裡呼叫兩次,只在第一次通過時可行:第一次的 gate 失敗,job 就停在那一次的最後一步,第二次根本不會跑(沒有它的報告、留言或 artifact)。
+- **匿名使用統計**:預設打開([送什麼、為什麼](#匿名使用統計));`share-stats: false` 關掉。job summary 會多一行,寫明送了、或為什麼沒送。
 
-action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report` / `artifact-name`(預設 `parity-report`;只收英數字與 `.` `_` `-`,最多 100 字,不可以 `-` 開頭、不可以全是點)。
+action 輸入:`config` / `target` / `working-directory` / `version` / `figma-token` / `baseline`(回歸模式) / `comment`(關掉 PR 留言) / `upload-report` / `artifact-name`(預設 `parity-report`;只收英數字與 `.` `_` `-`,最多 100 字,不可以 `-` 開頭、不可以全是點) / `share-stats`(預設 `true`;只收 `true` 或 `false`,其他值會讓 action 在安裝 Parity 之前就停下來)。
 
 > action 透過 `dotnet tool install -g Cornhsu.Parity` 安裝(已發佈於 nuget.org):沒給 `version` 時裝最新的 2.x(`@v2` 不會跳到日後的 3.x),給了就裝那一版。**同一個 job 裡每次呼叫都裝到同一個全域位置,後面的呼叫不能裝比前面低的版本**(`dotnet tool` 拒絕降版)——例如第一次沒給 `version` 裝到最新的 2.x,第二次給 `version: 2.0.0` 就會失敗。同一個 job 裡的呼叫請給同一個 `version`,或改用 matrix。本 repo 的 `.github/workflows/ci.yml` 則是**直接從原始碼建置**並跑離線示範自我把關,不依賴發佈。
 >
@@ -434,8 +441,75 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 
 > 未完成、已知盲點與下一步優先序見 [ROADMAP.md](ROADMAP.md);版本變更見 [CHANGELOG.md](CHANGELOG.md)。
 
+## 匿名使用統計
+
+2.1.0 起,`parity check` 每次執行會送一次**匿名使用統計**——**預設打開,CI 也是**。內容只有計數與分數區間,
+用途是作者的**碩士論文**:真實專案的實作與設計稿差多少。公開的資料說明頁(收什麼、做什麼用、保存多久)在
+**<https://stats.cornhsu.com/>**。
+
+**什麼時候送。** 只有 `parity check`,而且要跑出了報告(exit 0、1 或 3)。`--reverse`、`--stats-preview`、
+其他指令、以 exit 2 結束的執行都不送。
+
+**送出的全部欄位:**
+
+| 欄位 | 意思 |
+|---|---|
+| `schema`、`tool` | 固定是 `1` 與 `"parity"` |
+| `toolVersion` | Parity 的版本,例如 `2.1.0`(不含 commit hash) |
+| `os` | `windows`、`linux`、`macos` 或 `other` |
+| `ci` | `CI` 或 `GITHUB_ACTIONS` 是不是 `true` |
+| `projectId` | `null`——除非你自己設了 `stats.projectId`(見下方) |
+| `data.score` | `check` 印出的還原度分數(0–100) |
+| `data.gateFailed` | `check` 的 exit code 是不是非 0(所以 `--baseline` 與 exit 3 照你 CI 看到的算) |
+| `data.pages` | 報告涵蓋幾個 target |
+| `data.designSource` | `figma`、`snapshot`(`parity snapshot` 寫出的檔)、`file`(其他設計 JSON)或 `image` |
+| `data.designNodes`、`data.matched` | 設計節點數與配對到的節點數,所有頁加總 |
+| `data.severity` | 各嚴重度的落差條數:`critical`、`serious`、`medium`、`minor` |
+| `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`fontFamily` 沒有區間,只有條數 |
+
+**一律不送:** 網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、顏色值、設計稿內容、token、repo 名稱或 ID、
+使用者名稱、機器名稱。請求不帶 User-Agent、不帶 cookie。收集站不存 IP,也不存收到的時間(只記日期);
+收集站架在 Cloudflare 上,Cloudflare 跟任何網路服務商一樣,在邊緣看得到連線位址。
+
+**你不加,就沒有 ID。** 沒有 `stats.projectId` 時,任何一筆資料都連不到另一筆、也連不到你——也因此事後沒辦法挑出某一筆
+刪除。想讓自己的多次執行算成同一個專案(也能要求刪除),就自己隨機取一個 ID,例如 `openssl rand -hex 12`,
+或 PowerShell 的 `[guid]::NewGuid().ToString('N')`。Parity 不會從 repo、路徑或機器推算 ID;不是 16–64 個
+`A–Z a–z 0–9 _ -` 字元的 ID 是設定檔錯誤(exit 2):
+
+```jsonc
+"stats": {
+  "share": true,                                  // false = 不送
+  "projectId": "REPLACE-with-your-own-random-id"  // 選配;不要抄別人的
+}
+```
+
+**預覽。** `parity check --stats-preview` 照常執行、什麼都不送,在 stderr 印出這次會送的完整 JSON,最後一行是
+會不會送、不送的原因。exit code、stdout 與報告檔都不變。
+
+**怎麼關。** 任一種就夠;依下面的順序檢查,第一個說不送的就不送:
+
+1. `DO_NOT_TRACK` 設成 `0`、`false` 以外的任何值——永遠優先。
+2. `CORNHSU_SHARE_STATS`(與 [XamlContrast](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast) 共用)或
+   `PARITY_SHARE_STATS` 設成 `false`——其實 `1`、`true`、`yes`、`on` 以外的任何值都算,打錯字時往「不送」那邊錯。
+3. `parity.config.json` 裡寫 `"stats": { "share": false }`。
+4. GitHub Action 的 `share-stats: false`(它會設 `PARITY_SHARE_STATS=false`)。
+5. 從原始碼建出來的版本(`0.0.0-dev`)永遠不送。
+
+跟設定檔裡其他的 key 一樣,拼錯的會被忽略:`"stats": { "shrae": false }` 什麼都沒關掉。開關有沒有生效,
+用 `--stats-preview` 看。
+
+**告知。** 在一台機器上第一次送的時候,`check` 會在 stderr 印一段簡短說明,並在使用者設定目錄
+(Windows 是 `%APPDATA%`,其他是 `~/.config`)留一個標記檔 `cornhsu/parity-stats-notice`,之後就不再印——
+刪掉那個檔就會再看到。CI 上每次送出都印一行。不送的時候什麼都不印,也永遠不寫 stdout。GitHub Action 另外在
+job summary 寫一行:送了,或為什麼沒送。
+
+**代價。** 連線最多等 1.5 秒、整體最多 3 秒,不重試,不跟隨轉址。送不出去的時候——離線、防火牆、收集站掛了——
+什麼都不印,其他一切也不變:exit code、stdout、報告檔與 PR 留言都跟沒有統計時一模一樣。
+
 ## 安全
 
+- **Parity 會連到哪裡**:Figma API(只在設計來源是 Figma 時)、你給 `parity push` 的儀表板、以及 `parity check`
+  的[匿名使用統計](#匿名使用統計)送往的 `stats.cornhsu.com`(沒關掉時)。受測的頁面由本機的瀏覽器打開。除此之外不連任何地方。
 - Figma token 走環境變數(`env:FIGMA_TOKEN`),不進 log、不進 URL(用 `X-Figma-Token` header)
 - 抓過的 frame 存 `.parity/cache`(記得把 `.parity/` 加進 `.gitignore`),重跑不再打 Figma、可離線比對
 - 本機報告 UI 只綁 127.0.0.1,另外還擋非預期的 `Host` header(DNS rebinding)與跨來源

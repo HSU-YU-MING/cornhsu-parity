@@ -10,7 +10,7 @@ body:
 
         **Tip:** `parity bug-report` collects the environment fields below on your machine and
         prints them for you to check and paste (add `--config <path>` for a structural summary of
-        your config — no URLs, routes, selectors, tokens or paths). Parity itself makes no network connection; the
+        your config — no URLs, routes, selectors, tokens or paths). bug-report itself makes no network connection; the
         link it prints carries that masked text to this form.
 
         Write in English or 中文, whichever is easier.

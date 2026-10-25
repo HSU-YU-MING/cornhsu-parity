@@ -54,6 +54,24 @@ Anything that lets someone reach further than the person running Parity intended
   the report directory
 - **Anything the tool executes that a design file or a scanned page can influence** — Parity drives
   a real browser over Playwright and parses untrusted-ish input on both sides
+- **The anonymous usage statistics** (`parity check`, from 2.1.0) carrying anything beyond the fields
+  the README lists — a URL, a name, a selector, a path, a header that identifies you — or being sent when
+  one of the documented switches says not to
+
+## What Parity connects to
+
+Parity is not an offline-only tool. It connects to exactly these:
+
+- **The Figma API**, only when the design source is Figma (with your `FIGMA_TOKEN`)
+- **The dashboard you name** with `parity push --server` / `PARITY_SERVER`
+- **`stats.cornhsu.com`**, once per `parity check` that produced a report, for the
+  [anonymous usage statistics](README.md#anonymous-usage-statistics) — on by default, off with
+  `DO_NOT_TRACK=1`, `PARITY_SHARE_STATS=false`, `"stats": { "share": false }` or the Action's
+  `share-stats: false`. `parity check --stats-preview` shows the exact payload without sending it.
+
+The pages under test are loaded by the local Chromium, so they make whatever requests they make.
+`parity bug-report` makes no connection: it only prints a link (opening it sends the masked report in
+the link to github.com).
 
 ## What is not a vulnerability
 
@@ -80,6 +98,9 @@ These are deliberate, documented behaviour:
 - **Never wire the Action's `config`, `target`, `version` or `artifact-name` inputs to
   attacker-controlled text** (a PR title, an issue body, a branch name). Those are paths, version
   strings and names; nothing that arrives from outside your repository belongs in them.
+- **If your CI must not make outbound connections beyond the page under test**, set `DO_NOT_TRACK: '1'`
+  in the workflow's `env:` (or `share-stats: false` on the Action). A blocked statistics request costs at
+  most about 3 seconds and never changes the result, but a policy may still forbid the attempt.
 - **`pull_request_target` gives a fork's code a write-scoped token.** Parity does not need it —
   a plain `pull_request` trigger is enough. Posting the comment will 403 on fork PRs, which the
   Action tolerates on purpose; the gate still runs.
