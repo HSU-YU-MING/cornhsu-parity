@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# 匿名使用統計(2.1.0 起 parity check 預設會送)整份 workflow 關掉:單元測試(CliBrowserTests)與離線示範跑的
+# 都是真的 check,維護者自己的 CI 不能混進研究資料。從原始碼建的 0.0.0-dev 本來就不送,這是第二道;
+# pack-smoke 裝的 0.0.0-ci 不算開發版,只靠這一行(它現在只跑 --help)。
+env:
+  DO_NOT_TRACK: '1'
+
 jobs:
   # 排版守門(對齊 PolyMigrate 的 CI 形狀)。風格規則見 .editorconfig。
   format:
