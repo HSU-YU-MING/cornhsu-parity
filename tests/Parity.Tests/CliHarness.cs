@@ -79,6 +79,15 @@ internal sealed class EnvScope : IDisposable
         "GITHUB_ACTOR", "GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_STEP_SUMMARY",
     ];
 
+    // 匿名統計(2.1.0)會讀的變數。清掉之後 DO_NOT_TRACK 也沒了——統計會打開,所以清它的測試一定要
+    // 把 CORNHSU_STATS_URL 指到本機假站(TestProcessDefaults 另外只准送往 loopback)。CI/GITHUB_ACTIONS 在
+    // GitHub Actions 上都是 true,不清的話「本機第一次」的說明在 CI 上永遠測不到
+    public static readonly string[] StatsVariables =
+    [
+        "DO_NOT_TRACK", "CORNHSU_SHARE_STATS", "PARITY_SHARE_STATS", "CORNHSU_STATS_URL",
+        "CI", "GITHUB_ACTIONS", "PARITY_STATS_JOB_SUMMARY", "GITHUB_STEP_SUMMARY",
+    ];
+
     private readonly Dictionary<string, string?> _saved = [];
 
     public EnvScope Set(string name, string? value)
