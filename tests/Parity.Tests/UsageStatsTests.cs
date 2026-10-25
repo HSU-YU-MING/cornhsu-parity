@@ -117,7 +117,11 @@ public class UsageStatsTests
     [Fact]
     public void A_development_build_never_sends_unless_a_stats_url_is_set()
     {
-        Assert.Equal(StatsOff.DevelopmentBuild, Decide([], version: "0.0.0-dev").Off);
+        // 0.0.0-dev(原始碼建置)、0.0.0-ci(pack-smoke)、0.0.0-local.*(本機乾跑)都是開發版;0.0.1 之後才是真版號
+        foreach (var dev in new[] { "0.0.0-dev", "0.0.0-ci", "0.0.0-local.1761400000" })
+            Assert.Equal(StatsOff.DevelopmentBuild, Decide([], version: dev).Off);
+        Assert.True(Decide([], version: "2.1.0").Send);
+        Assert.True(Decide([], version: "2.1.0-rc.1").Send);
 
         var custom = Decide(new() { ["CORNHSU_STATS_URL"] = "http://127.0.0.1:9/" }, version: "0.0.0-dev");
         Assert.True(custom.Send);
@@ -839,7 +843,7 @@ public class UsageStatsSendTests
 
         var r = await AfterCheckAsync([], dir.Path, preview: true, version: "0.0.0-dev");
 
-        Assert.EndsWith("would not be sent: this is a development build (0.0.0-dev) and CORNHSU_STATS_URL is not set\n", r.Err);
+        Assert.EndsWith("would not be sent: this is a development build (0.0.0-*) and CORNHSU_STATS_URL is not set\n", r.Err);
     }
 
     public static TheoryData<string> BrokenCollectors => new() { "hang", "refused", "500", "redirect" };

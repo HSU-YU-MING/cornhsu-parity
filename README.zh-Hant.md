@@ -493,7 +493,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
    `PARITY_SHARE_STATS` 設成 `false`——其實 `1`、`true`、`yes`、`on` 以外的任何值都算,打錯字時往「不送」那邊錯。
 3. `parity.config.json` 裡寫 `"stats": { "share": false }`。
 4. GitHub Action 的 `share-stats: false`(它會設 `PARITY_SHARE_STATS=false`)。
-5. 從原始碼建出來的版本(`0.0.0-dev`)永遠不送。
+5. 從原始碼建出來的版本與其他非發行版(版號以 `0.0.0-` 開頭,例如 `0.0.0-dev`)永遠不送。
 
 跟設定檔裡其他的 key 一樣,拼錯的會被忽略:`"stats": { "shrae": false }` 什麼都沒關掉。開關有沒有生效,
 用 `--stats-preview` 看。

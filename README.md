@@ -601,7 +601,7 @@ no wins:
    typo errs on the side of *not* sending.
 3. `"stats": { "share": false }` in `parity.config.json`.
 4. The GitHub Action's `share-stats: false` (it sets `PARITY_SHARE_STATS=false`).
-5. Builds from source (version `0.0.0-dev`) never send.
+5. Builds from source and other non-release builds (any version starting with `0.0.0-`, such as `0.0.0-dev`) never send.
 
 Like every other key in the config, a misspelt one is ignored: `"stats": { "shrae": false }` turns
 nothing off. `--stats-preview` tells you whether a switch took effect.

@@ -22,7 +22,7 @@
     落差數、各屬性的落差數/`missing` 數/`abs(delta)` 的區間分佈(長度以 px、顏色以 ΔE、字重以字重值分桶,左閉右開)。
     協定封閉集以外的屬性不送。
   - **開關**(第一個說不送的就不送):`DO_NOT_TRACK`(`0`/`false` 以外的值)→ `CORNHSU_SHARE_STATS`、`PARITY_SHARE_STATS`
-    (`1`/`true`/`yes`/`on` 以外的任何值都算不送)→ 設定檔 `stats.share: false` → 從原始碼建出的 `0.0.0-dev` 永遠不送
+    (`1`/`true`/`yes`/`on` 以外的任何值都算不送)→ 設定檔 `stats.share: false` → 從原始碼建出的版本(以 `0.0.0-` 開頭,例如 `0.0.0-dev`)永遠不送
     (設了 `CORNHSU_STATS_URL` 才送,給測試與本機驗證用)。
   - **告知只印 stderr**:本機第一次印一段說明並在 `<使用者設定目錄>/cornhsu/parity-stats-notice` 留標記,之後不再印;
     CI 上送成功時每次一行;不送的時候什麼都不印;stdout 一個字都不變。

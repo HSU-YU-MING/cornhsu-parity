@@ -34,8 +34,11 @@ internal static class UsageStats
     internal static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(1.5);
     internal static readonly TimeSpan TotalTimeout = TimeSpan.FromSeconds(3);
 
-    /// <summary>從原始碼建出來的版本(csproj 的佔位值,見 nuget-packages skill)——開發版不送(協定 §3 第 5 條)。</summary>
-    private const string DevelopmentVersion = "0.0.0-dev";
+    /// <summary>
+    /// 開發版的版號前綴(協定 §3 第 5 條):從原始碼建出來的 `0.0.0-dev`(csproj 的佔位值,見 nuget-packages skill)、
+    /// CI pack-smoke 的 `0.0.0-ci`、本機乾跑的 `0.0.0-local.*`——發行版永遠不會是 0.0.0。開發版不送。
+    /// </summary>
+    private const string DevelopmentPrefix = "0.0.0-";
 
     /// <summary>
     /// 測試用:非 null 時,只送往它放行的網址。測試行程的模組初始化設成「只准 loopback」——
@@ -76,7 +79,7 @@ internal static class UsageStats
         if (configShare == false) return Off(StatsOff.Config);
 
         // 5. 開發版不送,除非設了 CORNHSU_STATS_URL——維護者自己的測試與本機建置不混進研究資料
-        if (toolVersion == DevelopmentVersion && custom is null) return Off(StatsOff.DevelopmentBuild);
+        if (toolVersion.StartsWith(DevelopmentPrefix, StringComparison.Ordinal) && custom is null) return Off(StatsOff.DevelopmentBuild);
 
         // 都沒說不送 → 看預設(SendByDefault;改成主動同意時,要有人明說要送才送)
         return defaultOn || optedIn ? new(endpoint, null) : Off(StatsOff.NotOptedIn);
@@ -107,7 +110,7 @@ internal static class UsageStats
         StatsOff.SharedVariable => "CORNHSU_SHARE_STATS is set to something other than 1, true, yes or on",
         StatsOff.ToolVariable => "PARITY_SHARE_STATS is set to something other than 1, true, yes or on",
         StatsOff.Config => "the config sets \"stats\": { \"share\": false }",
-        StatsOff.DevelopmentBuild => "this is a development build (0.0.0-dev) and CORNHSU_STATS_URL is not set",
+        StatsOff.DevelopmentBuild => "this is a development build (0.0.0-*) and CORNHSU_STATS_URL is not set",
         StatsOff.NotOptedIn => "anonymous usage statistics are off unless you opt in (\"stats\": { \"share\": true })",
         _ => throw new ArgumentOutOfRangeException(nameof(why), why, null),
     };
