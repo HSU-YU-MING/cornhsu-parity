@@ -26,8 +26,11 @@ var builder = WebApplication.CreateBuilder(args);
 // 預設只聽本機;部署(M5)用 ASPNETCORE_URLS 覆蓋。
 // M1 時代的「非 localhost 拒啟」保險絲已拆——讀取端點自 M3 起一律要登入,
 // 對外綁定不再等於裸奔(TLS 與網域是 M5 的事)。
-if (builder.Configuration["urls"] is null && Environment.GetEnvironmentVariable("ASPNETCORE_URLS") is null)
-    builder.WebHost.UseUrls("http://127.0.0.1:4322");
+// 官方 .NET 容器映像預設帶 ASPNETCORE_HTTP_PORTS=8080:只看 urls 的話,這裡會把它蓋回 127.0.0.1——
+// 容器裡聽在 loopback、外面連不進來,而且沒有任何錯誤訊息。所以三種寫法都算「有人指定了」
+if (builder.Configuration["urls"] is null && Environment.GetEnvironmentVariable("ASPNETCORE_URLS") is null
+    && builder.Configuration["http_ports"] is null && builder.Configuration["https_ports"] is null)
+    builder.WebHost.UseUrls(ServerSettings.DevelopmentUrl);
 
 builder.Services.AddDbContext<ServerDbContext>(o => o.UseSqlite(
     ServerDatabase.ConnectionString(builder.Configuration, builder.Environment.ContentRootPath)));
@@ -763,7 +766,7 @@ internal static class AdminCommands
                     Console.WriteLine("\nhand this link to them (shown once):");
                     Console.WriteLine($"  {publicUrl ?? ServerSettings.DevelopmentUrl}/invite/{token}");
                     if (publicUrl is null)
-                        Console.WriteLine($"\n(this is the local development address — on a deployed server set " +
+                        Console.WriteLine($"\n(this is the local development address; on a deployed server set " +
                             $"{ServerSettings.PublicUrlKey.Replace(":", "__")} to its public URL)");
                     return 0;
                 }
@@ -799,7 +802,7 @@ internal static class AdminCommands
         var target = Path.GetFullPath(args[1]);
         if (File.Exists(target))
         {
-            Console.Error.WriteLine($"backup target already exists: {target} — pick a new file name (backups are never overwritten).");
+            Console.Error.WriteLine($"backup target already exists: {target}; pick a new file name (backups are never overwritten).");
             return 2;
         }
         if (Path.GetDirectoryName(target) is { } dir && !Directory.Exists(dir))
@@ -809,7 +812,7 @@ internal static class AdminCommands
         }
         await db.Database.ExecuteSqlRawAsync("VACUUM INTO {0}", target);
         Console.WriteLine($"backup written: {target} ({new FileInfo(target).Length:N0} bytes, from {dbPath})");
-        Console.WriteLine("copy it off this machine — a backup on the same disk does not survive losing the disk.");
+        Console.WriteLine("copy it off this machine: a backup on the same disk does not survive losing the disk.");
         return 0;
     }
 }
