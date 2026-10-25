@@ -15,6 +15,17 @@ public sealed record TrendPoint(
 /// <summary>分支與其最近一次 push(M4.5)。空字串 = 無分支的 run。</summary>
 public sealed record BranchInfo(string Branch, DateTimeOffset LastAt);
 
+/// <summary>XamlContrast 的總覽卡:每個專案一張(稽核的單位是整個 repo,不是頁面)。Prev* = 上一次,方向用。</summary>
+public sealed record ContrastCard(
+    Guid ProjectId, string Project,
+    int Fail, int Warn, int Unresolved, double Coverage, bool GateFailed, DateTimeOffset LastAt,
+    int? PrevFail, int? PrevWarn, int RunCount);
+
+/// <summary>XamlContrast 的趨勢點:問題數與覆蓋率隨時間。</summary>
+public sealed record ContrastTrendPoint(
+    Guid RunId, DateTimeOffset At, int Fail, int Warn, int Unresolved, double Coverage,
+    bool GateFailed, string? CommitSha);
+
 /// <summary>
 /// M4 的讀取查詢。抽出來的理由:端點裡的 LINQ 沒辦法單元測試,這裡吃 DbContext
 /// 純函式回 DTO,測試用 in-memory SQLite 餵資料就能驗 prev/last 的語意。
@@ -43,7 +54,8 @@ public static class Queries
         ServerDbContext db, Guid userId, string? branch = null, int recentRuns = 500, CancellationToken ct = default)
     {
         var visible = Membership.ProjectIdsFor(db, userId);
-        var runs = db.Runs.Where(r => visible.Contains(r.ProjectId));
+        // 只看 parity 的 run:XamlContrast 的 run 沒有頁面,混進「近 N 次」的窗口只會把 parity 的歷史擠出去
+        var runs = db.Runs.Where(r => visible.Contains(r.ProjectId) && r.Tool == RunTool.Parity);
         if (branch is not null)
         {
             var b = branch.Length == 0 ? null : branch;
@@ -105,5 +117,72 @@ public static class Queries
             .ToListAsync(ct);
         points.Reverse(); // 圖要舊 → 新
         return points;
+    }
+
+    /// <summary>
+    /// 每個專案最新一次 XamlContrast 稽核的計數與上一次的 fail/warn。**只含 userId 是成員的專案**;
+    /// branch 語意同 OverviewAsync。沒有 XamlContrast run 的專案不出現。
+    /// </summary>
+    public static async Task<List<ContrastCard>> ContrastOverviewAsync(
+        ServerDbContext db, Guid userId, string? branch = null, int recentRuns = 500, CancellationToken ct = default)
+    {
+        var rows = await ContrastRuns(db, userId, branch)
+            .OrderByDescending(r => r.CreatedAt).Take(recentRuns)
+            .Select(r => new
+            {
+                r.ProjectId,
+                Project = r.Project!.Name,
+                r.CreatedAt,
+                r.GateFailed,
+                r.Contrast!.Fail,
+                r.Contrast.Warn,
+                r.Contrast.Unresolved,
+                r.Contrast.Coverage,
+            })
+            .ToListAsync(ct);
+
+        // 分組在記憶體做,理由同 OverviewAsync(個人/小團隊的量級)
+        return rows
+            .GroupBy(x => x.ProjectId)
+            .Select(g =>
+            {
+                var ordered = g.OrderByDescending(x => x.CreatedAt).ToList();
+                var last = ordered[0];
+                var prev = ordered.Count > 1 ? ordered[1] : null;
+                return new ContrastCard(
+                    g.Key, last.Project, last.Fail, last.Warn, last.Unresolved, last.Coverage,
+                    last.GateFailed, last.CreatedAt, prev?.Fail, prev?.Warn, ordered.Count);
+            })
+            .OrderBy(c => c.Project)
+            .ToList();
+    }
+
+    /// <summary>單一專案的 XamlContrast 時間序(舊 → 新,最多 limit 點)。**非成員回空**;branch 語意同 OverviewAsync。</summary>
+    public static async Task<List<ContrastTrendPoint>> ContrastTrendAsync(
+        ServerDbContext db, Guid userId, Guid projectId, string? branch = null,
+        int limit = 100, CancellationToken ct = default)
+    {
+        var points = await ContrastRuns(db, userId, branch)
+            .Where(r => r.ProjectId == projectId)
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(limit)
+            .Select(r => new ContrastTrendPoint(
+                r.Id, r.CreatedAt, r.Contrast!.Fail, r.Contrast.Warn, r.Contrast.Unresolved, r.Contrast.Coverage,
+                r.GateFailed, r.CommitSha))
+            .ToListAsync(ct);
+        points.Reverse(); // 圖要舊 → 新
+        return points;
+    }
+
+    private static IQueryable<Run> ContrastRuns(ServerDbContext db, Guid userId, string? branch)
+    {
+        var visible = Membership.ProjectIdsFor(db, userId);
+        var runs = db.Runs.Where(r => visible.Contains(r.ProjectId) && r.Tool == RunTool.XamlContrast);
+        if (branch is not null)
+        {
+            var b = branch.Length == 0 ? null : branch;
+            runs = runs.Where(r => r.Branch == b);
+        }
+        return runs;
     }
 }

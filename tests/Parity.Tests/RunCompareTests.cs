@@ -58,6 +58,7 @@ public class RunCompareTests : IAsyncLifetime
         Run Make(Guid id, DateTimeOffset at, string? branch, string raw) => new()
         {
             Id = id,
+            Tool = RunTool.Parity,
             ProjectId = project.Id,
             CreatedAt = at,
             Branch = branch,
@@ -107,6 +108,7 @@ public class RunCompareTests : IAsyncLifetime
         Run Make(Guid id, DateTimeOffset at, string raw) => new()
         {
             Id = id,
+            Tool = RunTool.Parity,
             ProjectId = _projectId,
             CreatedAt = at,
             Branch = "soft",

@@ -31,12 +31,12 @@ internal static class Cli
     public static Task<Result> RunAsync(params string[] args) => InvokeAsync(EntryPoint, args);
 
     /// <summary>
-    /// Parity.Server 的管理指令模式(create-project / create-invite)。只能傳管理指令——
+    /// Parity.Server 的管理指令模式(create-project / create-invite / backup)。只能傳管理指令——
     /// 其他參數會走到 web host 的 app.Run(),一直跑下去。
     /// </summary>
     public static Task<Result> RunServerAdminAsync(params string[] args)
     {
-        if (args.Length == 0 || args[0] is not ("create-project" or "create-invite"))
+        if (args.Length == 0 || args[0] is not ("create-project" or "create-invite" or "backup"))
             throw new ArgumentException("only admin commands; anything else starts the web host", nameof(args));
         return InvokeAsync(ServerEntryPoint, args);
     }

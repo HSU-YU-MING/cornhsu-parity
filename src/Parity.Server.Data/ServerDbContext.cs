@@ -15,6 +15,7 @@ public class ServerDbContext(DbContextOptions<ServerDbContext> options)
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<Run> Runs => Set<Run>();
     public DbSet<PageResult> PageResults => Set<PageResult>();
+    public DbSet<ContrastResult> ContrastResults => Set<ContrastResult>();
     public DbSet<ProjectMember> Members => Set<ProjectMember>();
     public DbSet<Invite> Invites => Set<Invite>();
     public DbSet<LoginThrottle> LoginThrottles => Set<LoginThrottle>();
@@ -68,5 +69,11 @@ public class ServerDbContext(DbContextOptions<ServerDbContext> options)
             .HasForeignKey(r => r.ProjectId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Run>().HasMany(r => r.Pages).WithOne(p => p.Run!)
             .HasForeignKey(p => p.RunId).OnDelete(DeleteBehavior.Cascade);
+
+        // 合併伺服器:run 屬於哪個工具。既有的列在 migration 裡補成 parity(那時只收 parity)
+        b.Entity<Run>().Property(r => r.Tool).HasMaxLength(32);
+        b.Entity<ContrastResult>().HasKey(c => c.RunId);
+        b.Entity<Run>().HasOne(r => r.Contrast).WithOne(c => c.Run!)
+            .HasForeignKey<ContrastResult>(c => c.RunId).OnDelete(DeleteBehavior.Cascade);
     }
 }

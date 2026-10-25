@@ -50,6 +50,7 @@ public class ServerQueriesTests : IAsyncLifetime
             var run = new Run
             {
                 Id = Guid.NewGuid(),
+                Tool = RunTool.Parity,
                 ProjectId = project.Id,
                 CreatedAt = t0.AddHours(i),
                 Score = scores[i],
@@ -66,6 +67,7 @@ public class ServerQueriesTests : IAsyncLifetime
         var pr = new Run
         {
             Id = Guid.NewGuid(),
+            Tool = RunTool.Parity,
             ProjectId = project.Id,
             CreatedAt = t0.AddHours(9),
             Score = 5,
@@ -151,6 +153,7 @@ public class ServerQueriesTests : IAsyncLifetime
         var manual = new Run
         {
             Id = Guid.NewGuid(),
+            Tool = RunTool.Parity,
             ProjectId = _projectId,
             CreatedAt = DateTimeOffset.UnixEpoch.AddHours(5),
             Score = 42,

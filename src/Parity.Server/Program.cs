@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,8 @@ using Parity.Server.Data;
 // 管理指令模式(不起 web host):
 //   create-project <name>            → 建專案 + 印一次 CI token
 //   create-invite <project> <email> [role] → 印一次邀請連結(bootstrap 第一個 Owner 也走這裡)
-if (args.Length >= 1 && args[0] is "create-project" or "create-invite")
+//   backup <file>                    → 線上備份資料庫(伺服器不用停)
+if (args.Length >= 1 && args[0] is "create-project" or "create-invite" or "backup")
 {
     return await AdminCommands.RunAsync(args);
 }
@@ -70,6 +72,13 @@ builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     });
 builder.Services.AddAuthorization();
 
+// Data Protection 金鑰(簽登入 cookie 用,M5):沒指定位置時 ASP.NET Core 放在家目錄——容器每次重新部署
+// 就換一把,所有人都被登出。部署時用 Parity:KeysDirectory(環境變數 Parity__KeysDirectory)指到持久磁碟,
+// Dockerfile 預設 /data/keys(與資料庫同一個 volume)。應用程式名稱固定,金鑰不因安裝路徑不同而失效
+var dataProtection = builder.Services.AddDataProtection().SetApplicationName("Parity.Server");
+if (builder.Configuration[ServerSettings.KeysDirectoryKey] is { Length: > 0 } keysDirectory)
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(keysDirectory));
+
 // 報告是純數值 JSON;20MB 是護欄不是目標(50+ 頁的大站接近時,413 要給出路)
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 20 * 1024 * 1024);
 
@@ -77,6 +86,8 @@ var app = builder.Build();
 // 啟動時就建立 LoginGuard:額度設錯(0、負數、不是整數)直接起不來、訊息點名設定鍵。
 // 原本第一次登入才建立,設錯時伺服器照常啟動、每次登入都 500
 app.Services.GetRequiredService<LoginGuard>();
+// 對外網址同理:寫錯就起不來,不要等到發出第一個壞掉的邀請連結
+var publicUrl = ServerSettings.PublicUrl(app.Configuration);
 
 using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.Migrate();
@@ -259,8 +270,9 @@ app.MapPost("/api/projects/{id:guid}/invites", async (
     db.Invites.Add(invite);
     Audit.Log(db, id, userId, await EmailOf(db, userId), "invite-created", $"{req.Email} as {req.Role}");
     await db.SaveChangesAsync();
-    // 連結親手交給對方(v1 不寄信)——只回這一次
-    return Results.Json(new { link = $"{http.Scheme}://{http.Host}/invite/{token}", expires = invite.ExpiresAt });
+    // 連結親手交給對方(v1 不寄信)——只回這一次。有設對外網址就用它:反向代理後面 Host 可能是內部位址
+    var origin = publicUrl ?? $"{http.Scheme}://{http.Host}";
+    return Results.Json(new { link = $"{origin}/invite/{token}", expires = invite.ExpiresAt });
 }).RequireAuthorization();
 
 app.MapGet("/api/projects/{id:guid}/audit", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
@@ -322,6 +334,13 @@ app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
         return Results.Json(new { error = "missing or unknown token (Authorization: Bearer <project token>)" },
             statusCode: StatusCodes.Status401Unauthorized);
 
+    // 哪個工具的報告(合併伺服器)。沒帶 = parity:2.0.0 的 parity push 不送這個標頭。
+    // 不認得的值直接 400,不退回 parity——拿 parity 的解析去讀別的工具的報告,只會得到一個誤導的錯誤訊息
+    var tool = Header(request, "X-Parity-Tool") ?? RunTool.Parity;
+    if (!RunTool.IsKnown(tool))
+        return Results.Json(new { error = $"unknown X-Parity-Tool — this server accepts \"{RunTool.Parity}\" and \"{RunTool.XamlContrast}\"." },
+            statusCode: StatusCodes.Status400BadRequest);
+
     using var reader = new StreamReader(request.Body);
     var raw = await reader.ReadToEndAsync();
 
@@ -341,9 +360,11 @@ app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
     Run run;
     try
     {
-        run = RunIngest.Parse(raw, meta, DateTimeOffset.UtcNow);
+        run = tool == RunTool.XamlContrast
+            ? ContrastIngest.Parse(raw, meta, DateTimeOffset.UtcNow)
+            : RunIngest.Parse(raw, meta, DateTimeOffset.UtcNow);
     }
-    catch (SchemaTooNewException ex)
+    catch (UnsupportedSchemaException ex)
     {
         return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status422UnprocessableEntity);
     }
@@ -356,6 +377,20 @@ app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
     db.Runs.Add(run);
     await db.SaveChangesAsync();
 
+    // 回執的欄位是協定的一部分:parity push 讀這六個(印 project/score/url、寫 job summary),
+    // xamlcontrast --push 讀它自己那一組——各自不多不少,ServerEndpointTests 釘住
+    if (run.Contrast is { } c)
+        return Results.Json(new
+        {
+            id = run.Id,
+            project = project.Name,
+            tool = run.Tool,
+            gateFailed = run.GateFailed,
+            fail = c.Fail,
+            warn = c.Warn,
+            coverage = c.Coverage,
+            url = $"/runs/{run.Id}",
+        }, statusCode: StatusCodes.Status201Created);
     return Results.Json(new
     {
         id = run.Id,
@@ -380,8 +415,9 @@ app.MapGet("/api/runs", async (ClaimsPrincipal principal, ServerDbContext db, [F
         .Select(r => new
         {
             r.Id,
+            r.Tool,
             r.CreatedAt,
-            r.Score,
+            r.Score, // xamlcontrast 的 run 是 null
             r.GateFailed,
             r.CommitSha,
             r.Branch,
@@ -390,6 +426,14 @@ app.MapGet("/api/runs", async (ClaimsPrincipal principal, ServerDbContext db, [F
             r.ProjectId,
             Project = r.Project!.Name,
             Pages = r.Pages.Count,
+            // parity 的 run 是 null
+            Contrast = r.Contrast == null ? null : new
+            {
+                r.Contrast.Fail,
+                r.Contrast.Warn,
+                r.Contrast.Unresolved,
+                r.Contrast.Coverage,
+            },
         })
         .ToListAsync();
     return Results.Json(runs);
@@ -405,6 +449,14 @@ app.MapGet("/api/trend", async (
     Guid project, string route, ClaimsPrincipal principal, ServerDbContext db, [FromQuery] string? branch) =>
     Results.Json(await Queries.TrendAsync(db, UserId(principal), project, route, branch))).RequireAuthorization();
 
+// XamlContrast 的總覽與趨勢(合併伺服器)——稽核單位是整個專案,所以沒有 route
+app.MapGet("/api/contrast/overview", async (ClaimsPrincipal principal, ServerDbContext db, [FromQuery] string? branch) =>
+    Results.Json(await Queries.ContrastOverviewAsync(db, UserId(principal), branch))).RequireAuthorization();
+
+app.MapGet("/api/contrast/trend", async (
+    Guid project, ClaimsPrincipal principal, ServerDbContext db, [FromQuery] string? branch) =>
+    Results.Json(await Queries.ContrastTrendAsync(db, UserId(principal), project, branch))).RequireAuthorization();
+
 // 「跟上次比變了什麼」——同專案、同分支的前一筆(引擎 BaselineComparer 同語意)
 app.MapGet("/api/runs/{id:guid}/changes", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
 {
@@ -419,6 +471,7 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, Ser
         .Select(r => new
         {
             r.Id,
+            r.Tool,
             r.CreatedAt,
             r.Score,
             r.GateFailed,
@@ -429,9 +482,45 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, Ser
             r.ProjectId,
             Project = r.Project!.Name,
             r.RawReportGzip,
+            r.Contrast,
         })
         .FirstOrDefaultAsync();
     if (run is null) return Results.NotFound();
+
+    // XamlContrast:中繼資料 + 摘要。逐筆 findings 由前端讀 /report 的原文(跟 parity 的藍圖一樣)
+    if (run.Contrast is { } c)
+        return Results.Json(new
+        {
+            id = run.Id,
+            tool = run.Tool,
+            createdAt = run.CreatedAt,
+            score = run.Score,
+            gateFailed = run.GateFailed,
+            commitSha = run.CommitSha,
+            branch = run.Branch,
+            triggeredBy = run.TriggeredBy,
+            repoUrl = run.RepoUrl,
+            projectId = run.ProjectId,
+            project = run.Project,
+            contrast = new
+            {
+                c.ToolVersion,
+                c.ExitCode,
+                c.Files,
+                c.Pairs,
+                c.Coverage,
+                c.Unresolved,
+                c.Fail,
+                c.Warn,
+                c.Ok,
+                c.Decorative,
+                c.Suppressed,
+                c.ParseErrors,
+                c.PaletteMode,
+                c.PaletteDegraded,
+                c.FailOn,
+            },
+        });
 
     // 逐條落差從原文 blob 重建(關聯表刻意不存 Diff,見 Entities.cs)
     var doc = System.Text.Json.JsonSerializer.Deserialize<Parity.Engine.ReportDocument>(
@@ -439,6 +528,7 @@ app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, Ser
     return Results.Json(new
     {
         id = run.Id,
+        tool = run.Tool,
         createdAt = run.CreatedAt,
         score = run.Score,
         gateFailed = run.GateFailed,
@@ -531,6 +621,30 @@ static async Task<object> MeAsync(AppUser user, ServerDbContext db)
 /// </summary>
 public sealed class ParityServerEntryPoint;
 
+/// <summary>
+/// 部署用的設定(M5)。鍵名是對自架者的介面,寫在 README 的部署一節:
+///   Parity:PublicUrl     對外網址(https://parity.example.com)——邀請連結用它,不用請求的 Host
+///   Parity:KeysDirectory Data Protection 金鑰目錄——放持久磁碟,重新部署才不會登出所有人
+/// 環境變數寫法是 Parity__PublicUrl / Parity__KeysDirectory。
+/// </summary>
+internal static class ServerSettings
+{
+    public const string PublicUrlKey = "Parity:PublicUrl";
+    public const string KeysDirectoryKey = "Parity:KeysDirectory";
+    public const string DevelopmentUrl = "http://127.0.0.1:4322";
+
+    /// <summary>沒設 = null。設了就必須是絕對的 http/https 網址、不帶 query 或 fragment(結尾的 / 去掉)。</summary>
+    public static string? PublicUrl(IConfiguration configuration)
+    {
+        if (configuration[PublicUrlKey] is not { Length: > 0 } value) return null;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")
+            || uri.Query.Length > 0 || uri.Fragment.Length > 0)
+            throw new InvalidOperationException(
+                $"{PublicUrlKey} must be an absolute http(s) URL such as https://parity.example.com (got \"{value}\").");
+        return value.TrimEnd('/');
+    }
+}
+
 internal sealed record LoginRequest(string Email, string Password);
 internal sealed record AcceptRequest(string Password);
 internal sealed record InviteRequest(string Email, string Role);
@@ -587,12 +701,17 @@ internal static class AdminCommands
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        var connectionString = ServerDatabase.ConnectionString(
-            ServerDatabase.AdminConfiguration(), Directory.GetCurrentDirectory());
+        var configuration = ServerDatabase.AdminConfiguration();
+        var connectionString = ServerDatabase.ConnectionString(configuration, Directory.GetCurrentDirectory());
         var dbPath = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString).DataSource;
         var options = new DbContextOptionsBuilder<ServerDbContext>()
             .UseSqlite(connectionString).Options;
         await using var db = new ServerDbContext(options);
+
+        // 備份不 migrate、也不建檔:備的是現況,資料庫不存在就是設定指錯了,不是要一份空的
+        if (args[0] == "backup")
+            return await BackupAsync(db, dbPath, args);
+
         await db.Database.MigrateAsync();
 
         switch (args[0])
@@ -628,21 +747,69 @@ internal static class AdminCommands
                         Console.Error.WriteLine($"unknown role: {role} (use owner/member/viewer)");
                         return 2;
                     }
+                    // 對外網址與 web host 讀同一個設定鍵;沒設才印本機開發的位址,並講清楚。
+                    // 先驗再建邀請:設定寫錯時不留下一筆沒人拿得到連結的邀請
+                    string? publicUrl;
+                    try { publicUrl = ServerSettings.PublicUrl(configuration); }
+                    catch (InvalidOperationException ex)
+                    {
+                        Console.Error.WriteLine(ex.Message);
+                        return 2;
+                    }
                     var (invite, token) = Invites.Create(project.Id, args[2], role, DateTimeOffset.UtcNow);
                     db.Invites.Add(invite);
                     await db.SaveChangesAsync();
                     Console.WriteLine($"invite created: {args[2]} → {project.Name} as {role} (expires in {Invites.Lifetime.TotalDays:0} days)");
                     Console.WriteLine("\nhand this link to them (shown once):");
-                    Console.WriteLine($"  http://127.0.0.1:4322/invite/{token}");
+                    Console.WriteLine($"  {publicUrl ?? ServerSettings.DevelopmentUrl}/invite/{token}");
+                    if (publicUrl is null)
+                        Console.WriteLine($"\n(this is the local development address — on a deployed server set " +
+                            $"{ServerSettings.PublicUrlKey.Replace(":", "__")} to its public URL)");
                     return 0;
                 }
             default:
-                Console.Error.WriteLine("""
-                    usage:
-                      create-project <name>
-                      create-invite <project> <email> [owner|member|viewer]
-                    """);
+                Console.Error.WriteLine(Usage);
                 return 2;
         }
+    }
+
+    private const string Usage = """
+        usage:
+          create-project <name>
+          create-invite <project> <email> [owner|member|viewer]
+          backup <file>
+        """;
+
+    /// <summary>
+    /// SQLite 的 VACUUM INTO:在伺服器照常運作時寫出一份一致的快照(不是複製一個寫到一半的檔)。
+    /// 還原 = 停伺服器、把快照放回資料庫的位置、再啟動。
+    /// </summary>
+    private static async Task<int> BackupAsync(ServerDbContext db, string dbPath, string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+        {
+            Console.Error.WriteLine(Usage);
+            return 2;
+        }
+        if (!File.Exists(dbPath))
+        {
+            Console.Error.WriteLine($"database not found: {dbPath} (set PARITY_SERVER_DB or ConnectionStrings__parity to the server's database).");
+            return 2;
+        }
+        var target = Path.GetFullPath(args[1]);
+        if (File.Exists(target))
+        {
+            Console.Error.WriteLine($"backup target already exists: {target} — pick a new file name (backups are never overwritten).");
+            return 2;
+        }
+        if (Path.GetDirectoryName(target) is { } dir && !Directory.Exists(dir))
+        {
+            Console.Error.WriteLine($"backup directory does not exist: {dir}");
+            return 2;
+        }
+        await db.Database.ExecuteSqlRawAsync("VACUUM INTO {0}", target);
+        Console.WriteLine($"backup written: {target} ({new FileInfo(target).Length:N0} bytes, from {dbPath})");
+        Console.WriteLine("copy it off this machine — a backup on the same disk does not survive losing the disk.");
+        return 0;
     }
 }

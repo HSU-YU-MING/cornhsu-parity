@@ -177,6 +177,63 @@ namespace Parity.Server.Data.Migrations
                     b.ToTable("AuditEntry");
                 });
 
+            modelBuilder.Entity("Parity.Server.Data.ContrastResult", b =>
+                {
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Coverage")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("Decorative")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ExitCode")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Fail")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FailOn")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Files")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Ok")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Pairs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("PaletteDegraded")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PaletteMode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ParseErrors")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Suppressed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ToolVersion")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Unresolved")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Warn")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("RunId");
+
+                    b.ToTable("ContrastResults");
+                });
+
             modelBuilder.Entity("Parity.Server.Data.Invite", b =>
                 {
                     b.Property<Guid>("Id")
@@ -371,8 +428,13 @@ namespace Parity.Server.Data.Migrations
                     b.Property<string>("RepoUrl")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Score")
+                    b.Property<int?>("Score")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Tool")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("TriggeredBy")
                         .HasColumnType("TEXT");
@@ -420,6 +482,17 @@ namespace Parity.Server.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Parity.Server.Data.ContrastResult", b =>
+                {
+                    b.HasOne("Parity.Server.Data.Run", "Run")
+                        .WithOne("Contrast")
+                        .HasForeignKey("Parity.Server.Data.ContrastResult", "RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("Parity.Server.Data.Invite", b =>
@@ -481,6 +554,8 @@ namespace Parity.Server.Data.Migrations
 
             modelBuilder.Entity("Parity.Server.Data.Run", b =>
                 {
+                    b.Navigation("Contrast");
+
                     b.Navigation("Pages");
                 });
 #pragma warning restore 612, 618

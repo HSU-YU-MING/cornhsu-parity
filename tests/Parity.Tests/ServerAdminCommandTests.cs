@@ -110,6 +110,97 @@ public class ServerAdminCommandTests
     }
 
     [Fact]
+    public async Task Create_invite_prints_the_configured_public_url()
+    {
+        // M5:CLAUDE.md 原本的地雷「邀請連結硬寫 http://127.0.0.1:4322」——部署後發出去的連結是壞的
+        using var dir = new TempDir();
+        using var env = new EnvScope().Set("PARITY_SERVER_DB", dir.File("server.db"))
+            .Set("Parity__PublicUrl", "https://parity.example.com/");
+        Assert.Equal(0, (await Cli.RunServerAdminAsync("create-project", "demo")).ExitCode);
+
+        var r = await Cli.RunServerAdminAsync("create-invite", "demo", "pm@t.local");
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.StartsWith("https://parity.example.com/invite/", LineAfter(r.Out, "hand this link to them"));
+        Assert.DoesNotContain("local development address", r.Out);
+    }
+
+    [Fact]
+    public async Task Without_a_public_url_the_invite_says_it_is_the_local_address()
+    {
+        using var dir = new TempDir();
+        using var env = new EnvScope().Set("PARITY_SERVER_DB", dir.File("server.db")).Set("Parity__PublicUrl", null);
+        Assert.Equal(0, (await Cli.RunServerAdminAsync("create-project", "demo")).ExitCode);
+
+        var r = await Cli.RunServerAdminAsync("create-invite", "demo", "pm@t.local");
+
+        Assert.StartsWith("http://127.0.0.1:4322/invite/", LineAfter(r.Out, "hand this link to them"));
+        Assert.Contains("set Parity__PublicUrl", r.Out);
+    }
+
+    [Theory]
+    [InlineData("parity.example.com")]          // 少了 scheme
+    [InlineData("ftp://parity.example.com")]
+    [InlineData("https://parity.example.com/?x=1")]
+    public async Task A_bad_public_url_is_exit_2_and_creates_no_invite(string url)
+    {
+        using var dir = new TempDir();
+        var db = dir.File("server.db");
+        using var env = new EnvScope().Set("PARITY_SERVER_DB", db).Set("Parity__PublicUrl", url);
+        Assert.Equal(0, (await Cli.RunServerAdminAsync("create-project", "demo")).ExitCode);
+
+        var r = await Cli.RunServerAdminAsync("create-invite", "demo", "pm@t.local");
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("Parity:PublicUrl must be an absolute http(s) URL", r.Err);
+        await using var ctx = Open(db);
+        Assert.Equal(0, await ctx.Invites.CountAsync());
+    }
+
+    [Fact]
+    public async Task Backup_writes_a_consistent_copy_that_opens_with_the_same_data()
+    {
+        using var dir = new TempDir();
+        var db = dir.File("server.db");
+        using var env = new EnvScope().Set("PARITY_SERVER_DB", db);
+        var token = LineAfter((await Cli.RunServerAdminAsync("create-project", "demo")).Out, "CI token (shown once");
+        var target = dir.File("backups", "parity-2026-10-26.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+
+        var r = await Cli.RunServerAdminAsync("backup", target);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains($"backup written: {target}", r.Out);
+        await using var copy = Open(target);
+        Assert.Equal(ProjectToken.Hash(token), (await copy.Projects.SingleAsync()).TokenHash);
+        Assert.Empty(await copy.Database.GetPendingMigrationsAsync()); // 連 migration 歷史一起備到(還原後直接能起)
+    }
+
+    [Fact]
+    public async Task Backup_never_overwrites_and_never_creates_a_missing_database()
+    {
+        using var dir = new TempDir();
+        var db = dir.File("server.db");
+        using (new EnvScope().Set("PARITY_SERVER_DB", dir.File("nope.db")))
+        {
+            var missing = await Cli.RunServerAdminAsync("backup", dir.File("out.db"));
+            Assert.Equal(2, missing.ExitCode);
+            Assert.Contains("database not found", missing.Err);
+            Assert.False(File.Exists(dir.File("nope.db"))); // 沒有順手建一份空的
+        }
+
+        using var env = new EnvScope().Set("PARITY_SERVER_DB", db);
+        Assert.Equal(0, (await Cli.RunServerAdminAsync("create-project", "demo")).ExitCode);
+        var existing = dir.Write("taken.db", "keep me");
+        var r = await Cli.RunServerAdminAsync("backup", existing);
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains("already exists", r.Err);
+        Assert.Equal("keep me", await File.ReadAllTextAsync(existing));
+        Assert.Equal(2, (await Cli.RunServerAdminAsync("backup")).ExitCode); // 沒給檔名 = usage
+    }
+
+    [Fact]
     public async Task Admin_commands_honour_the_connection_string_the_web_host_uses()
     {
         // 反方向:部署時用 ConnectionStrings:parity(環境變數 ConnectionStrings__parity 或 appsettings.json)
