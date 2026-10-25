@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **805**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **856**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -337,6 +337,48 @@ There are three shells, and **the engine does not know that any of them exist**:
 > setting, and the integration tests inject one that a developer's `PARITY_SERVER_DB` must not
 > redirect.
 
+### One dashboard, two tools
+
+The same server also takes reports from **[XamlContrast](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast)**
+(the static WCAG contrast audit for XAML apps): `xamlcontrast --push <report.json>` sends the file
+its `--json` option wrote, through the same `POST /api/runs`, marked with an `X-Parity-Tool: xamlcontrast`
+header (`parity push` sends no such header, which the server reads as `parity`). A project can hold runs
+from both tools. XamlContrast runs get their own overview card per project (pairs below AA, fail · warn,
+coverage), a fail/warn trend, and an issue list (file and line, element, foreground and background as
+written in the XAML, the ratio in each theme, the threshold). Like `parity push`, the XamlContrast side is
+**experimental** until the dashboard is publicly deployed.
+
+### Hosting it yourself
+
+The repo root has a `Dockerfile`. The image contains the server, its data layer and the report types,
+and nothing else: no browser, no engine (CI checks this).
+
+```sh
+docker build -t parity-server .
+docker run -d --name parity -p 8080:8080 -v parity-data:/data \
+  -e Parity__PublicUrl=https://parity.example.com \
+  -e ASPNETCORE_FORWARDEDHEADERS_ENABLED=true \
+  parity-server
+docker exec parity dotnet Parity.Server.dll create-project my-site          # prints the CI token once
+docker exec parity dotnet Parity.Server.dll create-invite my-site you@example.com owner
+```
+
+| Setting | What it does |
+|---|---|
+| `Parity__PublicUrl` | The address people open. Invite links are built from it, not from the `Host` the server sees (behind a proxy that can be an internal name). It must be an absolute `http(s)` URL; a bad value stops the server and the admin commands. |
+| `Parity__KeysDirectory` | Where the keys that sign the login cookie live. Preset to `/data/keys` in the image. Without it, every redeploy of a container signs everyone out. |
+| `PARITY_SERVER_DB` | The SQLite database. Preset to `/data/parity-server.db` in the image. |
+| `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` | Behind a reverse proxy, **required**, and only behind a proxy you trust (otherwise anyone can forge their client IP). Without it the server sees one IP for everybody, and a single person can lock all users out of login with 20 attempts a minute. |
+
+- **Everything lives in `/data`**: mount a volume there. TLS is the job of the proxy or platform in front.
+- **Run one instance.** The database is SQLite and login attempts are serialized inside one process;
+  more than one instance needs a different database first.
+- **Backups**: `docker exec parity dotnet Parity.Server.dll backup /data/backup-2026-10-26.db` writes a
+  consistent copy while the server keeps running (SQLite `VACUUM INTO`; it never overwrites a file and
+  never creates a missing database). Copy it off the machine. To restore: stop the server, put the copy
+  where the database was, start it again.
+- **Uptime**: `GET /healthz` is anonymous and answers `ok` only when the database answers, `503` otherwise.
+
 ### The iron rule: the cloud never runs a browser
 
 `Parity.Server`'s only endpoint that takes in scan results is `POST /api/runs` (its other
@@ -480,8 +522,10 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
   yet, so the command and its server protocol may change in a 2.x minor release and join the interface
   freeze once the server ships) sends a finished `report.json` to a server you host yourself; the dashboard renders the gaps as an engineering blueprint drawn from the
   measured coordinates (no screenshot upload), an overview and score trend per project and
-  route, and accounts / project roles / invite links. Its own internal M1–M4.6 are done; its
-  M5 (real external deployment: TLS, a domain, a hosted database) is not. **It receives
+  route, and accounts / project roles / invite links. It also takes XamlContrast reports
+  ([one dashboard, two tools](#one-dashboard-two-tools)). Its own internal M1–M4.6 are done; of its
+  M5, the deployment groundwork is done (a Docker image, the public URL, persisted sign-in keys,
+  online backups), the actual hosting (a host, a domain, TLS) is not. **It receives
   reports, it never scans** — see the iron rule above.
 
 > Open work, known blind spots and the next priorities are in [ROADMAP.md](ROADMAP.md);

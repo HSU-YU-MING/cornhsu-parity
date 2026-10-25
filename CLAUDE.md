@@ -34,6 +34,7 @@
 ```
 dotnet run --project src/Parity.Server -- create-project <名稱>          # 印一次 CI token
 dotnet run --project src/Parity.Server -- create-invite <專案> <email> owner
+dotnet run --project src/Parity.Server -- backup <檔案>                  # VACUUM INTO 線上備份
 dotnet run --project src/Parity.Server                                   # http://127.0.0.1:4322
 cd web && npm ci && npm run build      # 產物落 src/Parity.Server/wwwroot(gitignore)
 cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:4322
@@ -206,8 +207,20 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 
 - `ImageSharp` 的 major 升級被 dependabot **明確 ignore**:4.0 把授權變成建置期強制，
   沒有授權檔就 CI 全紅(實測於 #19)。3.1.x 仍是 Split License、開源免費。
-- `Parity.Server` 的 `create-invite` 印出的邀請連結**硬寫 `http://127.0.0.1:4322`**。
-  真的對外部署(M5)時這裡要跟著改，否則發出去的連結是壞的。
+- ~~`Parity.Server` 的 `create-invite` 印出的邀請連結**硬寫 `http://127.0.0.1:4322`**。~~
+  **已改(2026-10-26)**:管理指令與 web 端的邀請都先看 `Parity:PublicUrl`,沒設才退回本機開發位址/請求的 Host。
+- **合併伺服器(2026-10-26):一台收 parity 與 XamlContrast 兩種報告。** `POST /api/runs` 依 `X-Parity-Tool` 分流
+  (沒帶 = parity),`Run.Tool` 記是哪一種。**任何讀 run 的查詢都要先想「這裡該不該分工具」**:parity 的總覽、趨勢、
+  「跟上次比」都限定 `Tool == parity`——同分支夾著一筆 XamlContrast 的 run 時,拿它的原文當 parity 報告解會炸
+  (`ServerContrastEndpointTests` 釘住)。XamlContrast 的報告型別是 `ContrastIngest` 裡照它的
+  `docs/report.schema.json`(schemaVersion 6)手寫的最小鏡像,**不引用 XamlContrast 的組件**(它沒發佈成函式庫,
+  而且伺服器的參考圖只准到 `Parity.Report`);契約的對照組是 `tests/Parity.Tests/Golden/xamlcontrast.v6.json`
+  (XamlContrast 對自己的 demo 實跑的輸出)——那邊的 JSON 加欄位不影響,改名或升 schemaVersion 要回來改。
+- **部署相關的設定鍵**(`ServerSettings`):`Parity:PublicUrl`、`Parity:KeysDirectory`;容器映像預設
+  `PARITY_SERVER_DB=/data/parity-server.db`、`Parity__KeysDirectory=/data/keys`。本機沒有 Docker,`Dockerfile`
+  只在 CI 的 `docker-image` job 真的被建過——改 Dockerfile 或伺服器的專案結構時,推上去看那個 job。
+  沒指定任何監聽位址時預設 `127.0.0.1:4322`,**`ASPNETCORE_HTTP_PORTS` 也算有指定**(官方映像預設帶它,
+  只看 `urls` 的話容器裡會靜靜聽在 loopback)。
 - `parity serve` 只綁 127.0.0.1，另外還擋 Host header(DNS rebinding)與 POST 的
   Origin(CSRF)。報告含站點結構與截圖——**不要為了「方便同事看」改成 0.0.0.0**;
   要給人看就是走 `parity push` 到儀表板。
@@ -242,8 +255,9 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 - **auto-name 通用名假配對**(ROADMAP 有完整留帳):「Content」這種通用圖層名會撞到
   無關頁面的 `#content`。尺寸合理性防線(面積比 >16 拒配)只擋得住量級差很多的;
   **`auto-container`(LCA 推論)不經這道防線**。要根治得上語意層，動工前先蒐集更多野生樣本。
-- `Parity.Server.Data` 目前是 SQLite。M5 定供應商時(PostgreSQL 之類)migrations 要重生
-  ——已知的一次性成本，寫在規畫書「待決區」。
+- `Parity.Server.Data` 目前是 SQLite。**2026-10-26 決定部署也維持 SQLite、單一實例**(備份是一個檔、
+  登入序列化只在單一行程內剛好成立、migrations 不必重生);要多實例時再換供應商(PostgreSQL 之類),
+  屆時 migrations 重生、登入序列化改到 db 層——已知的一次性成本。
 
 ## 開工慣例
 
