@@ -42,6 +42,10 @@ inputs:
     description: 'Name of the uploaded report artifact. It also keys the PR comment: each name keeps its own comment. Give every call its own name when the action runs more than once in a workflow run (prefer a matrix). Letters, digits, ".", "_" and "-" only, 1-100 characters, not starting with "-" and not only dots'
     required: false
     default: 'parity-report'
+  share-stats:
+    description: 'Send anonymous usage statistics from parity check (counts and score ranges only, for a master''s thesis on design fidelity; what is sent and why: https://stats.cornhsu.com/). "true" or "false"; false passes PARITY_SHARE_STATS=false to parity. DO_NOT_TRACK=1 in the workflow env also turns them off'
+    required: false
+    default: 'true'
 
 runs:
   using: 'composite'
@@ -59,12 +63,22 @@ runs:
       shell: bash
       env:
         PARITY_VERSION: ${{ inputs.version }}
+        PARITY_SHARE_STATS_INPUT: ${{ inputs.share-stats }}
       run: |
         # version 帶換行一律拒絕:dotnet 的錯誤訊息會把它原樣印出,換行後的內容落在行首就成了
         # runner 會解析的 workflow command(::error …)。帶換行的版本本來就裝不起來,提早擋不改變行為
         case "$PARITY_VERSION" in
           *$'\n'* | *$'\r'*)
             echo "parity action: the version input contains a line break; refusing to install." >&2
+            exit 2
+            ;;
+        esac
+        # share-stats 只收 true/false(case 是整串比對,帶換行的值過不了),在安裝之前就擋:
+        # 打錯的值不猜成哪一邊,讓 job 停下來由使用者改。訊息不印出 input
+        case "$PARITY_SHARE_STATS_INPUT" in
+          true | false) ;;
+          *)
+            echo "parity action: share-stats must be 'true' or 'false'; refusing to install." >&2
             exit 2
             ;;
         esac
@@ -94,6 +108,10 @@ runs:
         PARITY_TARGET: ${{ inputs.target }}
         PARITY_BASELINE: ${{ inputs.baseline }}
         PARITY_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        PARITY_SHARE_STATS_INPUT: ${{ inputs.share-stats }}
+        # 只給 action 用:讓 parity 在 job summary 寫一行「匿名統計送了,或為什麼沒送」(匿名統計協定 §4)。
+        # 值是常數;寫進 summary 的內容也是 parity 裡的常數字串,不來自任何 input
+        PARITY_STATS_JOB_SUMMARY: 'true'
       run: |
         set +e
         # 先清掉這個 job 前一次呼叫留下的暫存($RUNNER_TEMP 共用):這一次若在寫出報告前就失敗,
@@ -117,6 +135,12 @@ runs:
           echo "parity action: artifact-name must be 1-100 characters of A-Z, a-z, 0-9, '.', '_' or '-', must not start with '-' and must not be only dots; refusing to run." >&2
           echo "exit=2" >> "$GITHUB_OUTPUT"
           exit 0
+        fi
+        # share-stats: false → PARITY_SHARE_STATS=false(匿名統計協定 §3 第 4 條)。只在不是 true 時才設:step 的 env
+        # 會蓋過 workflow 的 env,無條件設成 true 的話,使用者在 workflow 層設的 PARITY_SHARE_STATS=false 會被蓋回
+        # 「不表態」而照送。安裝步驟已經擋過 true/false 以外的值;這裡不靠步驟順序,不是 true 一律當成 false
+        if [ "$PARITY_SHARE_STATS_INPUT" != "true" ]; then
+          export PARITY_SHARE_STATS=false
         fi
         args=(check --config "$PARITY_CONFIG" --md "$RUNNER_TEMP/parity-report.md")
         [ -n "$PARITY_TARGET" ] && args+=(--target "$PARITY_TARGET")
