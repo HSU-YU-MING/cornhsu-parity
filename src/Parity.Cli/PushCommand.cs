@@ -19,11 +19,11 @@ internal static class PushCommand
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Push);
 
         var server = opts.GetValueOrDefault("--server")
-            ?? Environment.GetEnvironmentVariable("PARITY_SERVER")
+            ?? Env("PARITY_SERVER")
             ?? throw new InvalidOperationException(
                 "missing server: pass --server <url> (or set the PARITY_SERVER environment variable).");
         var token = opts.GetValueOrDefault("--token")
-            ?? Environment.GetEnvironmentVariable("PARITY_TOKEN")
+            ?? Env("PARITY_TOKEN")
             ?? throw new InvalidOperationException(
                 "missing token: set the PARITY_TOKEN environment variable (a project token from the server's " +
                 "create-project command). Prefer the env var over --token — flags end up in shell history and CI logs.");
@@ -44,13 +44,10 @@ internal static class PushCommand
         var gateFailed = ResolveGate(opts, doc);
 
         // commit/branch:旗標 → CI 環境變數(GitHub Actions)→ 不帶(伺服器欄位可空)
-        var commit = opts.GetValueOrDefault("--commit") ?? Environment.GetEnvironmentVariable("GITHUB_SHA");
-        var branch = opts.GetValueOrDefault("--branch")
-            ?? Environment.GetEnvironmentVariable("GITHUB_HEAD_REF") // PR 事件:來源分支
-            ?? Environment.GetEnvironmentVariable("GITHUB_REF_NAME");
-        var actor = Environment.GetEnvironmentVariable("GITHUB_ACTOR");
-        var repoUrl = Environment.GetEnvironmentVariable("GITHUB_SERVER_URL") is { } srv
-            && Environment.GetEnvironmentVariable("GITHUB_REPOSITORY") is { } repo
+        var commit = opts.GetValueOrDefault("--commit") ?? Env("GITHUB_SHA");
+        var branch = ResolveBranch(opts.GetValueOrDefault("--branch"), Environment.GetEnvironmentVariable);
+        var actor = Env("GITHUB_ACTOR");
+        var repoUrl = Env("GITHUB_SERVER_URL") is { } srv && Env("GITHUB_REPOSITORY") is { } repo
             ? $"{srv.TrimEnd('/')}/{repo}" : null;
 
         // 大報告送 Expect: 100-continue:伺服器(Kestrel 上限 20 MB)依 Content-Length 先回 413/401,
@@ -107,7 +104,7 @@ internal static class PushCommand
             // 之間不再靠人肉找(M4.5 必補 #4)。圖示用**伺服器記下的最終判定**(回應的 gateFailed):
             // CLI 算不出 gate(沒給 --gate-exit、找不到 config)時伺服器會用預設口徑判,
             // 只看 CLI 自己的結果會在儀表板紅字時顯示 ✅。兩邊都不知道就不放圖示,不假裝通過
-            if (Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY") is { } summaryPath)
+            if (Env("GITHUB_STEP_SUMMARY") is { } summaryPath)
             {
                 var verdict = (Bool(ack, "gateFailed") ?? gateFailed) switch
                 {
@@ -131,6 +128,20 @@ internal static class PushCommand
         throw new InvalidOperationException(
             $"server returned {(int)response.StatusCode} {response.StatusCode}: {ExtractError(body)} {hint}".TrimEnd());
     }
+
+    /// <summary>
+    /// 分支:--branch → GITHUB_HEAD_REF(PR 事件的來源分支)→ GITHUB_REF_NAME。**空字串當沒設**:GitHub Actions 在 PR 以外的
+    /// 事件把 GITHUB_HEAD_REF 設成有定義的空字串,Linux 上讀到的是 ""、不是 null——原本用 ?? 接,推 main 的 run 分支是空的,
+    /// 儀表板預設的 main 視圖看不到它(XamlContrast 的 --push 實作時發現)。環境變數查法用參數傳入:Windows 上
+    /// SetEnvironmentVariable(x, "") 等於刪掉,測試造不出「有定義的空值」。
+    /// </summary>
+    internal static string? ResolveBranch(string? flag, Func<string, string?> environment)
+        => flag ?? NonEmpty(environment("GITHUB_HEAD_REF")) ?? NonEmpty(environment("GITHUB_REF_NAME"));
+
+    /// <summary>沒設與空字串一律當沒設(理由見 ResolveBranch)。</summary>
+    private static string? Env(string name) => NonEmpty(Environment.GetEnvironmentVariable(name));
+
+    private static string? NonEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     /// <summary>--in → config 旁的 .parity/report.json(check 的預設落點)→ cwd 的 .parity/report.json。</summary>
     private static string ResolveReportPath(Dictionary<string, string?> opts)

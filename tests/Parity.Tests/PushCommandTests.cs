@@ -154,6 +154,21 @@ public class PushCommandTests
         Assert.Equal(expected, Assert.Single(server.Requests).Header("X-Parity-Branch"));
     }
 
+    [Theory]
+    [InlineData("", "main", "main")]        // push 事件:GITHUB_HEAD_REF 有定義但是空的(Linux runner 上讀到 "")
+    [InlineData("", "", null)]
+    [InlineData("feature/x", "42/merge", "feature/x")]
+    [InlineData(null, "", null)]
+    public void An_empty_ci_variable_counts_as_unset_when_resolving_the_branch(
+        string? headRef, string? refName, string? expected)
+    {
+        // 純函式:Windows 上 SetEnvironmentVariable(x, "") 等於刪掉,走 Cli.RunAsync 造不出「有定義的空值」
+        var environment = new Dictionary<string, string?> { ["GITHUB_HEAD_REF"] = headRef, ["GITHUB_REF_NAME"] = refName };
+
+        Assert.Equal(expected, PushCommand.ResolveBranch(null, name => environment.GetValueOrDefault(name)));
+        Assert.Equal("cli", PushCommand.ResolveBranch("cli", name => environment.GetValueOrDefault(name)));
+    }
+
     [Fact]
     public async Task Outside_ci_only_auth_and_gate_headers_are_sent()
     {
