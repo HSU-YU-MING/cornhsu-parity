@@ -84,6 +84,25 @@ public sealed class ParityConfig
         set => _gate = value;
     }
 
+    // stats(2.1.0):匿名使用統計的開關與選填的專案 ID(stats-collector 的 PROTOCOL.md §3、§7.1)。
+    // 寫成 `"stats": null` 時與 gate/compare 一樣在載入時就報錯、指名欄位——它是隱私開關,不猜使用者想不想送。
+    private StatsConfig? _stats = new();
+
+    public StatsConfig Stats
+    {
+        get => _stats ?? throw NullSection("stats", "an object, e.g. { \"share\": false } (or remove the key)");
+        set => _stats = value;
+    }
+
+    /// <summary>設定檔對匿名統計的表態:false = 不送;true = 要送;null = 沒寫(照預設)。載入時已驗過只有這三種。</summary>
+    [JsonIgnore]
+    public bool? ShareStats => Stats.Share.ValueKind switch
+    {
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        _ => null,
+    };
+
     /// <summary>設定檔所在目錄(相對路徑的基準)。</summary>
     [JsonIgnore]
     public string BaseDirectory { get; set; } = ".";
@@ -136,7 +155,22 @@ public sealed class ParityConfig
             throw new InvalidOperationException(
                 $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
                 "fill may be omitted and sampled from the image).");
+        // stats.share 只收 true/false:寫成字串 "false" 是最可能的手誤,而它是隱私開關——不能當成「沒表態」照送
+        if (Stats.Share.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False))
+            throw new InvalidOperationException(
+                $"config {path}: stats.share must be true or false (got: {ConsoleText.Safe(Stats.Share.GetRawText())}) — " +
+                "write \"stats\": { \"share\": false } to turn anonymous usage statistics off.");
+        // stats.projectId:協定 §7.1 的格式,格式不對是載入錯誤(exit 2),不是安靜丟掉
+        if (Stats.ProjectId is { } id && !IsValidProjectId(id))
+            throw new InvalidOperationException(
+                $"config {path}: stats.projectId must be 16–64 characters of A-Z, a-z, 0-9, '_' or '-' " +
+                $"(got: \"{ConsoleText.Safe(id)}\", {id.Length} characters). Make one up at random — " +
+                "never derive it from the repository name or anything else that identifies you.");
     }
+
+    /// <summary>stats.projectId 的格式(PROTOCOL.md §7.1):16–64 字元,只能有 A-Za-z0-9_-。</summary>
+    internal static bool IsValidProjectId(string id)
+        => id.Length is >= 16 and <= 64 && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
 
     /// <summary>
     /// gate.failOn 的白名單(不分大小寫)——Validate 與 GateFailReason 共用這一張表。
@@ -264,6 +298,26 @@ public sealed class ToleranceConfig
     public double FontSizePx { get; set; } = 0.5;
     /// <summary>相對位置容差。比尺寸鬆:flow 版面裡文字行高的自然差異會讓後續元素有 2–4px 漂移。</summary>
     public double PositionPx { get; set; } = 4;
+}
+
+/// <summary>
+/// "stats" 區段(2.1.0):匿名使用統計(README「Anonymous usage statistics」;協定是 stats-collector 的 PROTOCOL.md)。
+/// 區段裡拼錯的 key 跟整份設定檔一樣靜默忽略(載入規則一致;改成報錯是 major)。
+/// </summary>
+public sealed class StatsConfig
+{
+    /// <summary>
+    /// false = 不送。型別刻意是 JsonElement:原樣收進來、載入時才驗(ParityConfig.Validate),寫成字串 "false"
+    /// 這種手誤才能得到指名欄位的錯誤——宣告成 bool? 的話是 System.Text.Json 的型別錯誤訊息,看不出是哪個開關、該寫什麼。
+    /// 沒寫 = Undefined;JSON 的 null 也算錯(隱私開關不猜)。讀值用 <see cref="ParityConfig.ShareStats"/>。
+    /// </summary>
+    public JsonElement Share { get; set; }
+
+    /// <summary>
+    /// 選填的專案 ID:使用者自己隨機取、自己寫進來才有(同一個專案的多次執行才連得起來);沒有就是 null,
+    /// 資料對應不到任何人。不能從 repo 名稱、路徑或任何機器資訊算出來(協定 §1)。
+    /// </summary>
+    public string? ProjectId { get; set; }
 }
 
 public sealed class GateConfig
