@@ -8,7 +8,7 @@
      也要先上線——見 CLAUDE.md「發版:本 repo 特有」與 RELEASING.md「2.1.0」。推 tag 之前刪掉這段註解。 -->
 
 > **⚠ 這一版起,`parity check` 預設會送匿名使用統計(CI 也是)。** 只有計數與分數區間——不含網址、名稱、selector、
-> 路徑、顏色或截圖,收集站不存 IP;用途是作者的碩士論文。**關掉**任選一種:`DO_NOT_TRACK=1`、
+> 路徑、顏色或截圖,收集站不存 IP;用途是學術研究,只公開彙總後的結果。**關掉**任選一種:`DO_NOT_TRACK=1`、
 > `PARITY_SHARE_STATS=false`(或與 XamlContrast 共用的 `CORNHSU_SHARE_STATS=false`)、設定檔
 > `"stats": { "share": false }`、GitHub Action 的 `share-stats: false`。**先看會送什麼**:`parity check --stats-preview`
 > (什麼都不送)。送的每一個欄位與理由見 README「Anonymous usage statistics」與 <https://stats.cornhsu.com/>。

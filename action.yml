@@ -43,7 +43,7 @@ inputs:
     required: false
     default: 'parity-report'
   share-stats:
-    description: 'Send anonymous usage statistics from parity check (counts and score ranges only, for a master''s thesis on design fidelity; what is sent and why: https://stats.cornhsu.com/). "true" or "false"; false passes PARITY_SHARE_STATS=false to parity. DO_NOT_TRACK=1 in the workflow env also turns them off'
+    description: 'Send anonymous usage statistics from parity check (counts and score ranges only, for academic research on design fidelity; what is sent and why: https://stats.cornhsu.com/). "true" or "false"; false passes PARITY_SHARE_STATS=false to parity. DO_NOT_TRACK=1 in the workflow env also turns them off'
     required: false
     default: 'true'
 

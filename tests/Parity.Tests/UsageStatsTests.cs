@@ -712,8 +712,8 @@ public class UsageStatsSendTests
         // 協定 §4 的範本換成 Parity 的名稱、設定檔、環境變數與預覽旗標
         Assert.Equal("""
             Parity sends anonymous usage statistics: counts and score ranges only - no URLs, names,
-            selectors, file paths, colours or screenshots, and no IP address is stored. They support a
-            master's thesis on design fidelity.
+            selectors, file paths, colours or screenshots, and no IP address is stored. They are used for
+            academic research on design fidelity; only aggregate results are published.
             What is sent and why: https://stats.cornhsu.com/
             Preview it:  parity check --stats-preview   (sends nothing)
             Turn it off: "stats": { "share": false } in parity.config.json, or PARITY_SHARE_STATS=false,

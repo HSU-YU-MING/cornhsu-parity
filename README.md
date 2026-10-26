@@ -89,8 +89,8 @@ dotnet tool install -g Cornhsu.Parity
 > Node you already have, which saves at least 88 MB per platform package. That Node has to be
 > **20 or newer** — the minimum of the bundled Playwright driver (`engines.node` says so).
 
-> **`parity check` sends anonymous usage statistics by default** (counts and score ranges only, for a
-> master's thesis). What is sent, why, and every way to turn it off:
+> **`parity check` sends anonymous usage statistics by default** (counts and score ranges only, for
+> academic research). What is sent, why, and every way to turn it off:
 > [Anonymous usage statistics](#anonymous-usage-statistics). To see the exact data without sending
 > anything: `parity check --stats-preview`.
 
@@ -545,8 +545,8 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
 ## Anonymous usage statistics
 
 From 2.1.0, `parity check` sends **anonymous usage statistics**, once per run — **on by default, in CI
-too**. They are counts and score ranges that support the author's **master's thesis** on how far real
-implementations drift from their designs. The public data page — what is collected, what it is used
+too**. They are counts and score ranges used for **academic research** on how far real
+implementations drift from their designs; only aggregate results are published. The public data page — what is collected, what it is used
 for, how long it is kept — is **<https://stats.cornhsu.com/>**.
 
 **When.** Only `parity check`, and only when it produced a report (exit 0, 1 or 3). `--reverse`,

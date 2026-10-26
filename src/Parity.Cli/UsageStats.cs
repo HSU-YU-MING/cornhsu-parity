@@ -10,7 +10,7 @@ namespace Parity.Cli;
 /// 匿名使用統計(2.1.0 起):<c>parity check</c> 跑出報告(exit 0/1/3)時送一次,<c>--reverse</c> 與其他指令不送。
 /// **唯一真相源是 stats-collector 的 PROTOCOL.md**(與 XamlContrast 1.1 共用),這裡逐欄照做、不自己發明:
 /// 要改欄位先改協定、收集站先上線新版,工具才能送(收集站對多一個、少一個欄位一律回 400)。
-/// 用途是碩士論文的補充證據(設計稿與實作差多少)。三條不能退的線:
+/// 用途是學術研究的補充證據(設計稿與實作差多少),只公開彙總後的結果;對外文字不寫學位或研究者身分(協定開頭)。三條不能退的線:
 ///   1. 只送統計數字:送的每個值都從報告的計數與 delta 算出來(<see cref="StatsPayload"/>),網址、route、名稱、
 ///      selector、路徑、顏色原值、截圖一律不碰;不帶 User-Agent、cookie 或任何自訂標頭。
 ///   2. 不影響結果:送不出去就算了(不重試、不印錯誤),exit code、stdout、報告檔一個字都不變。
@@ -285,8 +285,8 @@ internal static class UsageStats
     /// <summary>本機第一次要送的時候印的完整說明(協定 §4 的範本,換成 Parity 的名稱與開關)。</summary>
     internal const string FirstRunNotice = """
         Parity sends anonymous usage statistics: counts and score ranges only - no URLs, names,
-        selectors, file paths, colours or screenshots, and no IP address is stored. They support a
-        master's thesis on design fidelity.
+        selectors, file paths, colours or screenshots, and no IP address is stored. They are used for
+        academic research on design fidelity; only aggregate results are published.
         What is sent and why: https://stats.cornhsu.com/
         Preview it:  parity check --stats-preview   (sends nothing)
         Turn it off: "stats": { "share": false } in parity.config.json, or PARITY_SHARE_STATS=false,
