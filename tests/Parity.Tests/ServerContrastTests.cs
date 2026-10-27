@@ -388,8 +388,82 @@ public class ServerContrastEndpointTests : IAsyncLifetime
         var changes = await owner.GetFromJsonAsync<JsonElement>($"/api/runs/{secondId}/changes");
         Assert.Equal(firstId, changes.GetProperty("prevRunId").GetString());
         Assert.Single(changes.GetProperty("fixed").EnumerateArray());
-        // XamlContrast 的 run 還沒有逐筆比對:404,不是一個假裝「這是第一筆」的空比對
-        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/runs/{contrastId}/changes")).StatusCode);
+        // 反過來也一樣:XamlContrast 的 run 前面只有 parity 的 run → 它是這個分支第一筆 XamlContrast
+        var contrast = await owner.GetFromJsonAsync<JsonElement>($"/api/runs/{contrastId}/changes");
+        Assert.Equal(JsonValueKind.Null, contrast.GetProperty("prevRunId").ValueKind);
+    }
+
+    /// <summary>示範報告的 findings 換成這幾筆(檔案、元素沿用示範的第一筆 fail),其餘原樣。</summary>
+    private async Task<string> PushContrastFindingsAsync(
+        string branch, params (string Fg, string Bg, int Line, string Category, double Dark, double Light)[] findings)
+    {
+        var root = JsonNode.Parse(ServerContrastIngestTests.Demo())!;
+        var template = root["findings"]![1]!; // MainWindow.xaml:26 TextBlock 的 fail
+        var list = new JsonArray();
+        foreach (var (fg, bg, line, category, dark, light) in findings)
+        {
+            var f = template.DeepClone();
+            (f["fg"], f["bg"], f["line"], f["category"], f["ratioDark"], f["ratioLight"]) = (fg, bg, line, category, dark, light);
+            list.Add(f);
+        }
+        root["findings"] = list;
+        var resp = await PushAsync(root.ToJsonString(), RunTool.XamlContrast, branch);
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
+        return (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
+    }
+
+    [Fact]
+    public async Task Contrast_changes_compare_pairs_the_way_xamlcontrasts_own_baseline_does()
+    {
+        var first = await PushContrastFindingsAsync("main",
+            ("{DynamicResource DimText}", "{Bg}", 26, "fail", 2.11, 1.6), // A:只換了行號 → 沒變(鍵不含行號)
+            ("White", "{Surface}", 30, "fail", 16.67, 1.0),               // B:整組不見 → 修好
+            ("#9A9A9A", "{Surface}", 6, "fail", 5.92, 2.81),              // C:最差比值變低 → 變差(色盤漂移)
+            ("{DynamicResource Hint}", "{Bg}", 60, "warn", 4.1, 4.1),     // D:一處變兩處 → 變差
+            ("{DynamicResource Muted}", "{Bg}", 40, "warn", 4.0, 4.2),    // E:兩處變一處 → 好轉
+            ("{DynamicResource Muted}", "{Bg}", 44, "warn", 4.0, 4.2),
+            ("{DynamicResource Fg}", "{Bg}", 23, "ok", 16.15, 16.5));     // ok 不算,比值怎麼變都不算
+        await PushContrastAsync(fail: 9, warn: 9, branch: "feature/x");  // 別的分支不是基準
+        await PushAsync(ParityReport(Severity.Serious), tool: null);      // 同分支的 parity run 也不是
+        var second = await PushContrastFindingsAsync("main",
+            ("{DynamicResource DimText}", "{Bg}", 27, "fail", 2.11, 1.6),
+            ("#9A9A9A", "{Surface}", 6, "fail", 5.92, 2.5),
+            ("{DynamicResource Hint}", "{Bg}", 62, "warn", 4.1, 4.1),
+            ("{DynamicResource Hint}", "{Bg}", 60, "warn", 4.1, 4.1),
+            ("{DynamicResource Muted}", "{Bg}", 41, "warn", 4.0, 4.2),
+            ("{DynamicResource Accent2}", "{Bg}", 50, "warn", 3.9, 4.4),  // F:上一次沒有 → 新增
+            ("{DynamicResource Fg}", "{Bg}", 23, "ok", 9.0, 9.0));
+        var owner = await OwnerAsync();
+
+        var changes = await owner.GetFromJsonAsync<JsonElement>($"/api/runs/{second}/changes");
+        Assert.Equal(first, changes.GetProperty("prevRunId").GetString());
+        Assert.Equal(("0.0.0-dev", 1), (changes.GetProperty("prevToolVersion").GetString(), changes.GetProperty("prevExitCode").GetInt32()));
+        Assert.Equal(1, changes.GetProperty("unchanged").GetInt32()); // A
+
+        static string Fg(JsonElement c) => c.GetProperty("fg").GetString()!;
+        static int[] Lines(JsonElement c) => [.. c.GetProperty("lines").EnumerateArray().Select(l => l.GetInt32())];
+
+        var added = Assert.Single(changes.GetProperty("regressions").EnumerateArray());
+        Assert.Equal(("{DynamicResource Accent2}", "warn", 1, 0, 3.9), (Fg(added), added.GetProperty("category").GetString(),
+            added.GetProperty("count").GetInt32(), added.GetProperty("prevCount").GetInt32(), added.GetProperty("worst").GetDouble()));
+        Assert.Equal(JsonValueKind.Null, added.GetProperty("prevCategory").ValueKind);
+
+        var worse = changes.GetProperty("worsened").EnumerateArray().ToList(); // 依檔案、第一個行號排
+        Assert.Equal(["#9A9A9A", "{DynamicResource Hint}"], worse.Select(Fg));
+        Assert.Equal((2.5, 2.81), (worse[0].GetProperty("worst").GetDouble(), worse[0].GetProperty("prevWorst").GetDouble()));
+        Assert.Equal((2, 1), (worse[1].GetProperty("count").GetInt32(), worse[1].GetProperty("prevCount").GetInt32()));
+        Assert.Equal([60, 62], Lines(worse[1]));
+
+        var better = Assert.Single(changes.GetProperty("improved").EnumerateArray());
+        Assert.Equal(("{DynamicResource Muted}", 1, 2), (Fg(better), better.GetProperty("count").GetInt32(), better.GetProperty("prevCount").GetInt32()));
+        Assert.Equal([41], Lines(better));
+
+        var gone = Assert.Single(changes.GetProperty("fixed").EnumerateArray());
+        Assert.Equal(("White", "fail", 0), (Fg(gone), gone.GetProperty("prevCategory").GetString(), gone.GetProperty("count").GetInt32()));
+        Assert.Equal(JsonValueKind.Null, gone.GetProperty("category").ValueKind);
+        Assert.Equal([30], Lines(gone)); // 修好的那組給上一次的行號
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Client().GetAsync($"/api/runs/{second}/changes")).StatusCode);
     }
 
     [Fact]

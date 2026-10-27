@@ -54,6 +54,10 @@
   `/api/runs/{id}` 多一個 `tool` 欄位。parity 的總覽、趨勢與「跟上次比」只看 parity 的 run——同分支夾著一筆
   XamlContrast 的 run 時,「上一筆」原本會拿到它。既有資料庫第一次啟動時自動 migrate,既有的 run 一律標成 `parity`。
   推送端是 XamlContrast 的 `xamlcontrast --push`(那邊的實驗性功能)。
+  XamlContrast 的 run 也有「跟上次比」(同專案、同分支的前一筆 XamlContrast run):`/api/runs/{id}/changes` 對它回
+  新增、變差、修好、好轉的配對與沒變的組數,比法照 XamlContrast 自己的 `--baseline`——只看低於 AA 的、一組配對 =
+  `file|element|fg|bg`(不含行號)、處數變多或最差比值低了超過 0.01 = 變差;多一格「好轉」(處數變少或比值變好,
+  但還低於 AA)。兩筆的 XamlContrast 版本不同、或上一筆是 exit 3 時,畫面明講變化可能不是程式碼造成的。
 - **新增:伺服器的部署前置(網頁外殼 M5)**(未發佈的伺服器)。
   - `Dockerfile`:映像裡只有伺服器、資料層與報告型別,沒有瀏覽器與引擎;資料庫與登入金鑰都在 `/data`;以非 root 執行。
     CI 新增 `docker-image` job:建映像、起容器、打 `/healthz` 與首頁、在容器裡跑 `create-project`,並確認映像裡沒有

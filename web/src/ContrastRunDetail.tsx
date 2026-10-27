@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchContrastReport } from './api'
+import { fetchContrastChanges, fetchContrastReport } from './api'
 import type {
-  ContrastCategory, ContrastColourPair, ContrastFinding, ContrastReport, ContrastRunMeta, Me,
+  ContrastCategory, ContrastChange, ContrastChanges, ContrastColourPair, ContrastFinding, ContrastReport, ContrastRunMeta, Me,
 } from './types'
 import { DeleteRunButton, MetaCells } from './RunHead'
 import { literalColour } from './colour'
+import { describe, where, type ChangeKind } from './contrastChanges'
 
 /* XamlContrast 的一次稽核(合併伺服器)——給工程師與 PM 看的問題清單:
    哪個檔案第幾行、什麼元素、前景疊在什麼底上、深淺兩個主題各是幾比一、門檻是多少。
@@ -20,9 +21,11 @@ export default function ContrastRunDetail({ meta, me }: { meta: ContrastRunMeta;
   const [error, setError] = useState<string | null>(null)
   const [on, setOn] = useState<Set<ContrastCategory>>(new Set(['fail', 'warn']))
   const [unresolvedOpen, setUnresolvedOpen] = useState(false)
+  const [changes, setChanges] = useState<ContrastChanges | null>(null)
 
   useEffect(() => {
     fetchContrastReport(meta.id).then(setReport, e => setError(String(e)))
+    fetchContrastChanges(meta.id).then(setChanges, () => setChanges(null)) // 比較失敗不擋主畫面
   }, [meta.id])
 
   const rows = useMemo(() => {
@@ -60,6 +63,8 @@ export default function ContrastRunDetail({ meta, me }: { meta: ContrastRunMeta;
         <MetaCells meta={meta} />
         <DeleteRunButton meta={meta} me={me} />
       </div>
+
+      {changes && <ContrastChangesStrip changes={changes} toolVersion={c.toolVersion} />}
 
       {c.exitCode === 3 && (
         <div className="empty" style={{ padding: '0.8rem', marginBottom: '1rem', textAlign: 'left' }}>
@@ -130,6 +135,60 @@ export default function ContrastRunDetail({ meta, me }: { meta: ContrastRunMeta;
         </>
       )}
     </>
+  )
+}
+
+/* 「跟上次比」——同專案、同分支的前一筆 XamlContrast run(伺服器 ContrastCompare)。比法跟 XamlContrast 自己的
+   --baseline 一樣:一組配對 = 檔案|元素|前景|底色,不含行號(行號會隨編輯漂移);處數變多或最差比值變低 = 變差。
+   比 baseline 多一格「好轉」:處數變少或比值變好、但還低於 AA。第一筆就誠實說是第一筆;
+   兩筆的工具版本不同、或上一筆不可信時明講,不讓人把工具的變化讀成程式碼的變化。 */
+function ContrastChangesStrip({ changes, toolVersion }: { changes: ContrastChanges; toolVersion: string | null }) {
+  const [open, setOpen] = useState(false)
+
+  if (changes.prevRunId === null)
+    return <p className="changes-strip m dim">first XamlContrast run on this branch — nothing to compare against yet</p>
+
+  const groups: [ChangeKind, ContrastChange[], string][] = [
+    ['new', changes.regressions, 'chg-new'],
+    ['worsened', changes.worsened, 'chg-worse'],
+    ['fixed', changes.fixed, 'chg-fixed'],
+    ['improved', changes.improved, 'chg-fixed'],
+  ]
+  const total = groups.reduce((n, [, list]) => n + list.length, 0)
+  const notes: string[] = []
+  if (changes.prevToolVersion !== toolVersion)
+    notes.push(`The previous run used XamlContrast ${changes.prevToolVersion ?? '(unknown)'} and this one `
+      + `${toolVersion ?? '(unknown)'} — some of these changes may come from the tool, not from your XAML.`)
+  if (changes.prevExitCode === 3)
+    notes.push('The previous run was marked untrustworthy (exit 3), so it is a shaky baseline.')
+
+  return (
+    <div className="changes-strip">
+      <button className="changes-summary m" onClick={() => setOpen(!open)}
+        aria-expanded={open} disabled={total === 0}>
+        vs previous run ({changes.prevCreatedAt!.replace('T', ' ').slice(5, 16)}):{' '}
+        <span className={changes.regressions.length ? 'chg-new' : 'dim'}>🔴 new {changes.regressions.length}</span> ·{' '}
+        <span className={changes.worsened.length ? 'chg-worse' : 'dim'}>🟠 worsened {changes.worsened.length}</span> ·{' '}
+        <span className={changes.fixed.length ? 'chg-fixed' : 'dim'}>🟢 fixed {changes.fixed.length}</span> ·{' '}
+        <span className={changes.improved.length ? 'chg-fixed' : 'dim'}>improved {changes.improved.length}</span> ·{' '}
+        <span className="dim">unchanged {changes.unchanged}</span>
+        {total > 0 && <span className="dim"> {open ? '▾' : '▸'}</span>}
+      </button>
+      {notes.map(n => <p key={n} className="changes-note dim">{n}</p>)}
+      {open && (
+        <table className="diffs changes-table"><tbody>
+          {groups.flatMap(([kind, list, cls]) => list.map((ch, i) => (
+            <tr key={`${kind}${i}`}>
+              <td className={`m ${cls}`}>{kind}</td>
+              <td className="loc">{where(ch, kind)}</td>
+              <td className="m">{ch.element}</td>
+              <td><Colour value={ch.fg} /> <span className="dim">on</span> <Colour value={ch.bg} /></td>
+              <td className="m">{describe(ch, kind)}</td>
+            </tr>
+          )))}
+        </tbody></table>
+      )}
+    </div>
   )
 }
 

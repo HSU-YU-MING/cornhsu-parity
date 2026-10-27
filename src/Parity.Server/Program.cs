@@ -460,11 +460,14 @@ app.MapGet("/api/contrast/trend", async (
     Guid project, ClaimsPrincipal principal, ServerDbContext db, [FromQuery] string? branch) =>
     Results.Json(await Queries.ContrastTrendAsync(db, UserId(principal), project, branch))).RequireAuthorization();
 
-// 「跟上次比變了什麼」——同專案、同分支的前一筆(引擎 BaselineComparer 同語意)
+// 「跟上次比變了什麼」——同專案、同分支、同工具的前一筆。parity 用引擎的 BaselineComparer,
+// XamlContrast 用它自己 --baseline 的比法(ContrastCompare);兩種回應的形狀不同,前端依 run 的 tool 讀
 app.MapGet("/api/runs/{id:guid}/changes", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>
 {
-    var changes = await RunCompare.ChangesAsync(db, UserId(principal), id);
-    return changes is null ? Results.NotFound() : Results.Json(changes);
+    var userId = UserId(principal);
+    if (await RunCompare.ChangesAsync(db, userId, id) is { } changes) return Results.Json(changes);
+    if (await ContrastCompare.ChangesAsync(db, userId, id) is { } contrast) return Results.Json(contrast);
+    return Results.NotFound();
 }).RequireAuthorization();
 
 app.MapGet("/api/runs/{id:guid}", async (Guid id, ClaimsPrincipal principal, ServerDbContext db) =>

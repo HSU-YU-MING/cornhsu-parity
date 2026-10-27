@@ -25,7 +25,7 @@ public sealed record ChangedDiff(
 public static class RunCompare
 {
     /// <summary>
-    /// run 不存在、非成員、或不是 parity 的 run(XamlContrast 的逐筆比對還沒做)→ null;
+    /// run 不存在、非成員、或不是 parity 的 run(XamlContrast 的在 <see cref="ContrastCompare"/>)→ null;
     /// 是第一筆 → PrevRunId 為 null 的空比對。
     /// </summary>
     public static async Task<RunChanges?> ChangesAsync(

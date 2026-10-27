@@ -89,6 +89,10 @@ public static class ContrastIngest
         return run;
     }
 
+    /// <summary>存著的原文 → 逐筆(「跟上次比」用,<see cref="ContrastCompare"/>)。原文收件時已照同一個鏡像驗過形狀。</summary>
+    internal static List<ContrastFinding> Findings(byte[] rawReportGzip)
+        => JsonSerializer.Deserialize<ContrastReport>(ReportBlob.Decompress(rawReportGzip), Wire)!.Findings;
+
     /// <summary>
     /// 有 summary 物件與 findings 陣列、沒有 parity 的 reports 陣列——只用來在錯誤訊息裡指路
     /// (沒帶 X-Parity-Tool 就把 XamlContrast 報告送上來),不拿來決定怎麼解析。
@@ -171,7 +175,7 @@ public static class ContrastIngest
         public required int Decorative { get; init; }
     }
 
-    /// <summary>逐筆只驗形狀(詳情頁從原文讀),不落庫。</summary>
+    /// <summary>逐筆只驗形狀(詳情頁從原文讀),不落庫;「跟上次比」從原文重讀。</summary>
     internal sealed class ContrastFinding
     {
         public required string File { get; init; }
