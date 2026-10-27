@@ -22,7 +22,7 @@ internal static class UsageStats
     /// **預設打開,含 CI**(2026-10-23 維護者決定;PROTOCOL.md §3)。倫理審查若要求主動同意,改這一個值:
     /// false = 預設不送,設定檔寫 <c>"stats": { "share": true }</c> 或環境變數設 1/true/yes/on 才送。
     /// 協定在那種情況還要求「第一次在終端機詢問」,那段目前沒有實作;Action 的 <c>share-stats</c> 預設值也要一起決定。
-    /// ⚠ 2.1.0 發佈前,維護者要先拿到指導教授(或倫理審查)對「預設打開」的確認(CLAUDE.md)。
+    /// 研究倫理對「預設打開」的確認已取得(2026-10-28,維護者確認;CLAUDE.md)。
     /// </summary>
     internal const bool SendByDefault = true;
 
