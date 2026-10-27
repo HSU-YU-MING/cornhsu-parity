@@ -140,7 +140,7 @@ git tag v2 v2.0.0 && git push origin v2      # @v2 的使用者從這裡開始�
       (例如 `{}`)回 400。**不要拿合法的資料去試正式站**——那一筆會被當成真實使用存進研究資料。收集站本身收、拒、上限的
       行為,在 stats-collector 用 `npm run dev` + `npm run smoke` 對本機模擬驗。工具先發、收集站還沒上線的話,每個使用者
       每次 check 都白等最多 3 秒,資料全丟。部署收集站是對外的動作,由維護者自己做。
-- [ ] **`stats@cornhsu.com` 收得到信**:說明頁上寫的刪除聯絡地址(Cloudflare Email Routing 的自訂地址,轉寄到維護者的信箱)。
+- [x] **`stats@cornhsu.com` 收得到信**(2026-10-28 測過:寄一封測試信,Cloudflare 的活動記錄是「已轉寄」):說明頁上寫的刪除聯絡地址(Cloudflare Email Routing 的自訂地址,轉寄到維護者的信箱)。
       寄一封測試信確認轉寄到了——公開頁面上的地址收不到信,有專案 ID 的人就沒辦法要求刪除。
 
 接著照「每次發布」:CHANGELOG 的 `## 未發佈` 改成 `## 2.1.0 — <日期>`(**刪掉最上面那段給維護者的 HTML 註解**,
@@ -168,4 +168,5 @@ rm -rf ./artifacts    # 用完整個刪掉(.gitignore 已排除 artifacts/)
 
 npm 通路沒有本機乾跑的指令(要各 RID `dotnet publish` 再跑 `npm/prepare.mjs`),發佈前靠 release.yml 的 npm job。
 
-> NuGet 套件約 237 MB（`PlaywrightPlatform=all` 收齊五平台 driver,近 nuget.org 250 MB 上限);npm 平台子套件各約 129 MB（已刪掉 Playwright 自帶 Node、改用使用者現成 Node）。兩者第一次都仍需 `parity install-browser` 下載 Chromium 本體。
+> NuGet 套件約 243 MB（2.1.0 實測;2.0.0 約 237 MB。`PlaywrightPlatform=all` 收齊五平台 driver,**離 nuget.org 250 MB 上限只剩幾 MB**,
+> 加相依或 Playwright 升版前先 pack 量大小;2.1.0 在 NuGet 的驗證也比小套件慢上半小時以上);npm 平台子套件各約 129 MB（已刪掉 Playwright 自帶 Node、改用使用者現成 Node）。兩者第一次都仍需 `parity install-browser` 下載 Chromium 本體。

@@ -94,8 +94,8 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
     不是開發版;`RepoInvariantsTests` 守著)。要測送出的測試用 `EnvScope.StatsVariables` 清環境、`CORNHSU_STATS_URL`
     指到本機假站(`StatsCollectorStub`)。本機跑 `samples/demo` 是 `0.0.0-dev`,不會送。
   - job summary 那一行由 CLI 寫,只在 action 設了 `PARITY_STATS_JOB_SUMMARY=true` 時才寫(內部用,不是使用者的開關)。
-- **2.1.0 發佈前的硬條件**:研究倫理對「預設打開」的確認**已取得(2026-10-28,維護者確認)**;收集站
-  stats.cornhsu.com 也已上線(2026-10-28);推 tag 前確認說明頁上的 stats@cornhsu.com 收得到信(RELEASING.md「2.1.0」;背景:`D:\擴充功能\nuget\稽核-2026-10-22\統計功能規劃.md`)。
+- **2.1.0 已發佈(2026-10-28)**:發版前研究倫理對「預設打開」的確認已取得、收集站
+  stats.cornhsu.com 已上線、說明頁上的 stats@cornhsu.com 收得到信(RELEASING.md「2.1.0」;背景:`D:\擴充功能\nuget\稽核-2026-10-22\統計功能規劃.md`)。
 - `release.yml` 的觸發**刻意只認三段式 `v[0-9]*.[0-9]*.[0-9]*`，不是 `v*`**——`v1` 也符合
   `v*`，每次前移都會誤觸發一次注定失敗的 release(1.0.0／1.1.0 各踩一次，run #27/#29)。
   **不要「順手」改回 `v*`。**
