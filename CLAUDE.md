@@ -255,8 +255,8 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
   package --vulnerable --include-transitive`;2026-08-26 那次是 0 個,這五個 advisory 是 2026-10-07 才公布的)。
   `SQLitePCLRaw` 手動 pin 到 3.0.5 蓋掉 EF Sqlite 傳遞進來的 NU1903 版本,dependabot 每月盯著。
   - **ImageSharp:2.0.0 維持 3.1.12,不升 4.x**(使用者 2026-10-23 決定:加 `SkipMetadata` 關掉 ICC 路徑,
-    升 4.x 之後再評估)。五個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w;中:wmxv-xphr-5c9g、
-    gwg2-r3hj-4w44)的修補版都只有 **4.1.2**,3.1 線沒有修補版(nuget.org 上最後一版就是 3.1.12);
+    升 4.x 之後再評估)。六個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w、v76p-62qx-wwq2(2026-10-27 新增);
+    中:wmxv-xphr-5c9g、gwg2-r3hj-4w44)的修補版都只有 **4.1.2**,3.1 線沒有修補版(nuget.org 上最後一版就是 3.1.12);
     **4.x 建置時需要 Six Labors 的授權金鑰**(上面「地雷 → 其他」那條;#19 與 dependabot PR #54 都因此全紅)。
     PR #54 與 `dependabot.yml` 都先不動,等升 4.x 的決定。
   - **逐條暴露面**(Parity 只在 `designImage` 模式解碼一張圖,`ImageDesignSource.LoadPixelsAsync`;
@@ -267,6 +267,9 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
       CCITT 壓縮的 TIFF。Parity 不編任何圖 → **碰不到**
     - wmxv-xphr-5c9g(中,BigTIFF 的 IFD 讓解碼卡住):要解碼 TIFF。2.0.0 起只註冊 PNG/JPEG 解碼器,副檔名
       是 .png 的 TIFF 也擋得住(判格式看內容)→ **碰不到**
+    - v76p-62qx-wwq2(高,分塊的 fax TIFF 解碼時寫出 tile 緩衝區;2026-10-27 公布,2.1.0 發版後 dependabot 才報):
+      要解碼 TIFF。同上,`ImageDesignSource` 只註冊 PNG/JPEG 解碼器(`new Configuration(new PngConfigurationModule(),
+      new JpegConfigurationModule())`)→ **碰不到**
     - gwg2-r3hj-4w44(中,ICC CLUT 依未驗證的尺寸配置記憶體):PNG(iCCP)與 JPEG(APP2)都能內嵌 ICC。
       2026-10-23 照 advisory 的形狀手刻一份 mpet／clut 截斷的 ICC 實測:3.1.12 **解碼本身不會走到**——解碼只
       解析 128 位元組的檔頭,CLUT 要到讀 `IccProfile.Entries` 才配置(實測 64 MB),advisory 對 1.x～3.x 也是
