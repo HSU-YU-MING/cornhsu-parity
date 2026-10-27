@@ -208,6 +208,34 @@ export interface ContrastTrendPoint {
   commitSha: string | null
 }
 
+/** XamlContrast 的「跟上次比」(伺服器 ContrastCompare)。一組配對 = 檔案|元素|前景|底色,不含行號。
+    不帶 prev 的是這一次;不存在的那一側是 null / 0。lines:這一次的行號(修好的是上一次的),最多 20 個 */
+export interface ContrastChange {
+  file: string
+  element: string
+  fg: string
+  bg: string
+  category: 'fail' | 'warn' | null
+  prevCategory: 'fail' | 'warn' | null
+  count: number
+  prevCount: number
+  worst: number | null
+  prevWorst: number | null
+  lines: number[]
+}
+
+export interface ContrastChanges {
+  prevRunId: string | null
+  prevCreatedAt: string | null
+  prevToolVersion: string | null
+  prevExitCode: number | null
+  regressions: ContrastChange[]
+  worsened: ContrastChange[]
+  improved: ContrastChange[]
+  fixed: ContrastChange[]
+  unchanged: number
+}
+
 // M4:總覽卡與趨勢點
 export interface OverviewCard {
   projectId: string

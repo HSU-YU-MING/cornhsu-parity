@@ -295,6 +295,7 @@ table.findings .below { color: var(--sev-critical); font-weight: 700; }
 .changes-table { background: var(--card); border: 1px solid var(--line); border-top: 0;
   padding: 0.3rem; width: 100%; }
 .changes-table td { padding: 0.25rem 0.6rem; }
+.changes-note { font-size: 0.78rem; margin: 0.3rem 0 0; }
 
 .figma-link { font-size: 0.72rem; margin-left: 0.5rem; color: var(--steel);
   text-decoration: none; font-weight: 400; }
