@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **856 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **857 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -295,6 +295,8 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 送上來,並帶 `X-Parity-Tool: xamlcontrast` 標頭(`parity push` 不送這個標頭,伺服器當成 `parity`)。同一個專案
 可以同時有兩種工具的 run。XamlContrast 的 run 有自己的總覽卡(每個專案一張:低於 AA 的 fail · warn、覆蓋率)、
 fail/warn 趨勢,與問題清單(檔案與行號、元素、XAML 裡寫的前景與底色、深淺兩個主題各自的比值、門檻)。
+每一筆 XamlContrast 的 run 也看得到「跟同分支上一筆 XamlContrast run 比」的變化——新增、變差、修好、好轉的配對,
+比法跟 XamlContrast 自己的 `--baseline` 一樣(一組配對 = 檔案、元素、前景、底色,不含行號;處數變多或最差比值變低就是變差)。
 跟 `parity push` 一樣,XamlContrast 這一側在儀表板公開部署之前屬**實驗性**。
 
 ### 自己架

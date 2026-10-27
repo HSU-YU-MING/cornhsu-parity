@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **856**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **857**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -345,7 +345,10 @@ its `--json` option wrote, through the same `POST /api/runs`, marked with an `X-
 header (`parity push` sends no such header, which the server reads as `parity`). A project can hold runs
 from both tools. XamlContrast runs get their own overview card per project (pairs below AA, fail · warn,
 coverage), a fail/warn trend, and an issue list (file and line, element, foreground and background as
-written in the XAML, the ratio in each theme, the threshold). Like `parity push`, the XamlContrast side is
+written in the XAML, the ratio in each theme, the threshold). Each XamlContrast run also shows what changed
+since the previous XamlContrast run on the same branch — new, worse, fixed and improved pairs — compared the
+way XamlContrast's own `--baseline` does (a pair is file, element, foreground and background, without the line
+number; more places or a lower worst ratio is worse). Like `parity push`, the XamlContrast side is
 **experimental** until the dashboard is publicly deployed.
 
 ### Hosting it yourself

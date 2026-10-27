@@ -81,9 +81,9 @@
   GitHub 託管的 runner 每次都是乾淨的 VM,不受影響。要補的話:用 `realpath` 解出實際路徑,確認落在
   `$GITHUB_WORKSPACE` 底下才複製(macOS 的 realpath 沒有 `-e`,要注意可攜性)。
 - **合併伺服器的 XamlContrast 那一半還缺的**(2026-10-26):
-  - **「跟上次比」只有 parity 的 run 有**——XamlContrast 的 run 打 `/api/runs/{id}/changes` 回 404。要做的話身分照
-    XamlContrast 的 baseline 鍵(`file|element|fg|bg`,不含行號),但伺服器沒有引用它的組件,鍵的寫法變了
-    (XamlContrast 的 `keyVersion` 遞增)要兩邊一起改,所以等有人真的要再做。
+  - ~~「跟上次比」只有 parity 的 run 有~~ **已補(2026-10-28,`ContrastCompare`)**。留下的耦合:鍵照 XamlContrast 的
+    baseline 鍵(`file|element|fg|bg`)手刻,伺服器沒有引用它的組件——它的 `keyVersion` 遞增時這裡要一起改。
+    報告裡沒有 keyVersion,所以畫面只能在兩筆的 toolVersion 不同時提醒「變化可能來自工具」。
   - **色塊只畫原文就是色碼或具名色的值**:`{DynamicResource Fg}` 這類資源鍵,報告裡沒有解析後的色值,儀表板不猜。
     XamlContrast 1.x 若在 JSON 補上解析後的色值(只增欄位,minor),這裡再接上。
   - XamlContrast 報告的 `file` 是相對**稽核根目錄**、不是 repo 根目錄,所以問題清單不連回 GitHub 的檔案。

@@ -216,6 +216,9 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
   `docs/report.schema.json`(schemaVersion 6)手寫的最小鏡像,**不引用 XamlContrast 的組件**(它沒發佈成函式庫,
   而且伺服器的參考圖只准到 `Parity.Report`);契約的對照組是 `tests/Parity.Tests/Golden/xamlcontrast.v6.json`
   (XamlContrast 對自己的 demo 實跑的輸出)——那邊的 JSON 加欄位不影響,改名或升 schemaVersion 要回來改。
+  XamlContrast 的「跟上次比」在 `ContrastCompare`:比法照它的 `Baseline.Compare`(鍵 `file|element|fg|bg`、0.01 的容差),
+  同樣是手刻的鏡像——**XamlContrast 遞增 `keyVersion`(改了產生鍵的方式)時這裡要一起看**。`/changes` 依 run 的工具
+  回兩種形狀(parity 的 `RunChanges`、XamlContrast 的 `ContrastChanges`),前端照 run 的 tool 讀。
 - **部署相關的設定鍵**(`ServerSettings`):`Parity:PublicUrl`、`Parity:KeysDirectory`;容器映像預設
   `PARITY_SERVER_DB=/data/parity-server.db`、`Parity__KeysDirectory=/data/keys`。本機沒有 Docker,`Dockerfile`
   只在 CI 的 `docker-image` job 真的被建過——改 Dockerfile 或伺服器的專案結構時,推上去看那個 job。
