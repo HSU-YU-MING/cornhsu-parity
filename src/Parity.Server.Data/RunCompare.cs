@@ -24,20 +24,25 @@ public sealed record ChangedDiff(
 /// </summary>
 public static class RunCompare
 {
-    /// <summary>run 不存在或非成員 → null;是第一筆 → PrevRunId 為 null 的空比對。</summary>
+    /// <summary>
+    /// run 不存在、非成員、或不是 parity 的 run(XamlContrast 的在 <see cref="ContrastCompare"/>)→ null;
+    /// 是第一筆 → PrevRunId 為 null 的空比對。
+    /// </summary>
     public static async Task<RunChanges?> ChangesAsync(
         ServerDbContext db, Guid userId, Guid runId, CancellationToken ct = default)
     {
         var visible = Membership.ProjectIdsFor(db, userId);
         var run = await db.Runs
-            .Where(r => r.Id == runId && visible.Contains(r.ProjectId))
+            .Where(r => r.Id == runId && visible.Contains(r.ProjectId) && r.Tool == RunTool.Parity)
             .Select(r => new { r.Id, r.ProjectId, r.Branch, r.CreatedAt, r.RawReportGzip })
             .FirstOrDefaultAsync(ct);
         if (run is null) return null;
 
+        // 「上一筆」只算同一個工具的:同分支上夾著一筆 XamlContrast 的 run,拿它的原文當 parity 報告解,
+        // reports 是 null,比對直接炸
         var prev = await db.Runs
             .Where(r => r.ProjectId == run.ProjectId && r.Branch == run.Branch
-                && r.CreatedAt < run.CreatedAt)
+                && r.Tool == RunTool.Parity && r.CreatedAt < run.CreatedAt)
             .OrderByDescending(r => r.CreatedAt)
             .Select(r => new { r.Id, r.CreatedAt, r.RawReportGzip })
             .FirstOrDefaultAsync(ct);

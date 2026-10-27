@@ -24,8 +24,14 @@
     (`Parity.Server.csproj` 永遠不引用 Playwright,這是結構性保證,不是自律),
     **沒有 SSRF 面**(沒有人交給它 URL 去抓)。剩下的是一般 Web 應用的維運成本。
   現況:內部 M1–M4.6 完成(收報告 / 落差詳情藍圖 / 總覽與趨勢 / 帳號角色邀請 /
-  工作流結締組織 / 防禦層),內部 M5(真的對外部署:TLS、網域、託管資料庫,
-  屆時 SQLite 要換供應商、migrations 重生)未動。M5 的待辦另有:**`parity push` 與伺服器協定正式納入凍結**
+  工作流結締組織 / 防禦層)。**2026-10-26 合併伺服器**:同一個 `POST /api/runs` 依 `X-Parity-Tool` 也收
+  XamlContrast 的報告(統計功能規劃「一台、兩種報告」),run 帶 `Tool` 欄位,XamlContrast 有自己的總覽卡、
+  fail/warn 趨勢與問題清單。**內部 M5 的部署前置也已完成**:`Dockerfile`(CI 的 `docker-image` job 實際建起來打
+  `/healthz`)、`Parity:PublicUrl`(邀請連結)、`Parity:KeysDirectory`(登入金鑰持久化)、管理指令 `backup`。
+  **資料庫維持 SQLite、單一實例**(2026-10-26 決定):單一實例剛好讓「登入序列化只在單一行程內」那條限制成立,
+  備份就是一個檔,migrations 不必重生;要多實例時再換供應商。還沒做的是**真的上線**:選主機、網域(cornhsu.com
+  子網域)、TLS、uptime 監測(打 `/healthz`)——這些是對外、會產生月費的動作,要維護者自己決定。
+  M5 的待辦另有:**`parity push` 與伺服器協定正式納入凍結**
   (2.0.0 起標為實驗性,上線那一版在 CHANGELOG 寫明、拿掉 `--help` 的 `(experimental)`);**反向代理後面一定要設
   `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`**(零改碼;只在信任的代理後面開)——不設的話伺服器只看到代理的位址,
   任何一個人每分鐘打 20 次就讓所有人登不進去(驗證者實測);多實例部署時登入序列化要改成 db 層(見已知盲點的登入那一條)。
@@ -74,6 +80,13 @@
   self-hosted runner 上,理論上讀得到同一台機器上別的 repo 留下的報告**(報告含站點結構與截圖座標)。
   GitHub 託管的 runner 每次都是乾淨的 VM,不受影響。要補的話:用 `realpath` 解出實際路徑,確認落在
   `$GITHUB_WORKSPACE` 底下才複製(macOS 的 realpath 沒有 `-e`,要注意可攜性)。
+- **合併伺服器的 XamlContrast 那一半還缺的**(2026-10-26):
+  - ~~「跟上次比」只有 parity 的 run 有~~ **已補(2026-10-28,`ContrastCompare`)**。留下的耦合:鍵照 XamlContrast 的
+    baseline 鍵(`file|element|fg|bg`)手刻,伺服器沒有引用它的組件——它的 `keyVersion` 遞增時這裡要一起改。
+    報告裡沒有 keyVersion,所以畫面只能在兩筆的 toolVersion 不同時提醒「變化可能來自工具」。
+  - **色塊只畫原文就是色碼或具名色的值**:`{DynamicResource Fg}` 這類資源鍵,報告裡沒有解析後的色值,儀表板不猜。
+    XamlContrast 1.x 若在 JSON 補上解析後的色值(只增欄位,minor),這裡再接上。
+  - XamlContrast 報告的 `file` 是相對**稽核根目錄**、不是 repo 根目錄,所以問題清單不連回 GitHub 的檔案。
 - **登入端點的剩餘限制**(2026-10-22,#21 審查後):存在與不存在的 email 已共用 `LoginThrottles` 表、依 email
   序列化、IP/email 兩層額度(實測見 CHANGELOG 2.0.0)。還剩:時序差沒有歸零(同一個 email 反覆失敗時不存在的 email 慢 0–1.5 ms,原因未定位;攻擊者照「新帳號試 5 次」量分不出來);
   **序列化只在單一行程內**(M5 若跑多個實例,要改成 db 層的鎖或交易);**反向代理後面不設

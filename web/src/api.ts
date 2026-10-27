@@ -1,6 +1,6 @@
 import type {
-  AuditEntry, BranchInfo, InvitePreview, Me, MembersResponse, OverviewCard, ReportDocument,
-  RunChanges, RunListItem, RunMeta, TrendPoint,
+  AuditEntry, BranchInfo, ContrastCard, ContrastChanges, ContrastReport, ContrastTrendPoint, InvitePreview, Me,
+  MembersResponse, OverviewCard, ReportDocument, RunChanges, RunListItem, RunMeta, TrendPoint,
 } from './types'
 import { readDirection } from './direction'
 
@@ -43,6 +43,16 @@ export const fetchTrend = (projectId: string, route: string, branch: string | nu
   get<TrendPoint[]>(`/api/trend?project=${projectId}&route=${encodeURIComponent(route)}`
     + (branch === null ? '' : `&branch=${encodeURIComponent(branch)}`))
 export const fetchChanges = (id: string) => get<RunChanges>(`/api/runs/${id}/changes`)
+
+// XamlContrast(合併伺服器):原文是 `xamlcontrast --json` 的輸出,沒有 direction 這回事
+export const fetchContrastReport = (id: string) => get<ContrastReport>(`/api/runs/${id}/report`)
+// 同一個 /changes,xamlcontrast 的 run 回 ContrastChanges(形狀與 parity 的 RunChanges 不同)
+export const fetchContrastChanges = (id: string) => get<ContrastChanges>(`/api/runs/${id}/changes`)
+export const fetchContrastOverview = (branch: string | null) =>
+  get<ContrastCard[]>(`/api/contrast/overview${branch === null ? '' : `?branch=${encodeURIComponent(branch)}`}`)
+export const fetchContrastTrend = (projectId: string, branch: string | null) =>
+  get<ContrastTrendPoint[]>(`/api/contrast/trend?project=${projectId}`
+    + (branch === null ? '' : `&branch=${encodeURIComponent(branch)}`))
 export const deleteRun = (id: string) => del(`/api/runs/${id}`)
 export const fetchAudit = (projectId: string) => get<AuditEntry[]>(`/api/projects/${projectId}/audit`)
 

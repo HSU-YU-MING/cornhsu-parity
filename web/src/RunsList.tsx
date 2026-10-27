@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { fetchBranches, fetchOverview, fetchRuns, fetchTrend } from './api'
-import type { BranchInfo, OverviewCard, RunListItem, TrendPoint } from './types'
+import { fetchBranches, fetchContrastOverview, fetchContrastTrend, fetchOverview, fetchRuns, fetchTrend } from './api'
+import type { BranchInfo, ContrastCard, ContrastTrendPoint, OverviewCard, RunListItem, TrendPoint } from './types'
 import { navigate } from './App'
 import TrendChart from './TrendChart'
+import ContrastTrendChart from './ContrastTrendChart'
 
 /* 分支預設值:main/master 優先,否則取最近有 push 的那條——
    PR 分支的 push 不該污染 main 的總覽與趨勢(M4.5 必補 #1)。 */
@@ -16,6 +17,7 @@ function defaultBranch(branches: BranchInfo[]): string | null {
 export default function RunsList() {
   const [runs, setRuns] = useState<RunListItem[] | null>(null)
   const [cards, setCards] = useState<OverviewCard[] | null>(null)
+  const [contrastCards, setContrastCards] = useState<ContrastCard[] | null>(null)
   const [branches, setBranches] = useState<BranchInfo[]>([])
   const [branch, setBranch] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -27,12 +29,14 @@ export default function RunsList() {
       const def = defaultBranch(bs)
       setBranch(def)
       fetchOverview(def).then(setCards, () => setCards([]))
-    }, () => setCards([]))
+      fetchContrastOverview(def).then(setContrastCards, () => setContrastCards([]))
+    }, () => { setCards([]); setContrastCards([]) })
   }, [])
 
   const pickBranch = (b: string) => {
-    setBranch(b); setCards(null)
+    setBranch(b); setCards(null); setContrastCards(null)
     fetchOverview(b).then(setCards, () => setCards([]))
+    fetchContrastOverview(b).then(setContrastCards, () => setContrastCards([]))
   }
 
   if (error) return <div className="error">Could not load runs ({error}). Is the server running?</div>
@@ -42,6 +46,7 @@ export default function RunsList() {
       <div className="empty">
         <p>No runs yet.</p>
         <p>Push one from CI or your machine: <code>parity check</code> then <code>parity push --server …</code></p>
+        <p>For XAML apps: <code>xamlcontrast &lt;root&gt; --json xc.json</code> then <code>xamlcontrast --push xc.json --server …</code></p>
       </div>
     )
 
@@ -58,9 +63,10 @@ export default function RunsList() {
           ))}
         </div>
       )}
-      {cards === null && <div className="loading">Loading…</div>}
+      {(cards === null || contrastCards === null) && <div className="loading">Loading…</div>}
       {cards && cards.length > 0 && <Overview cards={cards} branch={branch} />}
-      {cards && cards.length === 0 && branch !== null && (
+      {contrastCards && contrastCards.length > 0 && <ContrastOverview cards={contrastCards} branch={branch} />}
+      {cards && contrastCards && cards.length === 0 && contrastCards.length === 0 && branch !== null && (
         <div className="empty">No runs on this branch yet.</div>
       )}
       <h2 className="tag" style={{ margin: '1.4rem 0 0.5rem' }}>received runs — all branches</h2>
@@ -123,6 +129,62 @@ function Overview({ cards, branch }: { cards: OverviewCard[]; branch: string | n
   )
 }
 
+/* XamlContrast 的總覽(合併伺服器):每個專案一張——稽核的單位是整個 repo,不是頁面。
+   主數字是低於 AA 的筆數(fail · warn);方向看 fail+warn 比上次多還是少——問題變少是變好,
+   所以箭頭的顏色照「變好/變差」(▼ 綠、▲ 紅),跟分數卡的上下相反。點卡片展開趨勢。 */
+function ContrastOverview({ cards, branch }: { cards: ContrastCard[]; branch: string | null }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const [trend, setTrend] = useState<ContrastTrendPoint[] | null>(null)
+
+  const toggle = (c: ContrastCard) => {
+    if (open === c.projectId) { setOpen(null); return }
+    setOpen(c.projectId); setTrend(null)
+    fetchContrastTrend(c.projectId, branch).then(setTrend, () => setTrend([]))
+  }
+
+  const openCard = cards.find(c => c.projectId === open)
+  return (
+    <>
+      <h2 className="tag" style={{ margin: '1.4rem 0 0.5rem' }}>xaml apps — contrast below AA (XamlContrast)</h2>
+      <div className="cards">
+        {cards.map(c => {
+          const now = c.fail + c.warn
+          const prev = c.prevFail === null || c.prevWarn === null ? null : c.prevFail + c.prevWarn
+          const delta = prev === null ? null : now - prev
+          return (
+            <button key={c.projectId} className={`card ${open === c.projectId ? 'on' : ''}`} onClick={() => toggle(c)}>
+              <span className="card-route">{c.project}</span>
+              <span className="card-score counts">
+                <span className={c.fail > 0 ? 'n-fail' : 'n-zero'}>{c.fail}</span>
+                <span className="dim"> fail · </span>{c.warn}<span className="dim"> warn</span>
+                {delta !== null && (
+                  <span className={`dir ${delta < 0 ? 'up' : delta > 0 ? 'down' : ''}`}
+                    title={delta < 0 ? 'fewer issues than last run' : delta > 0 ? 'more issues than last run' : 'same as last run'}>
+                    {delta > 0 ? '▲' : delta < 0 ? '▼' : '→'}
+                    {delta !== 0 && <span className="m"> {Math.abs(delta)}</span>}
+                  </span>
+                )}
+              </span>
+              <span className="card-sub">
+                <span className={`gate ${c.gateFailed ? 'fail' : 'pass'}`}>{c.gateFailed ? 'FAIL' : 'PASS'}</span>
+                <span className="m dim"> · {c.coverage}% resolved · {c.runCount} run{c.runCount > 1 ? 's' : ''} · {c.lastAt.slice(5, 16).replace('T', ' ')}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {openCard && (
+        <div className="pane trend-pane">
+          <div className="pane-h">
+            <span className="tag">contrast over time — {openCard.project}</span>
+          </div>
+          {trend === null ? <div className="loading">Loading…</div> : <ContrastTrendChart points={trend} />}
+        </div>
+      )}
+    </>
+  )
+}
+
 function RunsTable({ runs }: { runs: RunListItem[] }) {
   return (
     <table className="runs">
@@ -130,7 +192,8 @@ function RunsTable({ runs }: { runs: RunListItem[] }) {
         <tr>
           <th className="tag">received (utc)</th>
           <th className="tag">project</th>
-          <th className="tag">score</th>
+          <th className="tag">tool</th>
+          <th className="tag">result</th>
           <th className="tag">gate</th>
           <th className="tag">pages</th>
           <th className="tag">branch</th>
@@ -142,9 +205,14 @@ function RunsTable({ runs }: { runs: RunListItem[] }) {
           <tr key={r.id} onClick={() => navigate(`/runs/${r.id}`)}>
             <td className="m">{r.createdAt.replace('T', ' ').slice(0, 19)}</td>
             <td>{r.project}</td>
-            <td className="m">{r.score}/100</td>
+            <td><span className="tool-badge">{r.tool}</span></td>
+            <td className="m">
+              {r.contrast
+                ? <span className="counts"><span className={r.contrast.fail > 0 ? 'n-fail' : 'n-zero'}>{r.contrast.fail}</span> fail · {r.contrast.warn} warn</span>
+                : r.score === null ? '—' : `${r.score}/100`}
+            </td>
             <td><span className={`gate ${r.gateFailed ? 'fail' : 'pass'}`}>{r.gateFailed ? 'FAIL' : 'PASS'}</span></td>
-            <td className="m">{r.pages}</td>
+            <td className="m">{r.contrast ? '—' : r.pages}</td>
             <td className="m">{r.branch ?? '—'}</td>
             <td className="m">
               {r.commitSha

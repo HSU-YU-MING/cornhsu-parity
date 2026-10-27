@@ -69,10 +69,15 @@ export interface ReportDocument {
 }
 
 // /api/runs 的列表項與 /api/runs/{id} 的中繼資料
+/** 合併伺服器:哪個工具的 run。字串比較,不窄化——伺服器多收一種工具時舊前端不該壞 */
+export type Tool = 'parity' | 'xamlcontrast' | (string & {})
+
 export interface RunMeta {
   id: string
+  tool: Tool
   createdAt: string
-  score: number
+  /** 只有 parity 的 run 有分數;xamlcontrast 是 null */
+  score: number | null
   gateFailed: boolean
   commitSha: string | null
   branch: string | null
@@ -116,6 +121,119 @@ export interface RunChanges {
 
 export interface RunListItem extends RunMeta {
   pages: number
+  /** xamlcontrast 的 run 才有;parity 是 null */
+  contrast: { fail: number; warn: number; unresolved: number; coverage: number } | null
+}
+
+// ── XamlContrast(合併伺服器)──────────────────────────────────────
+// /api/runs/{id} 在 xamlcontrast 的 run 上帶的摘要(伺服器 ContrastResult 的欄位)
+export interface ContrastSummary {
+  toolVersion: string | null
+  exitCode: number | null
+  files: number
+  pairs: number
+  coverage: number
+  unresolved: number
+  fail: number
+  warn: number
+  ok: number
+  decorative: number
+  suppressed: number
+  parseErrors: number
+  paletteMode: string // 開放集合
+  paletteDegraded: boolean
+  failOn: string      // 開放集合
+}
+
+export interface ContrastRunMeta extends RunMeta {
+  contrast: ContrastSummary
+}
+
+// `xamlcontrast --json` 原文(schemaVersion 6,XamlContrast 1.0 凍結)的子集——只列畫面用到的欄位。
+// category / symmetry 是封閉集;reason / theme 是開放集合 → string
+export type ContrastCategory = 'ok' | 'warn' | 'fail' | 'decorative'
+
+export interface ContrastFinding {
+  file: string
+  line: number
+  element: string
+  fg: string
+  bg: string
+  ratioDark: number | null
+  ratioLight: number | null
+  threshold: number
+  category: ContrastCategory
+  symmetry: 'both-low' | 'dark-fails' | 'light-fails' | 'single-theme' | null
+  isLargeText: boolean
+  theme: string | null
+  baseline: 'known' | 'new' | 'worsened' | null
+}
+
+export interface ContrastUnresolvedSite {
+  file: string
+  line: number
+  reason: string
+  value: string
+}
+
+export interface ContrastReport {
+  schemaVersion: number
+  findings: ContrastFinding[]
+  unresolvedSites: ContrastUnresolvedSite[]
+  summary: { paletteDetail: string; unresolvedBy: Record<string, number> }
+}
+
+export interface ContrastCard {
+  projectId: string
+  project: string
+  fail: number
+  warn: number
+  unresolved: number
+  coverage: number
+  gateFailed: boolean
+  lastAt: string
+  prevFail: number | null
+  prevWarn: number | null
+  runCount: number
+}
+
+export interface ContrastTrendPoint {
+  runId: string
+  at: string
+  fail: number
+  warn: number
+  unresolved: number
+  coverage: number
+  gateFailed: boolean
+  commitSha: string | null
+}
+
+/** XamlContrast 的「跟上次比」(伺服器 ContrastCompare)。一組配對 = 檔案|元素|前景|底色,不含行號。
+    不帶 prev 的是這一次;不存在的那一側是 null / 0。lines:這一次的行號(修好的是上一次的),最多 20 個 */
+export interface ContrastChange {
+  file: string
+  element: string
+  fg: string
+  bg: string
+  category: 'fail' | 'warn' | null
+  prevCategory: 'fail' | 'warn' | null
+  count: number
+  prevCount: number
+  worst: number | null
+  prevWorst: number | null
+  lines: number[]
+}
+
+export interface ContrastChanges {
+  prevRunId: string | null
+  prevCreatedAt: string | null
+  prevToolVersion: string | null
+  prevExitCode: number | null
+  regressions: ContrastChange[]
+  worsened: ContrastChange[]
+  improved: ContrastChange[]
+  fixed: ContrastChange[]
+  unchanged: number
 }
 
 // M4:總覽卡與趨勢點

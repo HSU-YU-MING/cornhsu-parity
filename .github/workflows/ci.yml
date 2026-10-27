@@ -85,6 +85,33 @@ jobs:
       - run: npm test
         working-directory: web
 
+  # 部署映像(網頁外殼 M5):建得起來、以非 root 起得來、/healthz 回 ok、前端有被打包進去、
+  # 管理指令在容器裡寫得進 /data。維護者的開發機沒有 Docker,Dockerfile 只在這裡被實際驗證
+  docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the server image
+        run: docker build -t parity-server:ci .
+      - name: Start it and probe it
+        run: |
+          set -euo pipefail
+          docker run -d --name parity -p 8080:8080 parity-server:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+          test "$(curl -fsS http://127.0.0.1:8080/healthz)" = "ok"
+          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root">'
+          docker exec parity dotnet Parity.Server.dll create-project ci-smoke | grep -q "project created: ci-smoke"
+          # 鐵則的實體化:映像裡不能有瀏覽器或引擎
+          if docker exec parity sh -c 'ls /app | grep -iE "playwright|Parity\.Engine|ImageSharp"'; then
+            echo "the server image contains browser or engine assemblies"; exit 1
+          fi
+      - name: Server log
+        if: always()
+        run: docker logs parity 2>&1 | tail -50
+
   build-test:
     name: Build + Test + Parity 自我把關
     runs-on: ubuntu-latest

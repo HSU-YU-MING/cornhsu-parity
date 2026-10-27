@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { deleteRun, fetchChanges, fetchRunMeta, fetchRunReport } from './api'
-import type { FidelityReport, Me, NodeResult, ReportDocument, RunChanges, RunMeta, Severity } from './types'
+import { fetchChanges, fetchRunMeta, fetchRunReport } from './api'
+import type {
+  ContrastRunMeta, FidelityReport, Me, NodeResult, ReportDocument, RunChanges, RunMeta, Severity,
+} from './types'
 import Blueprint from './Blueprint'
-import { navigate } from './App'
+import ContrastRunDetail from './ContrastRunDetail'
+import { DeleteRunButton, MetaCells } from './RunHead'
 // Figma 深連結:設計來源是 Figma 時,圖層名可以直接跳回 Figma 的那個節點
 // ——CLI 的 Markdown 報告本來就會這樣連,儀表板跟上(解析規則與測試見 figma.ts)
 import { figmaUrl } from './figma'
@@ -13,8 +16,27 @@ import { figmaUrl } from './figma'
 type HardSeverity = Exclude<Severity, 'none'>
 const SEVERITIES: HardSeverity[] = ['critical', 'serious', 'medium', 'minor']
 
+/* 合併伺服器:先拿中繼資料看是哪個工具的 run,再交給那個工具的詳情頁——
+   原文的形狀兩邊完全不同,不能先當 parity 報告抓下來再說 */
 export default function RunDetail({ id, me }: { id: string; me: Me }) {
   const [meta, setMeta] = useState<RunMeta | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setMeta(null); setError(null)
+    fetchRunMeta(id).then(setMeta, e => setError(String(e)))
+  }, [id])
+
+  if (error) return <div className="error">Could not load this run ({error}).</div>
+  if (!meta) return <div className="loading">Loading…</div>
+  if (meta.tool === 'xamlcontrast') return <ContrastRunDetail meta={meta as ContrastRunMeta} me={me} />
+  if (meta.tool !== 'parity')
+    return <div className="error">This run comes from a tool this dashboard does not know how to show.</div>
+  return <ParityRunDetail meta={meta} me={me} />
+}
+
+function ParityRunDetail({ meta, me }: { meta: RunMeta; me: Me }) {
+  const id = meta.id
   const [doc, setDoc] = useState<ReportDocument | null>(null)
   const [changes, setChanges] = useState<RunChanges | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -25,13 +47,12 @@ export default function RunDetail({ id, me }: { id: string; me: Me }) {
   const [cleanOn, setCleanOn] = useState(false)
 
   useEffect(() => {
-    Promise.all([fetchRunMeta(id), fetchRunReport(id)])
-      .then(([m, d]) => { setMeta(m); setDoc(d) }, e => setError(String(e)))
+    fetchRunReport(id).then(setDoc, e => setError(String(e)))
     fetchChanges(id).then(setChanges, () => setChanges(null)) // 比較失敗不擋主畫面
   }, [id])
 
   if (error) return <div className="error">Could not load this run ({error}).</div>
-  if (!meta || !doc) return <div className="loading">Loading…</div>
+  if (!doc) return <div className="loading">Loading…</div>
 
   const report = doc.reports[Math.min(pageIdx, doc.reports.length - 1)]
 
@@ -44,27 +65,8 @@ export default function RunDetail({ id, me }: { id: string; me: Me }) {
         </div>
         <div className="cell"><span className="tag">gate</span>
           <span className={`gate ${meta.gateFailed ? 'fail' : 'pass'}`}>{meta.gateFailed ? 'FAIL' : 'PASS'}</span></div>
-        <div className="cell"><span className="tag">project</span><span className="v">{meta.project}</span></div>
-        <div className="cell"><span className="tag">received</span>
-          <span className="v">{meta.createdAt.replace('T', ' ').slice(0, 19)} UTC</span></div>
-        {meta.branch && <div className="cell"><span className="tag">branch</span><span className="v">{meta.branch}</span></div>}
-        {meta.commitSha && (
-          <div className="cell"><span className="tag">commit</span>
-            <span className="v">
-              {meta.repoUrl
-                ? <a href={`${meta.repoUrl}/commit/${meta.commitSha}`} target="_blank" rel="noreferrer">
-                    {meta.commitSha.slice(0, 7)}</a>
-                : meta.commitSha.slice(0, 7)}
-            </span>
-          </div>
-        )}
-        {me.memberships.some(m => m.projectId === meta.projectId && m.role === 'owner') && (
-          <button className="btn-danger" onClick={async () => {
-            if (!confirm('Delete this run? Its data leaves the overview and trends permanently.')) return
-            await deleteRun(id)
-            navigate('/')
-          }}>Delete run</button>
-        )}
+        <MetaCells meta={meta} />
+        <DeleteRunButton meta={meta} me={me} />
       </div>
 
       {changes && <ChangesStrip changes={changes} />}

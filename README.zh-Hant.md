@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **805 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **857 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -288,6 +288,45 @@ samples/demo/             離線示範:刻意做壞的頁面 + 設計 JSON
 > `ConnectionStrings__parity`。理由:完整的連線字串是比較明確的設定,而且整合測試注入的連線字串不能被
 > 開發機上的 `PARITY_SERVER_DB` 改道。
 
+### 一台儀表板,兩種工具
+
+同一台伺服器也收 **[XamlContrast](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast)**(XAML App 的靜態 WCAG
+對比度稽核)的報告:`xamlcontrast --push <report.json>` 把它 `--json` 寫出的檔案,經同一個 `POST /api/runs`
+送上來,並帶 `X-Parity-Tool: xamlcontrast` 標頭(`parity push` 不送這個標頭,伺服器當成 `parity`)。同一個專案
+可以同時有兩種工具的 run。XamlContrast 的 run 有自己的總覽卡(每個專案一張:低於 AA 的 fail · warn、覆蓋率)、
+fail/warn 趨勢,與問題清單(檔案與行號、元素、XAML 裡寫的前景與底色、深淺兩個主題各自的比值、門檻)。
+每一筆 XamlContrast 的 run 也看得到「跟同分支上一筆 XamlContrast run 比」的變化——新增、變差、修好、好轉的配對,
+比法跟 XamlContrast 自己的 `--baseline` 一樣(一組配對 = 檔案、元素、前景、底色,不含行號;處數變多或最差比值變低就是變差)。
+跟 `parity push` 一樣,XamlContrast 這一側在儀表板公開部署之前屬**實驗性**。
+
+### 自己架
+
+repo 根目錄有 `Dockerfile`。映像裡只有伺服器、它的資料層與報告型別,沒有別的:沒有瀏覽器、沒有引擎(CI 會檢查)。
+
+```sh
+docker build -t parity-server .
+docker run -d --name parity -p 8080:8080 -v parity-data:/data \
+  -e Parity__PublicUrl=https://parity.example.com \
+  -e ASPNETCORE_FORWARDEDHEADERS_ENABLED=true \
+  parity-server
+docker exec parity dotnet Parity.Server.dll create-project my-site          # CI token 只印這一次
+docker exec parity dotnet Parity.Server.dll create-invite my-site you@example.com owner
+```
+
+| 設定 | 作用 |
+|---|---|
+| `Parity__PublicUrl` | 大家打開的網址。邀請連結用它組,不用伺服器看到的 `Host`(反向代理後面那可能是內部名稱)。必須是絕對的 `http(s)` 網址;寫錯時伺服器與管理指令都起不來。 |
+| `Parity__KeysDirectory` | 簽登入 cookie 的金鑰放哪。映像裡預設 `/data/keys`。沒設的話,容器每重新部署一次,所有人都被登出。 |
+| `PARITY_SERVER_DB` | SQLite 資料庫。映像裡預設 `/data/parity-server.db`。 |
+| `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` | 擺在反向代理後面時**一定要設**,而且只在你信任的代理後面設(否則任何人都能偽造來源 IP)。不設的話伺服器看到的是同一個 IP,一個人每分鐘試 20 次就能讓所有人登不進去。 |
+
+- **資料全在 `/data`**:那裡掛 volume。TLS 交給前面的代理或平台。
+- **只跑一個實例。** 資料庫是 SQLite,登入嘗試也只在單一行程內序列化;要跑多個實例得先換資料庫。
+- **備份**:`docker exec parity dotnet Parity.Server.dll backup /data/backup-2026-10-26.db` 在伺服器照常運作時
+  寫出一份一致的副本(SQLite 的 `VACUUM INTO`;不覆蓋既有檔案,資料庫不存在時也不會建一份空的)。記得複製到別台機器。
+  還原:停掉伺服器、把副本放回資料庫的位置、再啟動。
+- **監測**:`GET /healthz` 不需登入,資料庫有回應才回 `ok`,否則 `503`。
+
 ### 鐵則:雲端不跑瀏覽器
 
 `Parity.Server` 唯一收掃描結果的入口是 `POST /api/runs`(其他寫入端點只管登入、邀請、成員、token 與刪除 run),它收的是**已經跑完的報告**。
@@ -391,8 +430,9 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
   尚未發佈。** `parity push`(**實驗性**:伺服器尚未公開部署,指令與伺服器協定在 2.x 內可能隨 minor 版本改變,
   伺服器正式上線時再納入凍結)把跑完的 `report.json` 送到你自己架的伺服器;儀表板把落差
   用報告裡既有的量測座標畫成工程藍圖(零截圖上傳)、依專案與 route 給總覽與分數趨勢,
-  並有帳號 / 專案角色 / 邀請連結。它自己的內部 M1–M4.6 已完成,內部 M5(真的對外部署:
-  TLS、網域、託管資料庫)還沒。**它只收報告,永遠不掃描**——見上面的鐵則。
+  並有帳號 / 專案角色 / 邀請連結。它也收 XamlContrast 的報告([一台儀表板,兩種工具](#一台儀表板兩種工具))。
+  它自己的內部 M1–M4.6 已完成;內部 M5 的部署前置已完成(Docker 映像、對外網址、持久化的登入金鑰、線上備份),
+  真正上線(主機、網域、TLS)還沒。**它只收報告,永遠不掃描**——見上面的鐵則。
 
 > 未完成、已知盲點與下一步優先序見 [ROADMAP.md](ROADMAP.md);版本變更見 [CHANGELOG.md](CHANGELOG.md)。
 

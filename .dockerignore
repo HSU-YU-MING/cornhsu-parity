@@ -1,0 +1,20 @@
+# Docker 建置環境只需要 Dockerfile 複製的那幾樣(web/、Directory.Build.props、伺服器三個專案)。
+# 其餘一律擋掉:本機的建置產物與 node_modules 會蓋掉映像裡乾淨還原的版本,資料庫與 .env 不該進任何映像。
+.git/
+.github/
+**/bin/
+**/obj/
+**/node_modules/
+src/Parity.Server/wwwroot/
+artifacts/
+.parity/
+*.db
+*.db-*
+.env
+*.local.json
+Parity網頁外殼規畫書.md
+docs/
+npm/
+samples/
+scripts/
+tests/

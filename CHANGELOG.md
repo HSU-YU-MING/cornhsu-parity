@@ -2,6 +2,43 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 未發佈
+
+- **修正:`parity push` 在 GitHub Actions 的非 PR 事件上記得到分支**(push 屬實驗性;patch)。GitHub Actions 在
+  PR 以外的事件把 `GITHUB_HEAD_REF` 設成有定義的空字串,Linux runner 上讀到的是 `""` 而不是「沒設」,原本的
+  `--branch` → `GITHUB_HEAD_REF` → `GITHUB_REF_NAME` 停在空字串上:推 main 的 run 沒有分支,儀表板預設的 main
+  視圖看不到它。現在空字串一律當沒設(`PARITY_SERVER`、`PARITY_TOKEN`、`GITHUB_*` 都是),空的 `PARITY_TOKEN`
+  也改成「missing token」而不是送出去等 401。
+- **新增:儀表板也收 XamlContrast 的報告**(未發佈的伺服器;`report.json` 與 `parity push` 的行為不變)。
+  `POST /api/runs` 依 `X-Parity-Tool` 分流:沒帶 = `parity`(這一版之前的 `parity push` 都不送,照樣推得上來)、
+  `xamlcontrast` = XamlContrast 1.x 的 `--json` 報告(schemaVersion 6;更新的回 422、0.x 的也回 422 並說要升級),
+  其他值 400。XamlContrast 的 run 不算分數(`score` 是 `null`,不編一個),摘要計數另存一張表、逐筆 findings
+  跟 parity 的落差一樣只留在 gzip 原文;新端點 `/api/contrast/overview`、`/api/contrast/trend`;`/api/runs` 與
+  `/api/runs/{id}` 多一個 `tool` 欄位。parity 的總覽、趨勢與「跟上次比」只看 parity 的 run——同分支夾著一筆
+  XamlContrast 的 run 時,「上一筆」原本會拿到它。既有資料庫第一次啟動時自動 migrate,既有的 run 一律標成 `parity`。
+  推送端是 XamlContrast 的 `xamlcontrast --push`(那邊的實驗性功能)。
+  XamlContrast 的 run 也有「跟上次比」(同專案、同分支的前一筆 XamlContrast run):`/api/runs/{id}/changes` 對它回
+  新增、變差、修好、好轉的配對與沒變的組數,比法照 XamlContrast 自己的 `--baseline`——只看低於 AA 的、一組配對 =
+  `file|element|fg|bg`(不含行號)、處數變多或最差比值低了超過 0.01 = 變差;多一格「好轉」(處數變少或比值變好,
+  但還低於 AA)。兩筆的 XamlContrast 版本不同、或上一筆是 exit 3 時,畫面明講變化可能不是程式碼造成的。
+- **新增:伺服器的部署前置(網頁外殼 M5)**(未發佈的伺服器)。
+  - `Dockerfile`:映像裡只有伺服器、資料層與報告型別,沒有瀏覽器與引擎;資料庫與登入金鑰都在 `/data`;以非 root 執行。
+    CI 新增 `docker-image` job:建映像、起容器、打 `/healthz` 與首頁、在容器裡跑 `create-project`,並確認映像裡沒有
+    Playwright、引擎與 ImageSharp。
+  - `Parity:PublicUrl`(環境變數 `Parity__PublicUrl`):邀請連結用它組。管理指令的 `create-invite` 原本硬寫
+    `http://127.0.0.1:4322`,部署後發出去的連結是壞的;web 端的邀請原本照請求的 `Host`,反向代理後面可能是內部位址。
+    寫錯(不是絕對的 http/https 網址)時伺服器起不來、管理指令 exit 2。
+  - `Parity:KeysDirectory`:簽登入 cookie 的 Data Protection 金鑰放哪。沒設時 ASP.NET Core 放在家目錄,容器每重新部署
+    一次就換一把、所有人被登出;映像裡預設 `/data/keys`。
+  - 管理指令 `backup <file>`:SQLite `VACUUM INTO`,伺服器照常運作時寫出一致的副本;不覆蓋既有檔案、資料庫不存在時
+    不會建一份空的。
+  - 有設 `ASPNETCORE_HTTP_PORTS`/`ASPNETCORE_HTTPS_PORTS`(官方 .NET 容器映像預設帶 `ASPNETCORE_HTTP_PORTS=8080`)
+    時不再被蓋回 `127.0.0.1:4322`——原本容器裡會聽在 loopback、外面連不進來,而且沒有錯誤訊息。
+- **新增:儀表板的 XamlContrast 畫面**(未發佈的伺服器)。總覽多一列 XamlContrast 卡片(每個專案一張:fail · warn、
+  方向、覆蓋率),點開是 fail/warn 兩條趨勢線;run 列表多一欄工具;XamlContrast 的 run 詳情是問題清單(檔案:行、
+  元素、前景與底色的原文、深淺兩個主題的比值、門檻,原文是色碼或具名色時畫色塊)與無法解析的配對。趨勢圖的兩色
+  跑過 validate_palette:紅配琥珀(`--sev-medium`)在 deutan 下 ΔE 5.0、正常視覺 12.3,兩項都不過;紅配 `#3e6fae` 六檢全過。
+
 ## 2.0.0 — 2026-10-23
 
 **第一個 major。** 1.1.0 之後的產品稽核(2026-10-22)找到幾條「原本被接受、卻讓 gate 靜默失效或被靜默改讀」

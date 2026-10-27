@@ -36,7 +36,10 @@ public static class RunIngest
         }
         if (doc is null || doc.Reports is null)
             throw new InvalidOperationException(
-                "body is not a Parity report (expected the { schemaVersion, reports } envelope that `parity check` writes).");
+                "body is not a Parity report (expected the { schemaVersion, reports } envelope that `parity check` writes)."
+                + (ContrastIngest.LooksLikeContrastReport(rawReportJson)
+                    ? " It looks like an XamlContrast report — push it with `xamlcontrast --push`, which sends X-Parity-Tool: xamlcontrast."
+                    : ""));
         if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
             throw new SchemaTooNewException(doc.SchemaVersion, ReportDocument.CurrentSchemaVersion);
         // check --reverse 的報告期望/實際對調、不把關;收進來會污染趨勢與 gate(push 端也會先擋)
@@ -47,6 +50,7 @@ public static class RunIngest
         var run = new Run
         {
             Id = Guid.NewGuid(),
+            Tool = RunTool.Parity,
             CommitSha = meta.CommitSha,
             Branch = meta.Branch,
             TriggeredBy = meta.TriggeredBy,
@@ -85,8 +89,14 @@ public static class RunIngest
     }
 }
 
-/// <summary>報告比伺服器新——不是壞資料,是版本落差,要跟 400 分開講。</summary>
-public sealed class SchemaTooNewException(int got, int supported) : Exception(
+/// <summary>
+/// 報告的 schemaVersion 伺服器不支援——不是壞資料,是版本落差,要跟 400 分開講(端點回 422)。
+/// parity 只會「比伺服器新」;xamlcontrast 另有「比 1.0 舊」(0.x 的形狀,伺服器不收)。
+/// </summary>
+public class UnsupportedSchemaException(string message) : Exception(message);
+
+/// <summary>報告比伺服器新(parity)。</summary>
+public sealed class SchemaTooNewException(int got, int supported) : UnsupportedSchemaException(
     $"report schemaVersion {got} is newer than this server supports ({supported}) — " +
     "the report was produced by a newer Parity CLI. Upgrade the server, or pin the CLI version in CI.")
 {
