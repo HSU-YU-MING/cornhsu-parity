@@ -164,6 +164,7 @@ public class ConfigSchemaTests
     [InlineData("""{ "gate": null }""", "\"gate\" is null")]
     [InlineData("""{ "gate": { "failOn": null } }""", "\"gate.failOn\" is null")]
     [InlineData("""{ "compare": null }""", "\"compare\" is null")]
+    [InlineData("""{ "stats": null }""", "\"stats\" is null")] // 隱私開關:寫成 null 不猜成「不送」或「照送」
     public void A_null_section_that_load_reads_is_an_error_naming_the_field(string json, string expected)
     {
         // 原本載入時直接 NullReferenceException,使用者只看到 "Object reference not set to an instance of an object."
@@ -312,6 +313,82 @@ public class ConfigSchemaTests
             [], new ReportSummary(1, 1, 0, 1, 1, 0, 0, 0, Severity.Critical));
 
         Assert.Equal("has Critical severity diffs", config.GateFailReason(report));
+    }
+
+    // ---------- stats(2.1.0,匿名使用統計;面 1 的加法)----------
+
+    [Fact]
+    public void Without_a_stats_section_the_config_has_no_opinion_and_no_project_id()
+    {
+        var config = LoadJson("{}");
+
+        Assert.Null(config.ShareStats);
+        Assert.Null(config.Stats.ProjectId);
+        Assert.Null(new ParityConfig().ShareStats);
+        Assert.Null(LoadJson("""{ "stats": {} }""").ShareStats);
+    }
+
+    [Theory]
+    [InlineData("""{ "stats": { "share": false } }""", false)]
+    [InlineData("""{ "stats": { "share": true } }""", true)]
+    [InlineData("""{ "Stats": { "Share": false } }""", false)] // 欄位名不分大小寫,與整份設定檔一致
+    public void Stats_share_takes_true_or_false(string json, bool share)
+        => Assert.Equal(share, LoadJson(json).ShareStats);
+
+    [Theory]
+    [InlineData("\"false\"")] // 最可能的手誤:寫成字串
+    [InlineData("0")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    public void Stats_share_of_any_other_type_is_an_error_naming_the_field(string value)
+    {
+        using var dir = new TempDir();
+        var path = dir.Write("parity.config.json", $$"""{ "stats": { "share": {{value}} } }""");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ParityConfig.Load(path));
+        Assert.Equal($"config {path}: stats.share must be true or false (got: {value}) — " +
+            "write \"stats\": { \"share\": false } to turn anonymous usage statistics off.", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("abcdefghijklmnop")]                                                   // 16 字元(下限)
+    [InlineData("A_b-C_d-0123456789")]
+    [InlineData("0123456789012345678901234567890123456789012345678901234567890123")]  // 64 字元(上限)
+    public void A_project_id_in_the_protocols_format_loads(string id)
+        => Assert.Equal(id, LoadJson($$"""{ "stats": { "projectId": "{{id}}" } }""").Stats.ProjectId);
+
+    [Theory]
+    [InlineData("abcdefghijklmno")]                                                    // 15 字元
+    [InlineData("01234567890123456789012345678901234567890123456789012345678901234")] // 65 字元
+    [InlineData("has spaces in it ok")]
+    [InlineData("dots.are.not.allowed")]
+    [InlineData("ümlaut-ümlaut-ümlaut")]
+    [InlineData("")]
+    public void A_project_id_in_any_other_format_is_a_config_error(string id)
+    {
+        // 協定 §7.1:格式不對是設定檔載入錯誤(exit 2),不是安靜丟掉
+        using var dir = new TempDir();
+        var path = dir.Write("parity.config.json", $$"""{ "stats": { "projectId": "{{id}}" } }""");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ParityConfig.Load(path));
+        Assert.StartsWith($"config {path}: stats.projectId must be 16–64 characters of A-Z, a-z, 0-9, '_' or '-' " +
+            $"(got: \"{id}\", {id.Length} characters).", ex.Message);
+        Assert.Contains("never derive it from the repository name", ex.Message);
+    }
+
+    [Fact]
+    public void A_null_project_id_means_none()
+        => Assert.Null(LoadJson("""{ "stats": { "projectId": null } }""").Stats.ProjectId);
+
+    [Fact]
+    public void Unknown_keys_inside_stats_are_ignored_like_everywhere_else()
+    {
+        // 與整份設定檔的規則一致(拼錯的欄位靜默忽略;改成報錯是 major)。代價寫在 README:拼錯的 "share" 不會關掉統計,
+        // 要確認用 check --stats-preview
+        var config = LoadJson("""{ "stats": { "sahre": false, "projectID": "abcdefghijklmnop", "extra": 1 } }""");
+
+        Assert.Null(config.ShareStats);
+        Assert.Equal("abcdefghijklmnop", config.Stats.ProjectId); // projectID 只是大小寫不同,照收
     }
 
     // ---------- 找設定檔 / baseline 路徑 ----------

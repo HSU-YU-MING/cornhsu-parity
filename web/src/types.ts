@@ -153,6 +153,12 @@ export interface ContrastRunMeta extends RunMeta {
 // category / symmetry 是封閉集;reason / theme 是開放集合 → string
 export type ContrastCategory = 'ok' | 'warn' | 'fail' | 'decorative'
 
+/** XamlContrast 1.1 起:比值實際用的不透明色(合成之後),#RRGGBB */
+export interface ContrastColourPair {
+  fg: string
+  bg: string
+}
+
 export interface ContrastFinding {
   file: string
   line: number
@@ -161,6 +167,8 @@ export interface ContrastFinding {
   bg: string
   ratioDark: number | null
   ratioLight: number | null
+  /** 1.1 起才有(1.0 的報告沒有這個 key);某個主題不存在這組配對時那一邊是 null,與 ratio 一致 */
+  colors?: { dark: ContrastColourPair | null; light: ContrastColourPair | null }
   threshold: number
   category: ContrastCategory
   symmetry: 'both-low' | 'dark-fails' | 'light-fails' | 'single-theme' | null

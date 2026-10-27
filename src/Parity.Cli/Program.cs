@@ -79,6 +79,9 @@ internal static class CheckCommand
         if (reverse && opts.ContainsKey("--baseline"))
             throw new InvalidOperationException("--reverse and --baseline cannot be combined (reverse mode does not gate).");
 
+        // --stats-preview:照常執行,匿名統計什麼都不送,只在 stderr 印出這次會送的 JSON 與會不會送、為什麼(UsageStats)
+        var statsPreview = opts.ContainsKey("--stats-preview");
+
         var scans = await session.RunAsync(opts.GetValueOrDefault("--target"));
         var reports = scans
             .Select(s => reverse ? SwapExpectations(s.Result.Report) : s.Result.Report)
@@ -105,9 +108,21 @@ internal static class CheckCommand
         {
             WriteMarkdown(opts, session.Config, reports, gateFail: false, gateNotes: [ReverseNote]);
             Console.WriteLine("\n\x1b[36mreverse mode\x1b[0m: no gating, exit 0.");
+            if (statsPreview) UsageStats.PreviewReverse(StatsEnvironment.Current()); // 反向檢視不送統計
             return 0;
         }
 
+        var exitCode = await GateAsync(session, scans, reports, opts);
+        // 匿名統計:跑出報告(0/1/3)才送,每次最多一次;送不出去、或統計本身出錯,都不改變 exit code 與其他輸出。
+        // exit 2(用法錯、設定錯、執行錯)是例外一路丟到最外層,根本不會走到這裡
+        await UsageStats.AfterCheckAsync(StatsEnvironment.Current(), session.Config, reports, exitCode, statsPreview);
+        return exitCode;
+    }
+
+    /// <summary>check 的把關:一般模式(可信度 → 3、failOn → 1、否則 0)或 --baseline 的回歸模式。回傳 exit code。</summary>
+    private static async Task<int> GateAsync(
+        ScanSession session, List<TargetScan> scans, List<FidelityReport> reports, Dictionary<string, string?> opts)
+    {
         // 配對可信度(0 配對 / 低於 minMatchRate):沒配到就沒落差可擋,不能沉默 PASS
         var integrity = session.MatchIntegrityFailures(scans);
 
@@ -690,7 +705,7 @@ internal static class Usage
     public static class Flags
     {
         public static readonly string[] Check =
-            ["--config=", "--target=", "--out=", "--md=", "--refresh", "--headed", "--baseline", "--reverse"];
+            ["--config=", "--target=", "--out=", "--md=", "--refresh", "--headed", "--baseline", "--reverse", "--stats-preview"];
         public static readonly string[] Report = ["--config=", "--in=", "--md="];
         public static readonly string[] Push =
             ["--config=", "--in=", "--server=", "--token=", "--commit=", "--branch=", "--gate-exit="];
@@ -707,7 +722,7 @@ internal static class Usage
     }
 
     public const string Check = """
-          parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse] [--md <path>]
+          parity check [--config <path>] [--target <route>] [--out <path>] [--refresh] [--headed] [--baseline] [--reverse] [--md <path>] [--stats-preview]
               Compare the real numeric values of the design and the implementation; writes a report and sets the exit code.
               --refresh   Ignore the local Figma cache and re-fetch
               --headed    Show the browser window (for debugging)
@@ -715,6 +730,12 @@ internal static class Usage
               --reverse   Reverse view: "expected" = the implementation, "actual" = the design file; never gates.
                           (For designers redrawing an existing page: see how the draft differs from what ships.)
               --md <path> Also write a Markdown report (fidelity score + suggested fixes; suitable for a PR comment)
+              --stats-preview
+                          Send no anonymous usage statistics; print to stderr the exact JSON this run would send and
+                          whether it would be sent. Exit code, stdout and report files are unchanged.
+              check sends anonymous usage statistics (counts and score ranges only) once per run, on by default:
+                what and why: https://stats.cornhsu.com/ — turn off with "stats": { "share": false } in the config,
+                PARITY_SHARE_STATS=false, CORNHSU_SHARE_STATS=false or DO_NOT_TRACK=1
               A target's url may be:
                 http(s):// or file://          a normal web page / local file
                 cdp:http://host:port           attach to a running Electron desktop app (live window)
@@ -794,7 +815,7 @@ internal static class Usage
     public const string BugReport = """
           parity bug-report [--config <path>] [--open]
               (experimental) Collect diagnostics on this machine for a bug report and print them, plus a link that
-              opens a pre-filled GitHub issue. Parity makes no network connection and only prints the link. The masked
+              opens a pre-filled GitHub issue. bug-report makes no network connection and only prints the link. The masked
               report is in the link's query string: opening it (yourself, or with --open) sends that text to github.com
               and leaves it in your browser history; no issue is created until you submit the form.
               Collected: Parity version, OS and architecture, .NET, Node, Playwright and Chromium revision, install
@@ -863,5 +884,19 @@ internal static class VersionCommand
         }
 
         return informational;
+    }
+
+    /// <summary>
+    /// 不含 build metadata 的版號(`+` 之後去掉):本機建置是 `0.0.0-dev`,發行版是 tag 的版號。
+    /// 匿名統計的 toolVersion 與「是不是開發版」都看它(UsageStats)。
+    /// </summary>
+    internal static string ToolVersion()
+    {
+        var informational = typeof(VersionCommand).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (string.IsNullOrWhiteSpace(informational))
+            return typeof(VersionCommand).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        var plus = informational.IndexOf('+');
+        return plus >= 0 ? informational[..plus] : informational;
     }
 }

@@ -51,6 +51,18 @@ public class RepoInvariantsTests
         Assert.DoesNotMatch(new Regex(@"tags:.*'v\*'"), release);
     }
 
+    [Theory]
+    [InlineData("ci.yml")]
+    [InlineData("release.yml")]
+    public void Our_own_workflows_never_send_anonymous_usage_statistics(string workflow)
+    {
+        // 2.1.0 起 parity check 預設會送匿名統計(研究資料)。兩份 workflow 都跑真的 check(release 還是真版號,
+        // 不是開發版),所以整份 workflow 層級設 DO_NOT_TRACK=1;放在某個 job 底下的話,新加的 job 會漏掉
+        var yml = Read(".github", "workflows", workflow).Replace("\r\n", "\n");
+
+        Assert.Matches(new Regex(@"^env:\n(?:  .*\n)*  DO_NOT_TRACK: '1'\n", RegexOptions.Multiline), yml);
+    }
+
     [Fact]
     public void NuGet_login_is_pinned_to_a_commit_sha()
     {

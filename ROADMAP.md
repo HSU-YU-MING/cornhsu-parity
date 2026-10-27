@@ -37,6 +37,16 @@
   任何一個人每分鐘打 20 次就讓所有人登不進去(驗證者實測);多實例部署時登入序列化要改成 db 層(見已知盲點的登入那一條)。
   **若哪天真的要做 M6,那是另一個決定,要重新過上面那三條理由——不能用 M7 已經上線
   當作理由順勢帶過。**
+- **匿名使用統計(2.1.0)**:`parity check` 預設送計數與分數區間(協定:stats-collector 的 `PROTOCOL.md`,
+  與 XamlContrast 1.1 共用;收集站與儀表板刻意分開)。**研究倫理對「預設打開」的確認已取得、收集站已上線(都是 2026-10-28)**
+  (RELEASING.md「2.1.0」)。還沒做的、刻意留著的:
+  - 審查若要求主動同意:改 `UsageStats.SendByDefault` 之外,還要做「第一次在終端機詢問」(協定 §3),目前沒有。
+  - 「開發版不送」只認 `0.0.0-dev`(協定原文)。CI 的 `pack-smoke` 裝的 `0.0.0-ci`、RELEASING 本機乾跑的 `0.0.0-local.*`
+    不算開發版——它們現在只跑 `--help`/`--version`,不會送;哪天拿它們跑 check,要嘛設 `DO_NOT_TRACK`,要嘛先改協定
+    把「開發版」擴成 `0.0.0-*`。
+  - `stats` 區段裡拼錯的 key(`"shrae": false`)跟整份設定檔一樣靜默忽略,所以拼錯的關閉開關不會生效;README 叫人用
+    `--stats-preview` 確認。改成報錯是 major(面 1 的載入規則),印警告是 patch——等真的有人踩到再決定。
+  - 論文的效度:資料有自我選擇偏差、CI 跑得多的專案佔大部分、沒有 ID 的多次執行合併不起來(規劃文件「論文相關的提醒」)。
 - **WPF adapter(`WpfImplementationSource`,規畫書 4.5)**:動工時優先評估引用姊妹專案的
   `Cornhsu.XamlContrast.Core`(靜態解析「XAML 裡應該生效的顏色」,十三條規則、
   四專案雙實作互證)當**預期值產生器**,執行期讀值與之對照——不要重寫顏色解析。
@@ -84,8 +94,9 @@
   - ~~「跟上次比」只有 parity 的 run 有~~ **已補(2026-10-28,`ContrastCompare`)**。留下的耦合:鍵照 XamlContrast 的
     baseline 鍵(`file|element|fg|bg`)手刻,伺服器沒有引用它的組件——它的 `keyVersion` 遞增時這裡要一起改。
     報告裡沒有 keyVersion,所以畫面只能在兩筆的 toolVersion 不同時提醒「變化可能來自工具」。
-  - **色塊只畫原文就是色碼或具名色的值**:`{DynamicResource Fg}` 這類資源鍵,報告裡沒有解析後的色值,儀表板不猜。
-    XamlContrast 1.x 若在 JSON 補上解析後的色值(只增欄位,minor),這裡再接上。
+  - ~~**色塊只畫原文就是色碼或具名色的值**~~ **已接上(2026-10-26)**:XamlContrast 1.1 的 JSON 每筆多了 `colors`
+    (比值實際用的、合成之後的不透明色),詳情頁在每個主題的比值旁畫「Aa」樣本,與 XamlContrast 的 HTML 報告同一個呈現。
+    1.0 的報告沒有 `colors`,照舊只畫原文就是色碼的值。
   - XamlContrast 報告的 `file` 是相對**稽核根目錄**、不是 repo 根目錄,所以問題清單不連回 GitHub 的檔案。
 - **登入端點的剩餘限制**(2026-10-22,#21 審查後):存在與不存在的 email 已共用 `LoginThrottles` 表、依 email
   序列化、IP/email 兩層額度(實測見 CHANGELOG 2.0.0)。還剩:時序差沒有歸零(同一個 email 反覆失敗時不存在的 email 慢 0–1.5 ms,原因未定位;攻擊者照「新帳號試 5 次」量分不出來);

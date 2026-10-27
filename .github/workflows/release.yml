@@ -8,6 +8,13 @@ on:
     # 2026-08-26 發 1.0.0 與 1.1.0 時各踩一次,run #27/#29)。
     tags: ['v[0-9]*.[0-9]*.[0-9]*']
 
+# 匿名使用統計(2.1.0 起 parity check 預設會送)整份 workflow 關掉。這裡不是開發版:release 用 tag 的真版號
+# (-p:Version=…)建置,接著跑的測試裡有真的 check(CliBrowserTests 對離線示範實跑;runner 上有 Chromium 就會跑),
+# 沒有這行就會被當成真實使用送進研究資料。測試行程自己也預設 DO_NOT_TRACK=1
+# (tests/Parity.Tests/TestProcessDefaults.cs),這是第二道。
+env:
+  DO_NOT_TRACK: '1'
+
 jobs:
   release:
     runs-on: ubuntu-latest

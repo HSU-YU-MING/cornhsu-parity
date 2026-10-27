@@ -18,7 +18,7 @@
 - README 數字守門:`.\scripts\verify-readme-facts.ps1`(`-Update` 一鍵重貼兩份 README，
   `-NoBuild` 沿用既有建置)。**本機沒有 pwsh，用 Windows PowerShell 5.1 跑**(腳本存成
   UTF-8 with BOM 就是為了這件事);CI 用 runner 內建的 `pwsh`
-- 離線示範(不需 Figma token、不需網路):
+- 離線示範(不需 Figma token、不需網路;本機建置是 `0.0.0-dev`,不送匿名統計——加 `--stats-preview` 看它會送什麼):
   ```
   dotnet run --project src/Parity.Cli -c Release --no-build -- check --config samples/demo/parity.config.json
   ```
@@ -61,7 +61,8 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
 - **六面介面凍結**(config schema／CLI 與 exit code／action inputs／`report.json`／
   baseline schema／snapshot 格式)，破壞任一面升 major。量測語意演進 = minor + CHANGELOG
   開頭標「升級必做」。完整的**演進條款**在 CHANGELOG 的 1.0.0 節(2.0.0 節重申它適用於 2.x)，
-  逐項審查過程在 `docs/Parity 1.0 介面凍結審查.md`，2.0.0 之後的六面現況在 `docs/公開介面盤點.md` 第 11 節。
+  逐項審查過程在 `docs/Parity 1.0 介面凍結審查.md`，2.0.0 之後的六面現況在 `docs/公開介面盤點.md` 第 11 節
+  (2.1.0 匿名統計的加法在第 12 節)。
 - **每發一個 2.x 要把移動式 `v2` tag 前移**:`git tag -f v2 v2.x.y && git push -f origin v2`。
   README 教使用者用 `@v2`，忘了前移等於使用者永遠拿不到新版。
 - **`v1` 停在 v1.1.0，不再前移、不再發 1.x**。那份 `action.yml` 不限 major(`@v1` 會裝到 2.x)，
@@ -72,13 +73,29 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
   `X-Parity-*` 標頭、HTTP 狀態碼、伺服器拒收規則,job summary 內容)。**何時納入凍結:Parity.Server 公開部署
   (網頁外殼 M5)的那一版**——CHANGELOG 要寫明「push 自本版起凍結」,並拿掉 `--help` 的 `(experimental)`;
   在那之前改 push 的介面走 minor。`report.json` 不受影響,一直是凍結面 4。
-- **鐵則:`parity bug-report`(與日後任何「讓使用者回報」的功能)不得自動送出任何資料。** Parity 本身不連網;只在本機
-  整理、印出來給使用者看,網址只印出來。**對外的說法要準確**:遮罩過的報告全文放在網址的 query string 裡,打開網址
+- **鐵則:`parity bug-report`(與日後任何「讓使用者回報」的功能)不得自動送出任何資料。** bug-report 本身不連網;只在本機
+  整理、印出來給使用者看,網址只印出來。(**Parity 整體不是不連網的工具**:Figma 設計來源連 Figma API、`parity push`
+  連使用者給的伺服器、2.1.0 起 `parity check` 預設送匿名統計到 stats.cornhsu.com——見下一條。對外文件不要寫成
+  「Parity 不連網」。)**對外的說法要準確**:遮罩過的報告全文放在網址的 query string 裡,打開網址
   (使用者自己點,或 `--open` 交給瀏覽器)時就會送到 github.com、留在瀏覽器紀錄;issue 要使用者自己按送出才會建立。
   不要寫成「不送任何資料」。不收網址、route、selector、
   節點名稱、文字、Figma fileKey、token、檔案路徑(遮成 `<path>`)、環境變數內容:設定檔只經 `ConfigSummary` 的白名單
   欄位,整份文字再過 `Redaction`。`BugReportTests` 用一份塞滿秘密的設定檔斷言輸出裡一個都沒有——改這兩個類別時它必須綠。
   bug-report 是實驗性的,不在六面凍結內。
+- **匿名使用統計(2.1.0,`src/Parity.Cli/UsageStats.cs`)。協定的唯一真相源是 `D:\擴充功能\nuget\stats-collector\PROTOCOL.md`**
+  (與 XamlContrast 1.1 共用)。要改任何欄位:先改協定、收集站先上線新版,工具才能送——收集站對多一個、少一個欄位一律 400,
+  工具這邊改了而收集站沒改,資料就靜靜全丟。**不在協定封閉集裡的屬性不送,也不替它發明家族**:`DiffEngine` 多一種屬性時
+  `UsageStatsTests` 會紅,先回去改協定。對使用者的承諾(只送計數、不影響結果、說明只在 stderr)寫在 README 的
+  「Anonymous usage statistics」,改行為時兩份 README 一起改。
+  - **預設打開是 `UsageStats.SendByDefault` 這一個常數**。倫理審查若要求主動同意就改它;協定還要求那時「第一次在終端機
+    詢問」,目前沒有實作,Action 的 `share-stats` 預設值也要一起決定。
+  - **研究資料不能混進自己的測試**,三道都不能拆:測試行程預設 `DO_NOT_TRACK=1`、只准送往 loopback、標記檔放暫存目錄
+    (`tests/Parity.Tests/TestProcessDefaults.cs`);`ci.yml`/`release.yml` 整份設 `DO_NOT_TRACK: '1'`(release 是真版號,
+    不是開發版;`RepoInvariantsTests` 守著)。要測送出的測試用 `EnvScope.StatsVariables` 清環境、`CORNHSU_STATS_URL`
+    指到本機假站(`StatsCollectorStub`)。本機跑 `samples/demo` 是 `0.0.0-dev`,不會送。
+  - job summary 那一行由 CLI 寫,只在 action 設了 `PARITY_STATS_JOB_SUMMARY=true` 時才寫(內部用,不是使用者的開關)。
+- **2.1.0 發佈前的硬條件**:研究倫理對「預設打開」的確認**已取得(2026-10-28,維護者確認)**;收集站
+  stats.cornhsu.com 也已上線(2026-10-28);推 tag 前確認說明頁上的 stats@cornhsu.com 收得到信(RELEASING.md「2.1.0」;背景:`D:\擴充功能\nuget\稽核-2026-10-22\統計功能規劃.md`)。
 - `release.yml` 的觸發**刻意只認三段式 `v[0-9]*.[0-9]*.[0-9]*`，不是 `v*`**——`v1` 也符合
   `v*`，每次前移都會誤觸發一次注定失敗的 release(1.0.0／1.1.0 各踩一次，run #27/#29)。
   **不要「順手」改回 `v*`。**
@@ -200,6 +217,10 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
   (`::error …`、`::add-mask::`)。現在 version、config、target 帶 `\r`/`\n` 都在交給工具之前就拒絕,
   拒絕訊息本身也不印 input。新增 input 時照做。
 - **上傳路徑不能來自 step output**:check 步驟把報告複製到 `$RUNNER_TEMP/parity-artifact/`,Upload 只認那個固定目錄。
+- **「關掉某件事」的 input 不能直接映射成 CLI 讀的環境變數**(2.1.0 的 `share-stats`):step 的 `env:` 會蓋過使用者在
+  workflow 層設的同名變數,`PARITY_SHARE_STATS: ${{ inputs.share-stats }}` 會把使用者的 `PARITY_SHARE_STATS=false`
+  蓋回預設的 `true`(=不表態)而照送。input 先進另一個名字(`PARITY_SHARE_STATS_INPUT`),只在要關的時候才 `export`
+  (`ActionYmlTests` 實跑 bash 驗這件事)。
 - **複製一個 repo 控制得到的路徑要防 symlink**:repo 可以 commit `.parity/report.json → /proc/self/environ`,
   `cp` 會把這一步的環境(含 `FIGMA_TOKEN`)複製進 artifact。只收一般檔案、檔案與所在目錄都不能是 symlink。
 

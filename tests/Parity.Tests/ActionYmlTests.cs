@@ -20,7 +20,7 @@ public class ActionYmlTests
     }
 
     [Fact]
-    public void Inputs_are_the_frozen_nine_with_their_defaults_in_order()
+    public void Inputs_are_the_frozen_ten_with_their_defaults_in_order()
     {
         var inputs = Regex.Matches(TopLevelBlock("inputs"),
                 @"^  (?<name>[a-z-]+):\n(?:    (?!required:|default:).*\n)*    required: (?<req>\w+)\n    default: '(?<def>[^']*)'",
@@ -39,9 +39,10 @@ public class ActionYmlTests
             ("comment", "false", "true"),
             ("upload-report", "false", "true"),
             ("artifact-name", "false", "parity-report"), // 2.0.0 新增(審查 c)
+            ("share-stats", "false", "true"),            // 2.1.0 新增:匿名使用統計(預設打開,協定 §3)
         ], inputs);
         // 每個 input 都被上面的 pattern 吃到了(沒有漏掉一個格式不同的)
-        Assert.Equal(9, Regex.Matches(TopLevelBlock("inputs"), @"^  [a-z-]+:\s*$", RegexOptions.Multiline).Count);
+        Assert.Equal(10, Regex.Matches(TopLevelBlock("inputs"), @"^  [a-z-]+:\s*$", RegexOptions.Multiline).Count);
     }
 
     [Fact]
@@ -73,6 +74,7 @@ public class ActionYmlTests
         {
             ("version", "PARITY_VERSION"), ("figma-token", "FIGMA_TOKEN"), ("config", "PARITY_CONFIG"),
             ("target", "PARITY_TARGET"), ("baseline", "PARITY_BASELINE"), ("artifact-name", "PARITY_ARTIFACT_NAME"),
+            ("share-stats", "PARITY_SHARE_STATS_INPUT"),
         })
             Assert.Matches(new Regex($@"^\s+{variable}: \$\{{\{{ inputs\.{Regex.Escape(input)} \}}\}}$", RegexOptions.Multiline), Yml);
     }
@@ -129,15 +131,18 @@ public class ActionYmlTests
         return string.Join("\n", m.Groups["body"].Value.Split('\n').Select(l => l.Length >= 8 ? l[8..] : l.TrimStart()));
     }
 
-    private sealed record StepRun(int Exit, string Output, string ArtifactDir, bool ParityCalled, string Stderr);
+    private sealed record StepRun(int Exit, string Output, string ArtifactDir, bool ParityCalled, string Stderr, string ShareStatsSeen);
 
     /// <summary>
     /// 用 runner 的方式(bash -eo pipefail)跑「Run Parity check」那段,parity 換成 stub:
     /// 設定檔存在就照真的 check 把報告寫到「設定檔所在目錄/.parity/report.json」與 --md、exit 1;
-    /// 不存在就什麼都不寫、exit 2。stub 被呼叫過會留下 $RUNNER_TEMP/parity-called。
+    /// 不存在就什麼都不寫、exit 2。stub 被呼叫過會留下 $RUNNER_TEMP/parity-called,
+    /// 並把它看到的 PARITY_SHARE_STATS 記在 $RUNNER_TEMP/parity-share-stats(沒設是 &lt;unset&gt;)。
+    /// <paramref name="workflowShareStats"/> 模擬使用者在 workflow 層設的 PARITY_SHARE_STATS(step 的 env 會蓋過它)。
     /// </summary>
     private static StepRun RunCheckStep(string workspace, string workingDirectory, string config, string target = "",
-        int timeoutMs = 30_000, Action? onTimeout = null, string artifactName = "parity-report", bool emptyRunnerTemp = false)
+        int timeoutMs = 30_000, Action? onTimeout = null, string artifactName = "parity-report", bool emptyRunnerTemp = false,
+        string shareStats = "true", string? workflowShareStats = null)
     {
         string Unix(string p) => p.Replace('\\', '/');
         var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
@@ -146,6 +151,7 @@ public class ActionYmlTests
         const string stub = """
             parity() {
               : > "$RUNNER_TEMP/parity-called"
+              printf '%s' "${PARITY_SHARE_STATS-<unset>}" > "$RUNNER_TEMP/parity-share-stats"
               local cfg="" md=""
               while [ $# -gt 0 ]; do
                 case "$1" in
@@ -179,6 +185,9 @@ public class ActionYmlTests
         psi.Environment["PARITY_TARGET"] = target;
         psi.Environment["PARITY_BASELINE"] = "false";
         psi.Environment["PARITY_ARTIFACT_NAME"] = artifactName;
+        psi.Environment["PARITY_SHARE_STATS_INPUT"] = shareStats;
+        psi.Environment.Remove("PARITY_SHARE_STATS"); // 開發機上可能有設;這裡只看 workflowShareStats
+        if (workflowShareStats is not null) psi.Environment["PARITY_SHARE_STATS"] = workflowShareStats;
         using var p = System.Diagnostics.Process.Start(psi)!;
         _ = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
@@ -191,13 +200,14 @@ public class ActionYmlTests
             if (!p.WaitForExit(5_000)) p.Kill(entireProcessTree: true);
             Assert.Fail($"bash 沒有在 {timeoutMs / 1000} 秒內結束(卡住了)");
         }
+        var shareStatsSeen = Path.Combine(runnerTemp, "parity-share-stats");
         return new StepRun(p.ExitCode, File.ReadAllText(output).Replace("\r\n", "\n"),
             Path.Combine(runnerTemp, "parity-artifact"), File.Exists(Path.Combine(runnerTemp, "parity-called")),
-            stderr.GetAwaiter().GetResult());
+            stderr.GetAwaiter().GetResult(), File.Exists(shareStatsSeen) ? File.ReadAllText(shareStatsSeen) : "");
     }
 
     /// <summary>跑「Install Parity」那段,dotnet 換成 stub(把收到的參數一行一筆記下來)。</summary>
-    private static (int Exit, string DotnetCalls, string Stderr) RunInstallStep(string workspace, string version)
+    private static (int Exit, string DotnetCalls, string Stderr) RunInstallStep(string workspace, string version, string shareStats = "true")
     {
         string Unix(string p) => p.Replace('\\', '/');
         var runnerTemp = Directory.CreateDirectory(Path.Combine(workspace, "_temp")).FullName;
@@ -220,6 +230,7 @@ public class ActionYmlTests
         psi.Environment["GITHUB_PATH"] = Unix(Path.Combine(runnerTemp, "github_path"));
         psi.Environment["HOME"] = Unix(workspace);
         psi.Environment["PARITY_VERSION"] = version;
+        psi.Environment["PARITY_SHARE_STATS_INPUT"] = shareStats;
         using var p = System.Diagnostics.Process.Start(psi)!;
         _ = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
@@ -256,6 +267,70 @@ public class ActionYmlTests
         Assert.Equal("", r.DotnetCalls); // dotnet 沒被呼叫
         Assert.Contains("line break", r.Stderr);
         Assert.DoesNotContain("::", r.Stderr);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("TRUE")]
+    [InlineData("yes")]
+    [InlineData("0")]
+    [InlineData(" true")]
+    [InlineData("false\n::error title=Parity::INJECTED")]
+    [InlineData("true\r")]
+    public void A_share_stats_value_other_than_true_or_false_is_refused_before_installing(string shareStats)
+    {
+        // 2.1.0:share-stats 只收 true/false,跟其他 input 一樣在交給工具之前就擋。打錯的值不猜成哪一邊
+        // (猜成 true 就是違背使用者的意思照送),job 停在安裝這一步;訊息不印 input(換行就成了 workflow command)
+        using var dir = new TempDir();
+
+        var r = RunInstallStep(dir.Path, "", shareStats);
+
+        Assert.NotEqual(0, r.Exit);
+        Assert.Equal("", r.DotnetCalls);
+        Assert.Contains("share-stats must be 'true' or 'false'", r.Stderr);
+        Assert.DoesNotContain("::", r.Stderr);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("false")]
+    public void Share_stats_true_and_false_both_install(string shareStats)
+    {
+        using var dir = new TempDir();
+
+        var r = RunInstallStep(dir.Path, "", shareStats);
+
+        Assert.Equal(0, r.Exit);
+        Assert.Equal("tool|install|--global|Cornhsu.Parity|--version|2.*|\n", r.DotnetCalls);
+    }
+
+    [Theory]
+    [InlineData("false", null, "false")]    // share-stats: false → PARITY_SHARE_STATS=false(協定 §3 第 4 條)
+    [InlineData("true", null, "<unset>")]   // true 不設任何東西:parity 照它自己的開關
+    [InlineData("true", "false", "false")]  // workflow 層的 PARITY_SHARE_STATS=false 不能被蓋回「不表態」
+    [InlineData("true", "0", "0")]
+    [InlineData("false", "1", "false")]
+    [InlineData("yes", null, "false")]      // 安裝步驟已經擋過;這一步不靠步驟順序,不是 true 一律當 false
+    public void Share_stats_reaches_parity_only_as_an_off_switch(string shareStats, string? workflow, string seen)
+    {
+        using var dir = new TempDir();
+        dir.Write("parity.config.json", "{}");
+
+        var r = RunCheckStep(dir.Path, ".", "parity.config.json", shareStats: shareStats, workflowShareStats: workflow);
+
+        Assert.True(r.ParityCalled);
+        Assert.Equal(seen, r.ShareStatsSeen);
+    }
+
+    [Fact]
+    public void The_check_step_asks_parity_for_the_stats_job_summary_line_and_never_maps_the_input_straight_onto_the_switch()
+    {
+        // job summary 那一行由 parity 寫(只有它知道送了沒、為什麼沒送),而且只在 action 裡寫:PARITY_STATS_JOB_SUMMARY 是常數。
+        // share-stats 不能直接映射成 PARITY_SHARE_STATS:step 的 env 會蓋過使用者在 workflow 層設的值
+        var check = Step("Run Parity check");
+        Assert.Matches(new Regex(@"^        PARITY_STATS_JOB_SUMMARY: 'true'$", RegexOptions.Multiline), check);
+        Assert.DoesNotMatch(new Regex(@"^\s+PARITY_SHARE_STATS:", RegexOptions.Multiline), Yml);
+        Assert.Matches(new Regex(@"^        PARITY_SHARE_STATS_INPUT: \$\{\{ inputs\.share-stats \}\}$", RegexOptions.Multiline), Step("Install Parity"));
     }
 
     [Theory]

@@ -2,8 +2,42 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.1.0 — 2026-10-28
 
+> **⚠ 這一版起,`parity check` 預設會送匿名使用統計(CI 也是)。** 只有計數與分數區間——不含網址、名稱、selector、
+> 路徑、顏色或截圖,收集站不存 IP;用途是學術研究,只公開彙總後的結果。**關掉**任選一種:`DO_NOT_TRACK=1`、
+> `PARITY_SHARE_STATS=false`(或與 XamlContrast 共用的 `CORNHSU_SHARE_STATS=false`)、設定檔
+> `"stats": { "share": false }`、GitHub Action 的 `share-stats: false`。**先看會送什麼**:`parity check --stats-preview`
+> (什麼都不送)。送的每一個欄位與理由見 README「Anonymous usage statistics」與 <https://stats.cornhsu.com/>。
+> *Anonymous usage statistics are on by default from this release. Turn them off with `DO_NOT_TRACK=1`,
+> `PARITY_SHARE_STATS=false`, `"stats": { "share": false }` or the Action's `share-stats: false`; see the README.*
+
+- **新增:匿名使用統計**(面 1、2、3 都是加法,minor;協定是 stats-collector 的 `PROTOCOL.md`,與 XamlContrast 1.1 共用)。
+  - **什麼時候送**:只有 `parity check` 跑出報告(exit 0/1/3)時送一次;`--reverse`、其他指令、exit 2 不送。
+  - **送什麼**:工具版本(不含 commit)、作業系統、是否在 CI、選填的專案 ID,以及這次報告的分數、gate 結果(check 真正的
+    exit code,含 `--baseline`)、頁數、設計來源類型(`figma`/`snapshot`/`file`/`image`)、設計節點與配對數、各嚴重度的
+    落差數、各屬性的落差數/`missing` 數/`abs(delta)` 的區間分佈(長度以 px、顏色以 ΔE、字重以字重值分桶,左閉右開)。
+    協定封閉集以外的屬性不送。
+  - **開關**(第一個說不送的就不送):`DO_NOT_TRACK`(`0`/`false` 以外的值)→ `CORNHSU_SHARE_STATS`、`PARITY_SHARE_STATS`
+    (`1`/`true`/`yes`/`on` 以外的任何值都算不送)→ 設定檔 `stats.share: false` → 從原始碼建出的版本(以 `0.0.0-` 開頭,例如 `0.0.0-dev`)永遠不送
+    (設了 `CORNHSU_STATS_URL` 才送,給測試與本機驗證用)。
+  - **告知只印 stderr**:本機第一次印一段說明並在 `<使用者設定目錄>/cornhsu/parity-stats-notice` 留標記,之後不再印;
+    CI 上送成功時每次一行;不送的時候什麼都不印;stdout 一個字都不變。
+  - **代價**:連線最多 1.5 秒、整體最多 3 秒,不重試、不跟隨轉址;送不出去就安靜略過,exit code、stdout、報告檔不變。
+- **新增:`check --stats-preview`**(面 2 加法)。照常執行、什麼都不送,在 stderr 印出這次會送的完整 JSON(縮排)與
+  會不會送、不送的原因;exit code、stdout、報告檔都不變。`check --help` 列出這個旗標與每一種關掉統計的方法。
+- **新增:設定檔的 `stats` 區段**(面 1 加法;舊版靜默忽略)。`"stats": { "share": false }` 關掉統計;`"projectId"` 選填,
+  16–64 個 `A-Za-z0-9_-` 字元,使用者自己隨機取(不會從 repo 推算);沒有 ID 的資料對應不到任何人,也就無法個別刪除。
+  `share` 不是 `true`/`false`、`projectId` 格式不對、`"stats": null` 都是設定檔錯誤(exit 2),訊息指名欄位。
+  區段裡拼錯的 key 與整份設定檔一樣靜默忽略——用 `--stats-preview` 確認開關有沒有生效。
+- **新增:GitHub Action 的 `share-stats` input**(面 3 加法,預設 `'true'`,共 10 個 input)。`false` 時對 parity 設
+  `PARITY_SHARE_STATS=false`;只收 `true`/`false`,其他值在安裝之前就讓 action 停下來(exit 2)。job summary 多一行:
+  統計送了,或為什麼沒送。
+- **文件:Parity 不再是「不連網」的工具**(none)。`parity bug-report` 的鐵則不變(它本身不連網、不自動送出任何資料),
+  但它的用法文字原本寫「Parity makes no network connection」,改成「bug-report makes no network connection」;README、
+  SECURITY.md、issue 範本同步。README 的「Security」列出 Parity 會連的三個地方。
+- **CI:本 repo 自己的 workflow 不送統計**(none)。`ci.yml`、`release.yml` 整份設 `DO_NOT_TRACK: '1'`(release 用真版號
+  建置後跑真的 check);測試行程另外預設 `DO_NOT_TRACK=1`、只准送往 loopback。
 - **修正:`parity push` 在 GitHub Actions 的非 PR 事件上記得到分支**(push 屬實驗性;patch)。GitHub Actions 在
   PR 以外的事件把 `GITHUB_HEAD_REF` 設成有定義的空字串,Linux runner 上讀到的是 `""` 而不是「沒設」,原本的
   `--branch` → `GITHUB_HEAD_REF` → `GITHUB_REF_NAME` 停在空字串上:推 main 的 run 沒有分支,儀表板預設的 main

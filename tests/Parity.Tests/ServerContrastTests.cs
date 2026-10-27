@@ -63,6 +63,20 @@ public class ServerContrastIngestTests
         Assert.Equal(raw, ReportBlob.Decompress(run.RawReportGzip)); // 原文逐位元留著,詳情頁從這裡讀
     }
 
+    [Fact]
+    public void A_1_1_report_with_resolved_colours_is_accepted_and_kept_verbatim()
+    {
+        // XamlContrast 1.1 在每筆 finding 加了 colors(只增欄位、schemaVersion 仍是 6)。伺服器的鏡像不認得它,
+        // 照契約忽略;原文一個字不改留著,儀表板的詳情頁從原文讀它來畫「Aa」樣本。樣本同樣是對 demo 實跑的輸出
+        var raw = Repo.Read("tests", "Parity.Tests", "Golden", "xamlcontrast.v6.1-1.json");
+        Assert.Contains("\"colors\"", raw);
+
+        var run = ContrastIngest.Parse(raw, NoMeta, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal((3, 0, 8), (run.Contrast!.Fail, run.Contrast.Warn, run.Contrast.Pairs));
+        Assert.Equal(raw, ReportBlob.Decompress(run.RawReportGzip));
+    }
+
     [Theory]
     [InlineData(true, 0, true)]    // push 端帶來的判定優先(含 baseline 模式下 CLI 的真實結果)
     [InlineData(false, 1, false)]

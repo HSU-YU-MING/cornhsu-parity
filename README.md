@@ -63,11 +63,11 @@ PR comment, updating the same comment rather than adding new ones.
 
 | | |
 |---|---|
-| Releases | 28 on NuGet (v0.1.0 → v2.0.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
+| Releases | 29 on NuGet (v0.1.0 → v2.1.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **857**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1047**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -89,6 +89,11 @@ dotnet tool install -g Cornhsu.Parity
 > Node you already have, which saves at least 88 MB per platform package. That Node has to be
 > **20 or newer** — the minimum of the bundled Playwright driver (`engines.node` says so).
 
+> **`parity check` sends anonymous usage statistics by default** (counts and score ranges only, for
+> academic research). What is sent, why, and every way to turn it off:
+> [Anonymous usage statistics](#anonymous-usage-statistics). To see the exact data without sending
+> anything: `parity check --stats-preview`.
+
 ## Quick start
 
 ```sh
@@ -97,6 +102,7 @@ parity install-browser     # Download Playwright Chromium: on first run, and aga
                            #   upgrade if check says Chromium is not installed
 export FIGMA_TOKEN=...     # Only the file_content:read scope is needed
 parity check               # Compare; writes a report and sets the exit code
+                           #   (--stats-preview: print the anonymous statistics it would send, send nothing)
 parity report              # Re-render the Markdown report from an existing report.json
                            #   (no re-scan; --md writes a file, otherwise it prints to stdout)
 parity snapshot            # Freeze the currently rendered UI as the design baseline —
@@ -108,7 +114,7 @@ parity lint                # Design lint: are the design file's values inside th
 parity check --reverse     # Reverse view, for a designer redrawing an existing page:
                            #   how does my draft differ from what ships? (never gates)
 parity bug-report          # (experimental) Collect version / OS / Node / Chromium info and print
-                           #   it with a pre-filled GitHub issue link. Parity itself connects to nothing;
+                           #   it with a pre-filled GitHub issue link. bug-report itself connects to nothing;
                            #   opening the link sends the masked report to github.com (it rides in
                            #   the URL). No issue until you submit the form. --config adds a
                            #   structural summary without URLs, routes, keys, tokens or paths
@@ -144,7 +150,9 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "gate": {
     "failOn": ["critical", "serious"],       // any of minor / medium / serious / critical, one per string
     "minMatchRate": 0                        // optional: below this match rate (0–1) → exit 3, see below; 0 = no threshold
-  }
+  },
+  "stats": { "share": true }                 // optional: false turns anonymous usage statistics off;
+                                             //   see "Anonymous usage statistics" below (also projectId)
 }
 ```
 
@@ -458,10 +466,13 @@ Behaviour:
   own artifact and keeps its own PR comment; two calls with the same name collide on the artifact upload.
   Two calls in **one job** work only while the first one passes: when its gate fails, the job stops at
   that call's last step and the second call never runs (no report, no comment, no artifact for it).
+- **Anonymous usage statistics**: on by default ([what and why](#anonymous-usage-statistics));
+  `share-stats: false` turns them off. The job summary gets one line saying whether they were sent, or why not.
 
 Action inputs: `config` / `target` / `working-directory` / `version` / `figma-token` /
 `baseline` (regression mode) / `comment` (turn off the PR comment) / `upload-report` /
-`artifact-name` (default `parity-report`; letters, digits, `.`, `_`, `-`, at most 100 characters, not starting with `-` and not only dots).
+`artifact-name` (default `parity-report`; letters, digits, `.`, `_`, `-`, at most 100 characters, not starting with `-` and not only dots) /
+`share-stats` (default `true`; exactly `true` or `false` — anything else stops the action before it installs Parity).
 
 > The action installs the tool with `dotnet tool install -g Cornhsu.Parity` (published on
 > nuget.org) — the latest 2.x when `version` is omitted, so `@v2` never jumps to a future 3.x,
@@ -534,8 +545,86 @@ file is released immediately), and the engine's `BaselineComparer` is a pure, un
 > Open work, known blind spots and the next priorities are in [ROADMAP.md](ROADMAP.md);
 > version history is in [CHANGELOG.md](CHANGELOG.md).
 
+## Anonymous usage statistics
+
+From 2.1.0, `parity check` sends **anonymous usage statistics**, once per run — **on by default, in CI
+too**. They are counts and score ranges used for **academic research** on how far real
+implementations drift from their designs; only aggregate results are published. The public data page — what is collected, what it is used
+for, how long it is kept — is **<https://stats.cornhsu.com/>**.
+
+**When.** Only `parity check`, and only when it produced a report (exit 0, 1 or 3). `--reverse`,
+`--stats-preview`, every other command and any run that ends in exit 2 send nothing.
+
+**Everything that is sent:**
+
+| Field | Meaning |
+|---|---|
+| `schema`, `tool` | Always `1` and `"parity"` |
+| `toolVersion` | The Parity version, e.g. `2.1.0` (no commit hash) |
+| `os` | `windows`, `linux`, `macos` or `other` |
+| `ci` | Whether `CI` or `GITHUB_ACTIONS` is `true` |
+| `projectId` | `null`, unless you set `stats.projectId` yourself (see below) |
+| `data.score` | The fidelity score `check` printed (0–100) |
+| `data.gateFailed` | Whether `check`'s exit code was not 0 (so `--baseline` and exit 3 count as they did in your CI) |
+| `data.pages` | How many targets the report covers |
+| `data.designSource` | `figma`, `snapshot` (a file written by `parity snapshot`), `file` (any other design JSON) or `image` |
+| `data.designNodes`, `data.matched` | Design nodes and matched nodes, summed over all pages |
+| `data.severity` | Gap counts per severity: `critical`, `serious`, `medium`, `minor` |
+| `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`/`background` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), and weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300). `fontFamily` has no ranges, only counts |
+
+**Never sent:** URLs, routes, page or layer names, selectors, file names or paths, screenshots, colour
+values, design content, tokens, repository names or IDs, user names, machine names. The request has no
+User-Agent and no cookies. The collector does not store IP addresses or the time a record arrived (only
+its date); Cloudflare, which hosts the collector, sees the connection address at its edge, as any network
+provider does.
+
+**No ID unless you add one.** Without `stats.projectId`, nothing links one run to another or to you —
+which also means a record cannot be picked out and deleted afterwards. If you want your runs counted as
+one project (and deletable on request), make up a random ID — for example `openssl rand -hex 12`, or
+`[guid]::NewGuid().ToString('N')` in PowerShell. Parity never derives one from your repository, paths or
+machine, and an ID that is not 16–64 characters of `A–Z a–z 0–9 _ -` is a config error (exit 2):
+
+```jsonc
+"stats": {
+  "share": true,                                  // false turns statistics off
+  "projectId": "REPLACE-with-your-own-random-id"  // optional; never copy someone else's
+}
+```
+
+**Preview.** `parity check --stats-preview` runs the check as usual, sends nothing, and prints the exact
+JSON to stderr, followed by whether it would be sent — or why not. The exit code, stdout and the report
+files are unchanged.
+
+**Turning it off.** Any one of these is enough; they are checked in this order, and the first that says
+no wins:
+
+1. `DO_NOT_TRACK` set to anything except `0` or `false` — always wins.
+2. `CORNHSU_SHARE_STATS` (shared with [XamlContrast](https://github.com/HSU-YU-MING/cornhsu-xamlcontrast))
+   or `PARITY_SHARE_STATS` set to `false` — in fact any value other than `1`, `true`, `yes` or `on`, so a
+   typo errs on the side of *not* sending.
+3. `"stats": { "share": false }` in `parity.config.json`.
+4. The GitHub Action's `share-stats: false` (it sets `PARITY_SHARE_STATS=false`).
+5. Builds from source and other non-release builds (any version starting with `0.0.0-`, such as `0.0.0-dev`) never send.
+
+Like every other key in the config, a misspelt one is ignored: `"stats": { "shrae": false }` turns
+nothing off. `--stats-preview` tells you whether a switch took effect.
+
+**Notice.** The first time `check` sends on a machine, it prints a short notice to stderr and leaves a
+marker file, `cornhsu/parity-stats-notice` in your user settings directory (`%APPDATA%` on Windows,
+`~/.config` elsewhere), so the notice is not repeated — delete the file to see it again. In CI it prints
+one line every time statistics were sent. Nothing is printed when nothing is sent, and nothing ever goes
+to stdout. The GitHub Action also writes one line to the job summary: sent, or why not.
+
+**Cost.** The request waits at most 1.5 s to connect and 3 s in total, is never retried and never follows
+a redirect. When it fails — offline, a firewall, the collector is down — nothing is printed and nothing
+else changes: the exit code, stdout, the report files and the PR comment are exactly what they would have
+been.
+
 ## Security
 
+- **What Parity connects to**: the Figma API (only with a Figma design source), the dashboard you name
+  for `parity push`, and `stats.cornhsu.com` for the [anonymous usage statistics](#anonymous-usage-statistics)
+  of `parity check` (unless turned off). The page under test is opened by the local browser. Nothing else.
 - The Figma token comes from an environment variable (`env:FIGMA_TOKEN`); it never reaches a log
   and never goes in a URL (it is sent as the `X-Figma-Token` header).
 - Fetched frames are cached in `.parity/cache` (add `.parity/` to your `.gitignore`), so re-runs do

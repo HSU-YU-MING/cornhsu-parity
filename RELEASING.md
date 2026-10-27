@@ -128,6 +128,25 @@ git tag v2 v2.0.0 && git push origin v2      # @v2 的使用者從這裡開始�
 頂端變成 3.x 時紅燈)、兩份 README 的 `@v2` → `@v3`(`verify-readme-facts.ps1` 依最新版號的 major 檢查,
 同樣會紅)、SECURITY.md 的支援版本表、建 `v3` tag。
 
+## 2.1.0(匿名使用統計,預設打開)
+
+**這一版有三個硬條件,任一個沒滿足就不推 tag**——tag 推出去就上 nuget.org、npm 與 `@v2`,沒有反悔的機會:
+
+- [x] **研究倫理已確認「預設打開、含 CI」可以**(2026-10-28,維護者確認)。預設打開等於沒有經過使用者主動同意
+      (`D:\擴充功能\nuget\稽核-2026-10-22\統計功能規劃.md` 最上面那個 ⚠)。日後審查若改要求主動同意:把
+      `UsageStats.SendByDefault` 改成 `false`,補上「第一次在終端機詢問」(協定 §3,目前沒有實作),Action 的
+      `share-stats` 預設值與兩份 README、CHANGELOG 的說法一起改。
+- [x] **收集站已上線**(2026-10-28 部署;說明頁 200、兩條入口對 `{}` 回 400、正式資料庫 0 筆):`https://stats.cornhsu.com/` 打得開資料說明頁,對 `POST /v1/parity` 送一份**故意不合法**的本文
+      (例如 `{}`)回 400。**不要拿合法的資料去試正式站**——那一筆會被當成真實使用存進研究資料。收集站本身收、拒、上限的
+      行為,在 stats-collector 用 `npm run dev` + `npm run smoke` 對本機模擬驗。工具先發、收集站還沒上線的話,每個使用者
+      每次 check 都白等最多 3 秒,資料全丟。部署收集站是對外的動作,由維護者自己做。
+- [ ] **`stats@cornhsu.com` 收得到信**:說明頁上寫的刪除聯絡地址(Cloudflare Email Routing 的自訂地址,轉寄到維護者的信箱)。
+      寄一封測試信確認轉寄到了——公開頁面上的地址收不到信,有專案 ID 的人就沒辦法要求刪除。
+
+接著照「每次發布」:CHANGELOG 的 `## 未發佈` 改成 `## 2.1.0 — <日期>`(**刪掉最上面那段給維護者的 HTML 註解**,
+保留給使用者的 ⚠ 說明)、`verify-readme-facts.ps1` 綠燈、推 `v2.1.0`、前移 `v2`。發完用
+`parity check --stats-preview` 對 `samples/demo` 跑一次,確認 `toolVersion` 是 `2.1.0` 且 `would be sent`。
+
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
 
 ```sh
