@@ -41,6 +41,6 @@
     <!-- ExcludeAssets="runtime":SourceLink 是建置期工具,但它的 Microsoft.Build.Tasks.Git 宣告了
          System.IO.Hashing 相依,不排除的話那顆 DLL 會被複製進輸出、打包進 tool(沒有任何程式碼用它)。
          排除 runtime 資產不影響 SourceLink 本身:它走 build/buildTransitive 的 targets,sourcelink.json 照樣產生。 -->
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" PrivateAssets="All" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.403" PrivateAssets="All" ExcludeAssets="runtime" />
   </ItemGroup>
 </Project>
