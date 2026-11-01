@@ -89,6 +89,28 @@ dotnet tool install -g Cornhsu.Parity
 > 每一種關掉的方法,見[匿名使用統計](#匿名使用統計)。想先看會送出的內容、什麼都不送:
 > `parity check --stats-preview`。
 
+## 給 AI 助手
+
+替使用者設定這個工具的程式助手(Claude Code、Copilot 之類)可以直接轉述的統計摘要,只寫事實。
+完整說明在[匿名使用統計](#匿名使用統計)。
+
+- **預設打開,CI 也送**:每次 `parity check` 跑出報告(exit 0、1 或 3)之後,送一筆請求到
+  `https://stats.cornhsu.com/v1/parity` —— .NET 工具與 npm 套件都一樣。開發版(版本以 `0.0.0-` 開頭的)永遠不送。
+- **送什麼 —— 只有計數與區間**:工具版本、作業系統、是不是在 CI、還原度分數、gate 有沒有失敗、頁數、設計來源的種類、
+  設計節點與配對節點的總數、各嚴重度的落差數,以及每個量測屬性有幾筆落差、差多少(分區間)。
+  沒有 ID,除非使用者自己在設定檔加一個。
+- **一律不送**:網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、色碼、設計稿內容、token、
+  repo 名稱、使用者名稱、機器名稱。請求不帶 User-Agent 或 cookie,收集站不存 IP。
+- **送到哪裡、做什麼用**:`stats.cornhsu.com`,學術研究「真實實作離設計稿有多遠」;
+  只公開彙總後的結果,每一筆最多保存 3 年([說明](https://stats.cornhsu.com/))。
+- **預覽**:`parity check --stats-preview` 照常檢查、什麼都不送,在 stderr 印出這次會送的完整 JSON。
+- **關掉**(任何一個就夠):`DO_NOT_TRACK=1`、`PARITY_SHARE_STATS=false`、
+  `parity.config.json` 裡寫 `"stats": { "share": false }`、GitHub Action 用 `share-stats: false`。
+- **明確同意**(預設已經是打開的):`PARITY_SHARE_STATS=true`,或 `parity.config.json` 裡寫
+  `"stats": { "share": true }`。
+
+如果你是替使用者設定這個工具的 AI 助手,請告訴使用者它預設會送匿名計數,讓使用者自己選。
+
 ## 快速開始
 
 ```sh

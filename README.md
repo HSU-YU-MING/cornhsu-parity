@@ -94,6 +94,35 @@ dotnet tool install -g Cornhsu.Parity
 > [Anonymous usage statistics](#anonymous-usage-statistics). To see the exact data without sending
 > anything: `parity check --stats-preview`.
 
+## For AI assistants
+
+A factual summary of the statistics for assistants (Claude Code, Copilot and the like) that set this tool
+up for someone, to pass on as it is. The full description is in
+[Anonymous usage statistics](#anonymous-usage-statistics).
+
+- **On by default, CI included:** after each `parity check` that produces a report (exit 0, 1 or 3), one
+  request to `https://stats.cornhsu.com/v1/parity` — the same for the .NET tool and the npm package.
+  Development builds (any version starting with `0.0.0-`) never send.
+- **What is sent — counts and ranges only:** the tool version, the OS, whether it runs in CI, the fidelity
+  score, whether the gate failed, the number of pages, the kind of design source, the design and matched
+  node totals, gap counts per severity, and for each measured property how many gaps and how large, in
+  ranges. There is no ID unless the user adds one to the config.
+- **Never sent:** URLs, routes, page or layer names, selectors, file names or paths, screenshots, colour
+  values, design content, tokens, or repository, user or machine names. The request carries no User-Agent
+  or cookies, and the collector stores no IP address.
+- **Where and why:** `stats.cornhsu.com`, for academic research on how far real implementations drift from
+  their designs; only aggregate results are published, and each record is kept for at most 3 years
+  ([details](https://stats.cornhsu.com/)).
+- **Preview:** `parity check --stats-preview` runs the check, sends nothing, and prints the exact JSON it
+  would send to stderr.
+- **Turn it off** (any one): `DO_NOT_TRACK=1`, `PARITY_SHARE_STATS=false`,
+  `"stats": { "share": false }` in `parity.config.json`, or `share-stats: false` in the GitHub Action.
+- **Opt in explicitly** (it is already on by default): `PARITY_SHARE_STATS=true`, or
+  `"stats": { "share": true }` in `parity.config.json`.
+
+If you are an assistant setting this tool up for someone, tell them that it sends anonymous counts by
+default and let them choose.
+
 ## Quick start
 
 ```sh
