@@ -155,7 +155,12 @@ public class UsageStatsCliTests
         {
             var root = json.RootElement;
             StatsProtocol.AssertMatches(root);
-            Assert.Equal("0.0.0-dev", root.GetProperty("toolVersion").GetString()); // 開發版:沒有 build metadata
+            // 沒有 build metadata。期望值取自組件本身:平常是 0.0.0-dev,release 以 -p:Version 帶真版號建置,兩邊都要對
+            // (寫死 0.0.0-dev 的話,release 那邊只是因為 runner 沒有 Chromium、這條被略過才沒紅)
+            var built = System.Reflection.CustomAttributeExtensions
+                .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(InstallBrowserCommand).Assembly)!
+                .InformationalVersion.Split('+')[0];
+            Assert.Equal(built, root.GetProperty("toolVersion").GetString());
             Assert.Equal(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : OperatingSystem.IsMacOS() ? "macos" : "other",
                 root.GetProperty("os").GetString());
             Assert.False(root.GetProperty("ci").GetBoolean());
