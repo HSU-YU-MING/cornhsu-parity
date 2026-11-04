@@ -22,7 +22,8 @@ public static class Matcher
 {
     public static MatchResult Match(DesignNode designRoot, RenderedNode renderedRoot)
     {
-        // 設計端為錨:報告長度 = 設計節點數,有界又有意義(不反向掃整頁)
+        // 設計端為錨:報告長度 = 設計節點數,有界又有意義(不反向掃整頁;
+        // 「設計稿沒有的元素」是另一份選用的清單,在配對之後由 ExtrasFinder 列出,不進配對與比對)
         var designNodes = designRoot.DescendantsAndSelf().Skip(1).ToList(); // 跳過 root frame 本身
         var candidates = renderedRoot.DescendantsAndSelf().ToList();
 

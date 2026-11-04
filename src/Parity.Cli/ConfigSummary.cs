@@ -22,7 +22,8 @@ internal sealed record ConfigSummary(
     ToleranceConfig Tolerances,
     IReadOnlyList<string> FailOn,
     double MinMatchRate,
-    string ComparePosition)
+    string ComparePosition,
+    string CompareExtras)
 {
     public static ConfigSummary From(ParityConfig config)
     {
@@ -51,7 +52,9 @@ internal sealed record ConfigSummary(
             FailOn: config.Gate.FailOn.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過只有四個等級名
             MinMatchRate: config.Gate.MinMatchRate,
             // 載入時已驗過只有 relative/none(不分大小寫);印引擎讀到的小寫值
-            ComparePosition: config.Compare.Position.ToLowerInvariant() is "relative" or "none" ? config.Compare.Position.ToLowerInvariant() : "<other>");
+            ComparePosition: config.Compare.Position.ToLowerInvariant() is "relative" or "none" ? config.Compare.Position.ToLowerInvariant() : "<other>",
+            // 同上:載入時已驗過只有 none/list
+            CompareExtras: config.Compare.Extras.ToLowerInvariant() is "none" or "list" ? config.Compare.Extras.ToLowerInvariant() : "<other>");
     }
 
     /// <summary>只看網址的種類,不留網址本身。</summary>
@@ -75,5 +78,6 @@ internal sealed record ConfigSummary(
         yield return $"gate.failOn: {(FailOn.Count == 0 ? "(empty)" : string.Join(", ", FailOn))}";
         yield return $"gate.minMatchRate: {N(MinMatchRate)}";
         yield return $"compare.position: {ComparePosition}";
+        yield return $"compare.extras: {CompareExtras}";
     }
 }

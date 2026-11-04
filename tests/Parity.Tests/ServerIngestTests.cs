@@ -54,6 +54,30 @@ public class ServerIngestTests
     }
 
     [Fact]
+    public void A_report_with_an_extras_list_is_accepted_and_kept_verbatim_and_older_blobs_read_as_null()
+    {
+        // compare.extras(2.x 的加法):伺服器只解析它認得的欄位,原文一個字不改留著(詳情頁從原文讀);
+        // 分數、gate、頁面計數都不看 extras。舊的原文 blob 沒有這個 key,重新解析時讀成 null
+        var doc = JsonSerializer.Deserialize<ReportDocument>(SampleReportJson(), ReportWire.Indented)!;
+        var withExtras = doc with
+        {
+            Reports = [doc.Reports[0] with { Extras = new ExtraElements(2, [new("body > div", "div", new(0, 0, 800, 200))]) }],
+        };
+        var raw = JsonSerializer.Serialize(withExtras, ReportWire.Indented);
+        var plain = RunIngest.Parse(SampleReportJson(), new RunMetadata(null, null, null), DateTimeOffset.UnixEpoch);
+
+        var run = RunIngest.Parse(raw, new RunMetadata(null, null, null), DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(raw, ReportBlob.Decompress(run.RawReportGzip));
+        Assert.Equal((plain.Score, plain.GateFailed), (run.Score, run.GateFailed));
+        Assert.Equal(plain.Pages.Single().Matched, run.Pages.Single().Matched);
+        var back = JsonSerializer.Deserialize<ReportDocument>(ReportBlob.Decompress(run.RawReportGzip), ReportWire.Compact)!;
+        Assert.Equal(2, back.Reports[0].Extras!.Total);
+        var old = JsonSerializer.Deserialize<ReportDocument>(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1.json"), ReportWire.Compact)!;
+        Assert.Null(old.Reports[0].Extras);
+    }
+
+    [Fact]
     public void A_reverse_report_is_rejected()
     {
         // check --reverse 的報告期望/實際對調,收進來會污染趨勢與 gate(push 端也會先擋,這裡是第二道)

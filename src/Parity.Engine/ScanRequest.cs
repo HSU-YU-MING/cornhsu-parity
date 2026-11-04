@@ -21,4 +21,10 @@ public sealed record EngineOptions(Tolerances Tolerances)
 
     /// <summary>相對位置比對(offsetX/offsetY)。compare.position = "none" 時關閉。</summary>
     public bool ComparePosition { get; init; } = true;
+
+    /// <summary>
+    /// 列出實作端多出來的元件(compare.extras = "list")。預設關閉:報告的 <c>extras</c> 是 null。
+    /// 只是清單,開了也不影響 gate、分數與 summary(<see cref="Comparison.ExtrasFinder"/>)。
+    /// </summary>
+    public bool ListExtras { get; init; }
 }

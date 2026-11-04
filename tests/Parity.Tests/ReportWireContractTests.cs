@@ -13,7 +13,10 @@ namespace Parity.Tests;
 /// </summary>
 public class ReportWireContractTests
 {
-    /// <summary>涵蓋各種欄位形狀的固定報告:數值落差、軟落差(null unit/delta)、缺失、零落差節點、未配對。</summary>
+    /// <summary>
+    /// 涵蓋各種欄位形狀的固定報告:數值落差、軟落差(null unit/delta)、缺失、零落差節點、未配對,
+    /// 以及 extras 的兩種形狀(沒開的 null、開了且截斷過的清單:total 3、items 2)。
+    /// </summary>
     internal static ReportDocument Sample() => ReportDocument.Of(
     [
         new FidelityReport(
@@ -31,9 +34,21 @@ public class ReportWireContractTests
             ],
             [new UnmatchedNode("Badge", "10:9", "no-anchor", new Box(0, 0, 40, 20))],
             new ReportSummary(3, 2, 1, 1, 0, 1, 1, 1, Severity.Serious)),
+        new FidelityReport(
+            "/landing", "http://localhost:8080/landing", "abcd1234#10:20", [], [],
+            new ReportSummary(0, 0, 0, 0, 0, 0, 0, 0, Severity.None),
+            new ExtraElements(3,
+            [
+                new ExtraElement("body > div:nth-of-type(1)", "div", new Box(0, 0, 800, 200)),
+                new ExtraElement("#promo", "img", new Box(16, 240, 320, 180.5)),
+            ])),
     ]);
 
-    private static string Golden() => Normalize(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1.json"));
+    /// <summary>現行寫端的位元組。extras(compare.extras)加進來時另開這一份,2.2.0 寫的 report.v1.json 原樣留著當舊檔。</summary>
+    private static string Golden() => Normalize(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1-extras.json"));
+
+    /// <summary>2.2.0(extras 出現之前)寫出的報告,一個位元組都不改:新版讀舊檔的對照組。</summary>
+    private static string GoldenBeforeExtras() => Normalize(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1.json"));
 
     // 行尾隨平台(Indented 用 Environment.NewLine;checkout 的 golden 檔行尾隨 core.autocrlf),只比內容
     private static string Normalize(string s) => s.Replace("\r\n", "\n").TrimEnd();
@@ -129,6 +144,48 @@ public class ReportWireContractTests
         var back = JsonSerializer.Deserialize<ReportDocument>(Golden(), ReportWire.Indented)!;
 
         Assert.Equal(Golden(), Normalize(JsonSerializer.Serialize(back, ReportWire.Indented)));
+    }
+
+    [Fact]
+    public void A_report_written_before_extras_existed_reads_as_null_and_rewrites_with_only_that_key_added()
+    {
+        // 新增欄位是允許的加法(README 字彙表:消費端忽略未知 key、2.x 只加不改):舊檔照讀、extras 讀成 null,
+        // 重寫時除了多一行 "extras": null 之外逐位元相同——既有欄位一個都沒動
+        var old = GoldenBeforeExtras();
+        Assert.DoesNotContain("extras", old);
+
+        var back = JsonSerializer.Deserialize<ReportDocument>(old, ReportWire.Indented)!;
+
+        Assert.Null(Assert.Single(back.Reports).Extras);
+        const string summaryEnd = "\"maxSeverity\": \"serious\"\n      }\n    }";
+        Assert.Contains(summaryEnd, old);
+        var expected = old.Replace(summaryEnd, "\"maxSeverity\": \"serious\"\n      },\n      \"extras\": null\n    }");
+        Assert.Equal(expected, Normalize(JsonSerializer.Serialize(back, ReportWire.Indented)));
+    }
+
+    [Fact]
+    public void Extras_comes_after_summary_null_when_off_and_an_object_when_on()
+    {
+        // 「沒開」(null,key 照樣寫出)與「開了、沒有」({ total: 0, items: [] })讀的人要分得出來
+        var off = JsonSerializer.Serialize(Sample().Reports[0], ReportWire.Compact);
+        var none = JsonSerializer.Serialize(Sample().Reports[0] with { Extras = new ExtraElements(0, []) }, ReportWire.Compact);
+        var some = JsonSerializer.Serialize(Sample().Reports[1], ReportWire.Compact);
+
+        Assert.EndsWith("\"maxSeverity\":\"serious\"},\"extras\":null}", off);
+        Assert.EndsWith("},\"extras\":{\"total\":0,\"items\":[]}}", none);
+        Assert.EndsWith("},\"extras\":{\"total\":3,\"items\":[" +
+            "{\"selector\":\"body \\u003E div:nth-of-type(1)\",\"tag\":\"div\",\"box\":{\"x\":0,\"y\":0,\"width\":800,\"height\":200}}," +
+            "{\"selector\":\"#promo\",\"tag\":\"img\",\"box\":{\"x\":16,\"y\":240,\"width\":320,\"height\":180.5}}]}}", some);
+        Assert.Null(JsonSerializer.Deserialize<FidelityReport>(off, ReportWire.Compact)!.Extras);
+        Assert.Equal(0, JsonSerializer.Deserialize<FidelityReport>(none, ReportWire.Compact)!.Extras!.Total);
+    }
+
+    [Fact]
+    public void An_extra_element_carries_only_selector_tag_and_box()
+    {
+        // report.json 會被推到伺服器:多餘元件不帶元素文字,不多帶一種新的內容
+        Assert.Equal(["Selector", "Tag", "Box"], typeof(ExtraElement).GetProperties().Select(p => p.Name));
+        Assert.Equal(["Total", "Items"], typeof(ExtraElements).GetProperties().Select(p => p.Name));
     }
 
     // ---------- 封閉集(1.0 明文:新增成員或改拼寫 = major) ----------

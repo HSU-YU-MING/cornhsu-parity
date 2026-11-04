@@ -196,6 +196,108 @@ public class CliBrowserTests
         Assert.Matches(new Regex($@"select\(\.soft\)\] \| length\) == {soft}\b"), ci);
     }
 
+    // ---------- compare.extras:實作端多出來的元件(只列出、永遠不擋) ----------
+
+    /// <summary>
+    /// samples/demo/design.json 的忠實實作:12 個設計節點全部配上、零落差(示範頁刻意做壞的那幾處都照設計稿改回來,
+    /// hero-badge 用 class 讓自動配對找得到)。<paramref name="banner"/> = G5:body 開頭多一條設計稿沒有的 800×200 紅色橫幅。
+    /// </summary>
+    private static string FaithfulDemoPage(bool banner) => $$"""
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><style>
+          * { box-sizing: border-box; margin: 0; }
+          body { width: 800px; padding: 40px; font-family: Arial, sans-serif; background: #FFFFFF; }
+          h1.page-title { font-family: Arial, sans-serif; font-size: 32px; font-weight: 700; color: #111827; margin-bottom: 16px; }
+          p.subtitle { font-size: 16px; color: #6B7280; margin-bottom: 32px; }
+          button.cta { display: block; width: 160px; height: 48px; padding: 12px 20px; background: #2563EB; color: #FFFFFF;
+                       border: none; border-radius: 8px; font-size: 16px; font-weight: 600; font-family: Arial, sans-serif;
+                       margin-bottom: 40px; }
+          section.feature-list { display: flex; gap: 24px; width: 720px; }
+          .feature-card { width: 224px; height: 120px; padding: 16px; background: #F3F4F6; border-radius: 12px; }
+          .feature-card h3 { font-size: 18px; font-weight: 600; color: #111827; }
+          .hero-badge { position: absolute; top: 40px; left: 640px; width: 120px; height: 32px; background: #DCFCE7; }
+        </style></head>
+        <body>{{(banner ? "<div style=\"position:absolute;top:0;left:0;width:800px;height:200px;background:#FF0000\"></div>" : "")}}
+          <h1 class="page-title">Parity Demo</h1>
+          <p class="subtitle">Property-level design fidelity checking</p>
+          <button class="cta" data-parity="cta-button"><span>Get Started</span></button>
+          <section class="feature-list">
+            <div class="feature-card" id="feature-card-1"><h3>Numeric comparison</h3></div>
+            <div class="feature-card" id="feature-card-2"><h3>Local first</h3></div>
+            <div class="feature-card" id="feature-card-3"><h3>Gates your CI</h3></div>
+          </section>
+          <div class="hero-badge"></div>
+        </body></html>
+        """;
+
+    private static List<JsonElement> Reports(string reportPath)
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(reportPath));
+        return doc.RootElement.GetProperty("reports").EnumerateArray().Select(r => r.Clone()).ToList();
+    }
+
+    [Fact]
+    public async Task Extras_lists_the_banner_the_design_never_had_and_changes_nothing_else()
+    {
+        using var dir = new TempDir();
+        File.Copy(Repo.PathOf("samples", "demo", "design.json"), dir.File("design.json"));
+        dir.Write("page.html", FaithfulDemoPage(banner: false));
+        dir.Write("g5.html", FaithfulDemoPage(banner: true));
+        string Config(string name, string compare) => dir.Write(name, $$"""
+            { "designFile": "design.json", "compare": {{compare}},
+              "targets": [{ "route": "/", "frame": "", "url": "./page.html" }, { "route": "/g5", "frame": "", "url": "./g5.html" }],
+              "gate": { "minMatchRate": 1 } }
+            """);
+        var defaults = Config("default.config.json", """{ "position": "relative" }""");
+        var listing = Config("list.config.json", """{ "position": "relative", "extras": "list" }""");
+
+        // 1) 預設(沒寫 extras):與 2.2.0 相同——橫幅沒有任何提示,exit 0;報告的 extras 明確寫出 null
+        var off = await Cli.RunAsync("check", "--config", defaults, "--out", dir.File("off", "report.json"));
+        if (Cli.BrowserMissing(off)) { Console.WriteLine(Skipped); return; }
+        Assert.True(off.ExitCode == 0, off.Out + off.Err);
+        var offReports = Reports(dir.File("off", "report.json"));
+        foreach (var r in offReports)
+        {
+            Assert.Equal(JsonValueKind.Null, r.GetProperty("extras").ValueKind);
+            var summary = r.GetProperty("summary");
+            Assert.Equal((12, 12, 0), (summary.GetProperty("designNodes").GetInt32(), summary.GetProperty("matched").GetInt32(),
+                summary.GetProperty("nodesWithDiffs").GetInt32())); // 基準頁:全部配上、零落差
+        }
+        Assert.DoesNotContain("extras:", off.Out);
+
+        // 2) "list":G5 列出紅色橫幅,仍是 exit 0;基準頁開著也是 total 0(「開了、沒有」,不是 null)
+        var on = await Cli.RunAsync("check", "--config", listing, "--out", dir.File("on", "report.json"), "--md", dir.File("on", "report.md"));
+        Assert.True(on.ExitCode == 0, on.Out + on.Err);
+        Assert.Contains("PASS", on.Out);
+        var onReports = Reports(dir.File("on", "report.json"));
+        var clean = onReports[0].GetProperty("extras");
+        Assert.Equal(0, clean.GetProperty("total").GetInt32());
+        Assert.Equal(0, clean.GetProperty("items").GetArrayLength());
+        var g5 = onReports[1].GetProperty("extras");
+        Assert.Equal(1, g5.GetProperty("total").GetInt32());
+        var banner = Assert.Single(g5.GetProperty("items").EnumerateArray());
+        Assert.Equal("body > div:nth-of-type(1)", banner.GetProperty("selector").GetString());
+        Assert.Equal("div", banner.GetProperty("tag").GetString());
+        Assert.Equal((800, 200), BoxSize(banner));
+        Assert.Contains("extras: 1 element(s) on the page have no node in the design (listed only, never gated)", on.Out);
+        Assert.Contains("‹body > div:nth-of-type(1)› <div> 800×200 at (0, 0)", on.Out);
+        var md = File.ReadAllText(dir.File("on", "report.md"));
+        Assert.Contains("✅ PASS", md);
+        Assert.Contains("### Extra elements (1)", md);
+        Assert.Contains("| /g5 | `body > div:nth-of-type(1)` | `div` | 800×200 at (0, 0) |", md);
+
+        // 只列出:除了 extras,兩次的報告逐欄相同(配對、落差、summary;gate 與分數都從這些來)
+        foreach (var (a, b) in offReports.Zip(onReports))
+            foreach (var field in new[] { "nodes", "unmatched", "summary" })
+                Assert.Equal(a.GetProperty(field).GetRawText(), b.GetProperty(field).GetRawText());
+
+        // 3) --reverse 一律不算:extras 是 null
+        var reverse = await Cli.RunAsync("check", "--config", listing, "--reverse", "--out", dir.File("rev", "report.json"));
+        Assert.Equal(0, reverse.ExitCode);
+        Assert.All(Reports(dir.File("rev", "report.json")), r => Assert.Equal(JsonValueKind.Null, r.GetProperty("extras").ValueKind));
+        Assert.DoesNotContain("extras:", reverse.Out);
+    }
+
     [Fact]
     public async Task A_baseline_saved_by_1x_with_soft_rows_reports_nothing_fixed_while_the_diffs_remain()
     {

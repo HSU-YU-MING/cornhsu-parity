@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1068**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1105**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -179,7 +179,11 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
-  "compare": { "position": "relative" },     // relative = compare relative position (default); none = skip position
+  "compare": {
+    "position": "relative",                  // relative = compare relative position (default); none = skip position
+    "extras": "none"                         // optional: "list" = also list page elements the design has no node for;
+                                             //   listed only, never gates (see "Elements the design does not have")
+  },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
@@ -329,6 +333,37 @@ unaffected and works as usual).
 4. **Manual fallback**: add `data-parity="Layer Name"` in your HTML, or write
    `{ "Layer Name": "CSS selector" }` in `parity.map.json`
 5. Still no match → **honestly listed as unmatched**, so you only fill in what genuinely needs a human
+
+## Elements the design does not have (`compare.extras`)
+
+Matching is anchored on the design side, so by default an element the design never had — say an
+800×200 banner across the top of the page — produces no gap at all and the check passes without a
+word. `"compare": { "extras": "list" }` adds a list of such elements to the report. **It only
+lists**: the gate, the exit code, the fidelity score, the `summary` counts, `--baseline` and the
+anonymous statistics are exactly what they would be without it. The default is `"none"`; any value
+other than `none` / `list` is a config error (exit 2) — it is a string, not a boolean, so a typo
+like `"false"` fails loudly.
+
+An element on the page is listed when all of these hold:
+
+- it is not matched, and it is not an ancestor of a matched element (those are layout containers);
+- it is not inside a matched design **leaf** (how a button or an image is built inside is an
+  implementation detail), nor inside a matched element none of whose design children matched
+  (those children are already in the unmatched list — listing the page side too would report the
+  same gap twice);
+- it is visible: it has text of its own, is an `img` or `svg`, or has a background that is not
+  fully transparent;
+- at least **64×64 = 4,096 px²** of it lies inside the viewport the page was rendered at (by
+  default the design frame's size). The threshold is deliberately conservative — icons, hairlines
+  and a single short word stay below it — and not configurable in this first version.
+
+Nested elements are listed once, at the outermost one that qualifies. `ignore` selectors apply as
+usual, and `check --reverse` never computes the list. `check` prints the list and `--md` / `parity
+report` add a table when there is something to show; the local report UI and the dashboard do not
+show it yet (the dashboard keeps it as part of the raw report). Known limits: the capture does not
+record borders, shadows, `opacity` or clipping, so **an element that is visible only through its
+border is not listed**, while one hidden by `opacity: 0`, by an ancestor's `overflow: hidden` or
+under another element can be.
 
 ## Architecture
 
@@ -528,6 +563,7 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 - `severity` — **closed set** (spelling and membership frozen): `none` / `minor` / `medium` / `serious` / `critical`. `status`: `mismatch` / `missing`.
 - `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `randomized-id`, `size-implausible`.
 - `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`.
+- `extras` (per report, `compare.extras`) — `null` when the list is off (the default, `check --reverse`, and every report written before the field existed); otherwise `{ "total": n, "items": [{ "selector", "tag", "box" }] }`, where `total: 0` with empty `items` means "on, nothing found". `items` is sorted largest first and capped at 20 per page; `total` counts them all. Items carry no element text. Never affects the gate or the score.
 - `direction` (top level, since 2.0.0) — **closed set**: `forward` (a normal `check`) / `reverse` (`check --reverse`: expected and actual swapped, never gated). Always written; files without it read as `forward`. Readers accept exactly the lowercase strings `"forward"` and `"reverse"` — any other value (other casing, a number, `null`) is an error, not a guess. `parity report` does not gate a reverse report, and `parity push` refuses one.
 
 ## Regression gating: baselines (M5)

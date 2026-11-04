@@ -151,6 +151,12 @@ public sealed class ParityConfig
             !string.Equals(Compare.Position, "none", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"config {path}: compare.position is \"{Compare.Position}\", which is not valid (use: relative, none).");
+        // compare.extras 刻意是字串不是布林(與 position 同一種寫法):"false"、"true"、"yes" 這類手誤在載入時就報錯
+        if (!string.Equals(Compare.Extras, "none", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(Compare.Extras, "list", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"config {path}: compare.extras is {(Compare.Extras is null ? "null" : $"\"{ConsoleText.Safe(Compare.Extras)}\"")}, " +
+                "which is not valid (use: none, list).");
         if (DesignImage is not null && DesignFile is null)
             throw new InvalidOperationException(
                 $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
@@ -216,6 +222,9 @@ public sealed class ParityConfig
 
     /// <summary>compare.position:"relative"(預設,比相對位置)/ "none"(不比位置)。</summary>
     public bool ComparePosition => !string.Equals(Compare.Position, "none", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>compare.extras:"none"(預設)/ "list"(列出實作端多出來的元件,永遠不擋)。</summary>
+    public bool ListExtras => string.Equals(Compare.Extras, "list", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>gate 判定:報告裡有任何 failOn 等級的落差 → 該擋(規畫書「還原度把關」)。</summary>
     public bool ShouldFail(FidelityReport report) => GateFailReason(report) is not null;
@@ -288,6 +297,12 @@ public sealed class CompareConfig
     /// "none":位置完全不比。
     /// </summary>
     public string Position { get; set; } = "relative";
+
+    /// <summary>
+    /// "none"(預設):只看設計稿裡有的節點。"list":另外列出實作端多出來的元件(報告的 <c>extras</c>),
+    /// 只是清單——不進 gate、分數與 summary。不分大小寫;其他值載入即報錯。
+    /// </summary>
+    public string Extras { get; set; } = "none";
 }
 
 public sealed class ToleranceConfig
