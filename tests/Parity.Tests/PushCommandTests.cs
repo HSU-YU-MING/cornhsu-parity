@@ -71,6 +71,23 @@ public class PushCommandTests
             ReportDocument.Of([Report(severity, matched: matched)])));
     }
 
+    [Theory]
+    [InlineData("""{ "gate": { "failOn": [] } }""", false)]
+    [InlineData("""{ "gate": { "failOn": [], "failOnUnmatched": ["text-not-found"] } }""", true)]
+    [InlineData("""{ "gate": { "failOn": [], "failOnUnmatched": ["no-anchor"] } }""", false)]
+    public void The_recomputed_verdict_includes_fail_on_unmatched(string configJson, bool failed)
+    {
+        using var dir = new TempDir();
+        var config = dir.Write("parity.config.json", configJson);
+        var report = Report(Severity.Minor, matched: 1) with
+        {
+            Unmatched = [new UnmatchedNode("cta-label", "1:5", "text-not-found")],
+            Summary = Report(Severity.Minor).Summary with { DesignNodes = 2, Unmatched = 1 },
+        };
+
+        Assert.Equal(failed, PushCommand.ResolveGate(new() { ["--config"] = config }, ReportDocument.Of([report])));
+    }
+
     [Fact]
     public void Without_gate_exit_or_any_config_no_verdict_is_sent()
     {

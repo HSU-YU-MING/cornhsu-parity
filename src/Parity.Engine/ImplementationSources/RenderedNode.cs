@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Parity.Engine.Model;
 
 namespace Parity.Engine.ImplementationSources;
@@ -24,6 +25,17 @@ public sealed record RenderedNode(
     public string? Classes { get; init; }
     public string? AriaLabel { get; init; }
     public double? CornerRadius { get; init; }
+
+    /// <summary>
+    /// 整頁文字(只有根節點有;擷取端沒提供 = null,例如假來源與舊測試)。**只給配對用**:
+    /// Matcher 拿它判斷設計稿的文字是不是整頁都找不到(<c>text-not-found</c>)。
+    /// byText 只收元素「自己的」文字(<c>Hello &lt;b&gt;world&lt;/b&gt;</c> 會被拆開),不能拿來判斷「找不到」,
+    /// 所以另外收一份。內容是頁面上的所有文字——**不能外流**:不進 report.json、快照、統計、bug-report;
+    /// <c>[JsonIgnore]</c> 是因為 serve 的 /api/detail 會把整棵樹序列化給本機 UI。
+    /// <c>with</c> 運算式(Normalizer)會原樣帶著它。
+    /// </summary>
+    [JsonIgnore]
+    public string? PageText { get; init; }
 
     public IEnumerable<RenderedNode> DescendantsAndSelf()
     {

@@ -144,15 +144,16 @@ internal static class CheckCommand
 
         var gateReasons = session.GateFailReasons(scans);
         var gateFail = gateReasons.Count > 0;
-        WriteMarkdown(opts, session.Config, reports, gateFail);
+        // failOnUnmatched 擋下的節點在 Markdown 裡另起一行講明:分數可能是 100/100(配上的都沒落差),只看表頭會以為誤判
+        WriteMarkdown(opts, session.Config, reports, gateFail, gateNotes: session.Config.UnmatchedGateFailures(reports));
         if (gateFail)
         {
-            Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m (fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
+            Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m ({session.Config.GateCriteria()})");
             foreach (var r in gateReasons)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
             return 1;
         }
-        Console.WriteLine($"\n\x1b[32m✔ PASS\x1b[0m (fail on: {string.Join(", ", session.Config.Gate.FailOn)})");
+        Console.WriteLine($"\n\x1b[32m✔ PASS\x1b[0m ({session.Config.GateCriteria()})");
         return 0;
     }
 
@@ -203,12 +204,19 @@ internal static class CheckCommand
         {
             Console.WriteLine("\n\x1b[33m(no baseline yet)\x1b[0m run `parity baseline save` first; falling back to the normal gate this time.");
             Console.WriteLine($"\x1b[90m  hint: to use --baseline in CI, commit {Path.GetFileName(BaselineCommand.BaselineDbPath(session.Config))} into the repo.\x1b[0m");
-            var fail = session.ShouldFail(scans);
-            WriteMarkdown(opts, session.Config, reports, fail);
+            // 一般 gate 的全部條件(含 failOnUnmatched),原因照一般模式印出來
+            var fallbackReasons = session.GateFailReasons(scans);
+            var fail = fallbackReasons.Count > 0;
+            WriteMarkdown(opts, session.Config, reports, fail, gateNotes: session.Config.UnmatchedGateFailures(reports));
             Console.WriteLine(fail ? "\x1b[31m✘ GATE FAIL\x1b[0m" : "\x1b[32m✔ PASS\x1b[0m");
+            foreach (var r in fallbackReasons)
+                Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
             return fail ? 1 : 0;
         }
 
+        // failOnUnmatched 是一般模式的條件:回歸模式只比落差的新增/惡化(第一版刻意不套用),講明免得以為有擋
+        if (session.Config.Gate.FailOnUnmatched.Count > 0)
+            Console.WriteLine("\x1b[90mnote: gate.failOnUnmatched is not applied with --baseline (only new or worsened diffs gate).\x1b[0m");
         var cmp = BaselineComparer.Compare(current, baseline.Diffs, DiffRecord.KeysOf(reports));
         WriteMarkdown(opts, session.Config, reports, cmp.HasRegressions, cmp, baselineScore: baseline.Score);
         Console.WriteLine($"\nvs baseline — \x1b[31mnew {cmp.Regressions.Count}\x1b[0m, " +
@@ -346,7 +354,10 @@ internal static class ReportCommand
             reports,
             gateFail: !reverse && config.GateFailReasons(reports).Count > 0,
             tokens: tokens,
-            gateNotes: reverse ? [CheckCommand.ReverseNote] : config.MatchIntegrityFailures(reports),
+            // 與 check --md 同一套提示:可信度不過講它,否則講 failOnUnmatched 擋下了哪些未配對節點
+            gateNotes: reverse ? [CheckCommand.ReverseNote]
+                : config.MatchIntegrityFailures(reports) is { Count: > 0 } integrity ? integrity
+                : config.UnmatchedGateFailures(reports),
             figmaFileKey: config.FigmaLinkFileKey); // 與 check --md 同一條:圖層名連回 Figma 節點
 
         if (opts.GetValueOrDefault("--md") is { } mdPath)

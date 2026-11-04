@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Parity.Engine;
+using Parity.Engine.Comparison;
 
 namespace Parity.Cli;
 
@@ -144,6 +145,14 @@ public sealed class ParityConfig
                 throw new InvalidOperationException(
                     $"config {path}: gate.failOn contains \"{ConsoleText.Safe(s)}\", which is not a valid severity " +
                     "(use: minor, medium, serious, critical — one per string).");
+        if (Gate.FailOnUnmatched is null)
+            throw NullSection("gate.failOnUnmatched",
+                "an array of unmatched reasons, e.g. [\"text-not-found\"] or [\"*\"] (use [] to never gate on unmatched nodes)");
+        foreach (var r in Gate.FailOnUnmatched)
+            if (r is null || !IsUnmatchedGateValue(r))
+                throw new InvalidOperationException(
+                    $"config {path}: gate.failOnUnmatched contains \"{ConsoleText.Safe(r)}\", which is not an unmatched reason " +
+                    $"(use: {string.Join(", ", Matcher.UnmatchedReasons)}, or \"*\" for every reason — one per string).");
         if (Gate.MinMatchRate is < 0 or > 1)
             throw new InvalidOperationException(
                 $"config {path}: gate.minMatchRate must be between 0 and 1 (got: {Gate.MinMatchRate}).");
@@ -229,16 +238,63 @@ public sealed class ParityConfig
     /// <summary>gate 判定:報告裡有任何 failOn 等級的落差 → 該擋(規畫書「還原度把關」)。</summary>
     public bool ShouldFail(FidelityReport report) => GateFailReason(report) is not null;
 
-    /// <summary>gate 不通過的原因(null = 通過)。先驗配對可信度,再看 failOn 等級落差。</summary>
+    /// <summary>
+    /// gate 不通過的原因(null = 通過)。先驗配對可信度(它不過就只回它,exit 3),
+    /// 再看 failOn 等級落差與 failOnUnmatched 的未配對原因(exit 1);兩條都擋時以「; 」接起來,看得出是哪條擋的。
+    /// </summary>
     public string? GateFailReason(FidelityReport report)
     {
         if (MatchIntegrityFailure(report) is { } untrusted) return untrusted;
         var failOn = Gate.FailOn.Select(s => FailOnSeverities[s]).ToHashSet();
+        var reasons = new List<string>(2);
         // soft 落差(font-family)不擋 gate(2.0.0 起;與分數口徑一致——soft 也不扣分)
-        return report.Nodes.SelectMany(n => n.Diffs).Any(diff => !diff.Soft && failOn.Contains(diff.Severity))
-            ? $"has {string.Join("/", Gate.FailOn)} severity diffs"
-            : null;
+        if (report.Nodes.SelectMany(n => n.Diffs).Any(diff => !diff.Soft && failOn.Contains(diff.Severity)))
+            reasons.Add($"has {string.Join("/", Gate.FailOn)} severity diffs");
+        if (UnmatchedGateFailure(report) is { } unmatched)
+            reasons.Add(unmatched);
+        return reasons.Count == 0 ? null : string.Join("; ", reasons);
     }
+
+    /// <summary>
+    /// gate.failOnUnmatched:未配對清單裡有要擋的原因 → 原因的說明(null = 不擋)。與配對可信度無關;
+    /// <c>check --baseline</c>(已有基準時)不套用這條。圖層名來自 repo 內容,先過 ConsoleText.Safe。
+    /// </summary>
+    public string? UnmatchedGateFailure(FidelityReport report)
+    {
+        var gated = Gate.FailOnUnmatched;
+        if (gated.Count == 0) return null;
+        var all = gated.Contains("*");
+        var hits = report.Unmatched
+            .Where(u => all || gated.Contains(u.Reason, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        if (hits.Count == 0) return null;
+
+        const int namesPerReason = 5;
+        var byReason = hits.GroupBy(u => u.Reason, StringComparer.Ordinal).Select(g =>
+        {
+            var names = g.Take(namesPerReason).Select(u => ConsoleText.Safe(u.DesignLayer));
+            var more = g.Count() > namesPerReason ? $", +{g.Count() - namesPerReason} more" : "";
+            return $"{ConsoleText.Safe(g.Key)}: {string.Join(", ", names)}{more}";
+        });
+        return $"{hits.Count} unmatched design node{(hits.Count == 1 ? "" : "s")} blocked by gate.failOnUnmatched " +
+            $"({string.Join("; ", byReason)})";
+    }
+
+    /// <summary>各報告被 failOnUnmatched 擋下的說明(空 = 沒有),附 route 前綴——Markdown 報告的提示用。</summary>
+    public List<string> UnmatchedGateFailures(IEnumerable<FidelityReport> reports)
+        => CollectReasons(reports, UnmatchedGateFailure);
+
+    /// <summary>GATE FAIL / PASS 那一行括號裡的把關條件。failOnUnmatched 沒設時與以前一字不差(含 failOn 空的 "fail on: ")。</summary>
+    public string GateCriteria()
+    {
+        if (Gate.FailOnUnmatched.Count == 0) return $"fail on: {string.Join(", ", Gate.FailOn)}";
+        var unmatched = $"fail on unmatched: {string.Join(", ", Gate.FailOnUnmatched)}";
+        return Gate.FailOn.Count == 0 ? unmatched : $"fail on: {string.Join(", ", Gate.FailOn)}; {unmatched}";
+    }
+
+    /// <summary>failOnUnmatched 的白名單:Matcher 寫得出來的原因(不分大小寫),或 "*" = 全部。</summary>
+    private static bool IsUnmatchedGateValue(string value)
+        => value == "*" || Matcher.UnmatchedReasons.Contains(value, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>各報告的 gate 不通過原因(空 = 全過),附 route 前綴。</summary>
     public List<string> GateFailReasons(IEnumerable<FidelityReport> reports)
@@ -344,4 +400,11 @@ public sealed class GateConfig
     /// 「沒落差」不代表「沒問題」。預設 0 = 不設門檻;但「完全 0 配對」永遠擋(那必是設定錯)。
     /// </summary>
     public double MinMatchRate { get; set; }
+
+    /// <summary>
+    /// 要擋的未配對原因(選填)。例:<c>["text-not-found"]</c> = 設計稿的文字整頁都找不到(元件不見)就 GATE FAIL(exit 1);
+    /// <c>["*"]</c> = 任何未配對都擋。預設空 = 未配對只列出、不擋(舊設定檔結果不變)。
+    /// 拼錯的原因載入時就報錯(exit 2):永遠對不到的原因會讓 gate 靜靜失效。<c>check --baseline</c> 不套用。
+    /// </summary>
+    public List<string> FailOnUnmatched { get; set; } = [];
 }

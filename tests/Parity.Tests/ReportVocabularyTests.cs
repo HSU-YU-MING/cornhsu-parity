@@ -11,7 +11,7 @@ namespace Parity.Tests;
 public class ReportVocabularyTests
 {
     private static readonly string[] KnownReasons =
-        ["no-anchor", "ambiguous-or-missing-text", "randomized-id", "size-implausible"];
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible"];
 
     private static readonly string[] KnownMatchedBy =
         ["selector", "explicit", "auto-text", "auto-name", "auto-container"];
@@ -47,6 +47,13 @@ public class ReportVocabularyTests
         static List<string> Values(string s) => Regex.Matches(s, "`([^`]+)`").Select(x => x.Groups[1].Value).ToList();
         Assert.Equal(Enum.GetNames<Severity>().Select(n => n.ToLowerInvariant()), Values(m.Groups["list"].Value));
         Assert.Equal(Enum.GetNames<DiffStatus>().Select(n => n.ToLowerInvariant()), Values(m.Groups["status"].Value));
+    }
+
+    [Fact]
+    public void Config_validation_accepts_exactly_the_known_reasons()
+    {
+        // gate.failOnUnmatched 對著 Matcher.UnmatchedReasons 驗拼字:漏一個,那個原因就擋不了;多一個,拼錯的值會被收下
+        Assert.Equal(KnownReasons.Order(), Parity.Engine.Comparison.Matcher.UnmatchedReasons.Order());
     }
 
     [Fact]
