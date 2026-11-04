@@ -53,12 +53,13 @@ public sealed class ImageDesignSource(string imagePath) : IDesignSource
 
     /// <summary>
     /// 只註冊 PNG 與 JPEG 解碼器(2.0.0 起)。designImage 一直只文件化 PNG/JPG,但預設設定依內容自動判格式、
-    /// 什麼都解——ImageSharp 3.1.12 的 BigTIFF 解碼 DoS(GHSA-wmxv-xphr-5c9g)就從這裡進來,而 3.1 線沒有修補版
-    /// (4.x 授權改成建置期強制,見 CLAUDE.md)。副檔名改成 .png 的 TIFF 也一樣擋得住:判格式看的是內容。
+    /// 什麼都解——ImageSharp 3.1.12 的 BigTIFF 解碼 DoS(GHSA-wmxv-xphr-5c9g)就是從這裡進來的,3.2.0 修了。
+    /// 升級之後照樣只留這兩個:用不到的解碼器不留,下一個解碼器的洞才碰不到。
+    /// 副檔名改成 .png 的 TIFF 也一樣擋得住:判格式看的是內容。
     /// <para>
     /// <c>SkipMetadata</c>:取樣只用像素,ICC／EXIF／XMP／IPTC 從來沒有人讀。不收中繼資料,JPEG 的 APP2 ICC
     /// 就不會被保留下來(GHSA-gwg2-r3hj-4w44 的 CLUT 配置在讀 <c>IccProfile.Entries</c> 時發生)。
-    /// 像素不受影響:3.1.12 不做 ICC 色彩轉換,Adobe APP14 的色彩轉換旗標照讀(測試以像素雜湊鎖住)。
+    /// 像素不受影響:解碼不做 ICC 色彩轉換,Adobe APP14 的色彩轉換旗標照讀(測試以像素雜湊鎖住)。
     /// </para>
     /// </summary>
     internal static readonly DecoderOptions PngAndJpegOnly = new()
@@ -68,8 +69,8 @@ public sealed class ImageDesignSource(string imagePath) : IDesignSource
     };
 
     /// <summary>
-    /// 解碼設計圖,只留像素。ImageSharp 3.1.12 的 PNG 解碼器**不理 <c>SkipMetadata</c>**,iCCP 照樣收進
-    /// <c>Metadata.IccProfile</c>(2026-10-23 實測),所以解碼後再把它丟掉:交出去的影像上沒有 ICC 可解析。
+    /// 解碼設計圖,只留像素。ImageSharp 的 PNG 解碼器**不理 <c>SkipMetadata</c>**,iCCP 照樣收進
+    /// <c>Metadata.IccProfile</c>(3.1.12 與 3.2.0 都實測過),所以解碼後再把它丟掉:交出去的影像上沒有 ICC 可解析。
     /// 解碼本身不會走到那段 CLUT 配置(只解析 128 位元組的檔頭),這一步保證之後也沒有人能從這裡讀到它。
     /// </summary>
     internal static async Task<Image<Rgba32>> LoadPixelsAsync(string path, CancellationToken ct = default)

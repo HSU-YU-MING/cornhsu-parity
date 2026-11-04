@@ -150,9 +150,9 @@ git tag v2 v2.0.0 && git push origin v2      # @v2 的使用者從這裡開始�
 
 ## 每個平台一包的第一次發版(下一個 2.x)
 
-**這一版有一個硬條件,沒確認就不推 tag:**
+**這一版有一個硬條件,沒確認就不推 tag(2026-11-04 已確認:`cornhsu.parity` 那條 Active、`Scopes: All`、`Glob Patterns and Packages: *`):**
 
-- [ ] **登入 nuget.org → Trusted Publishing,確認 Parity 那條政策的範圍涵蓋 `Cornhsu.Parity.*`,也允許建立新套件。**
+- [x] **登入 nuget.org → Trusted Publishing,確認 Parity 那條政策的範圍涵蓋 `Cornhsu.Parity.*`,也允許建立新套件。**
       這九個都是新 ID,第一次推才會建立。官方文件(2026-09 版)只說政策有 Scope 與 glob、沒講細節,維護者以外看不到設定。
       有前例但不是保證:`Cornhsu.Parity`、`Cornhsu.XamlContrast`、`Cornhsu.Labeling` 的第一版都是這條路建立新 ID 的(2026-07)。
       `Cornhsu.` 前綴已保留,所以新 ID 別人搶不走,發出去也會有驗證勾勾。
@@ -185,6 +185,13 @@ Ubuntu 24.04(SDK 10.0.114,回報 `ubuntu.24.04-x64` → `linux-x64`)、Fedora 43
 Alpine 3.23(10.0.110,`alpine.3.23-x64` → `linux-musl-x64`)。那個 job 只跑一次就拿掉了:裝不起來也修不了,留著只會因為外部套件庫而紅。
 **沒驗到的**:真的推上 nuget.org(新 ID 的政策行為、驗證時間、網站搜尋的呈現);九個 snupkg 的符號驗證(pdb 內容相同;
 失敗的話主套件照常,只差符號)。
+
+## ImageSharp 的授權金鑰
+
+`src/Parity.Engine/sixlabors.lic` 是 Six Labors 核發的開源社群金鑰,**有效到 2028-02-02**。到期後 Parity 建置不起來,也就發不了版(已發佈的版本不受影響)。
+
+- **續期:2027-11-04 起**到 <https://licensing.sixlabors.com/> 用**同一個信箱**重送表單,Kind 選 `OpenSource`,Assembly names 填 `Parity.Engine`,把新檔案蓋掉舊的。
+- 只能放**限定組件**的金鑰(內容有 `Key=Assembly:`),官方明寫這種可以公開。不限組件的金鑰與付費金鑰必須保密(`RepoInvariantsTests` 擋著)。
 
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
 

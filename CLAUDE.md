@@ -239,8 +239,12 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 
 ### 其他
 
-- `ImageSharp` **3.2.0 與 4.x 都在建置期強制授權金鑰**，沒有金鑰就 CI 全紅(4.x 實測於 #19，3.2.0 實測於 #59)。
-  3.1.x 不用金鑰。dependabot 只 ignore major，所以 3.2.0 它還是可能提，沒有金鑰之前不要合。
+- **`src/Parity.Engine/sixlabors.lic` 是 ImageSharp 的授權金鑰，故意放在公開 repo。** 3.2.0 起建置沒有金鑰就 error。
+  這把是限定組件的社群金鑰(內容有 `Key=Assembly:`)，官方明寫可以公開；不限組件的金鑰與付費金鑰不能放進來。
+  它只對組件名 `Parity.Engine` 有效，所以**改 Parity.Engine 的 AssemblyName、或讓別的專案直接引用 Six Labors 的套件，建置都會壞**
+  (要用同一個信箱重新申請，把新組件名列進去；`RepoInvariantsTests` 擋著)。**有效到 2028-02-02，2027-11-04 起可以續期**，步驟在 RELEASING.md。
+  金鑰只在建置時檢查，也不會進 NuGet 或 npm 的套件(`verify-tool-packages.py` 擋著)，所以使用者不需要。
+  dependabot 只 ignore ImageSharp 的 major:升 major 要重新比對新舊版解出來的像素，是主動決定。
 - ~~`Parity.Server` 的 `create-invite` 印出的邀請連結**硬寫 `http://127.0.0.1:4322`**。~~
   **已改(2026-10-26)**:管理指令與 web 端的邀請都先看 `Parity:PublicUrl`,沒設才退回本機開發位址/請求的 Host。
 - **合併伺服器(2026-10-26):一台收 parity 與 XamlContrast 兩種報告。** `POST /api/runs` 依 `X-Parity-Tool` 分流
@@ -264,38 +268,14 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 
 ## 技術債與留帳
 
-- **相依漏洞:2026-10-22 實掃只剩 `SixLabors.ImageSharp` 3.1.12 一個套件**(`dotnet list Parity.slnx
-  package --vulnerable --include-transitive`;2026-08-26 那次是 0 個,這五個 advisory 是 2026-10-07 才公布的)。
+- **相依漏洞:2026-11-04 實掃 0 個**(`dotnet list Parity.slnx package --vulnerable --include-transitive`)。
   `SQLitePCLRaw` 手動 pin 到 3.0.5 蓋掉 EF Sqlite 傳遞進來的 NU1903 版本,dependabot 每月盯著。
-  - **ImageSharp:目前維持 3.1.12,等授權金鑰升 3.2.0**(2.0.0 時決定維持 3.1.12、加 `SkipMetadata` 關掉 ICC 路徑,當時以為修補版只有 4.x,
-    後來查證不是)。六個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w、v76p-62qx-wwq2;中:wmxv-xphr-5c9g、gwg2-r3hj-4w44)
-    的修補版在 3.x 線是 **3.2.0**(2026-10-09),4.x 線是 4.1.1／4.1.2(GitHub Advisory Database,2026-11-04 逐筆核對);
-    3.1 線本身沒有修補版,nuget.org 上最後一版就是 3.1.12。
-    **3.2.0 與 4.x 建置時都需要 Six Labors 的授權金鑰**(上面「地雷 → 其他」那條)。開源專案可以到 licensing.sixlabors.com 免費申請
-    限定組件的社群金鑰,組件只要填 `Parity.Engine`(只有它直接引用 ImageSharp),而且官方文件明寫這種金鑰可以放進公開 repo;
-    不限組件的金鑰與付費金鑰必須保密。金鑰會到期,到期後不能建置,要記得續。
-    dependabot 的 #59、#54(都是升 3.2.0)因為沒有金鑰全紅,2026-11-03 被它自己關掉,沒有新 PR,**要自己升**:
-    放進 `sixlabors.lic`、升 3.2.0、更新這段與 `dependabot.yml` 的註解。
-  - **逐條暴露面**(Parity 只在 `designImage` 模式解碼一張圖,`ImageDesignSource.LoadPixelsAsync`;
-    不做任何影像處理、不編碼):
-    - j3p4-wp97-rph4(高,HistogramEqualization 的直方圖索引越界):要對解碼出的 float TIFF 呼叫
-      `HistogramEqualization()`。Parity 沒有用任何影像處理 → **碰不到**
-    - j9gm-c75j-xc9q、jjfr-hcj7-qf5w(高,TIFF CCITT T4／T6 **編碼器**越界寫):要用 `TiffEncoder` 編 1-bit
-      CCITT 壓縮的 TIFF。Parity 不編任何圖 → **碰不到**
-    - wmxv-xphr-5c9g(中,BigTIFF 的 IFD 讓解碼卡住):要解碼 TIFF。2.0.0 起只註冊 PNG/JPEG 解碼器,副檔名
-      是 .png 的 TIFF 也擋得住(判格式看內容)→ **碰不到**
-    - v76p-62qx-wwq2(高,分塊的 fax TIFF 解碼時寫出 tile 緩衝區;2026-10-27 公布,2.1.0 發版後 dependabot 才報):
-      要解碼 TIFF。同上,`ImageDesignSource` 只註冊 PNG/JPEG 解碼器(`new Configuration(new PngConfigurationModule(),
-      new JpegConfigurationModule())`)→ **碰不到**
-    - gwg2-r3hj-4w44(中,ICC CLUT 依未驗證的尺寸配置記憶體):PNG(iCCP)與 JPEG(APP2)都能內嵌 ICC。
-      2026-10-23 照 advisory 的形狀手刻一份 mpet／clut 截斷的 ICC 實測:3.1.12 **解碼本身不會走到**——解碼只
-      解析 128 位元組的檔頭,CLUT 要到讀 `IccProfile.Entries` 才配置(實測 64 MB),advisory 對 1.x～3.x 也是
-      這樣寫;Parity 從來不讀中繼資料,所以原本就沒有觸發。2.0.0 再把路關掉:`SkipMetadata = true`(JPEG 不再
-      保留 ICC／EXIF),而 **3.1.12 的 PNG 解碼器不理 SkipMetadata、iCCP 照收**,所以 `LoadPixelsAsync` 解碼後
-      再把 `IccProfile` 設成 null → **碰不到**。`ImageDesignSourceTests` 鎖住兩件事:改動前後解碼出的像素雜湊
-      相同(ICC、Adobe APP14 的 RGB／CMYK JPEG、調色盤 tRNS、EXIF 共 6 種 fixture),解碼後沒有 ICC／EXIF。
-  - **重新評估的時機**:拿到授權金鑰要升 3.2.0 時。要加任何讀圖片中繼資料、做影像
-    處理或編碼的程式碼之前,先回來看這張表——上面的「碰不到」都建立在「只解碼、只取像素」上。
+  - **ImageSharp 3.2.0(2026-11-04 從 3.1.12 升上來)** 修掉六個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w、v76p-62qx-wwq2;
+    中:wmxv-xphr-5c9g、gwg2-r3hj-4w44)。之前留在 3.1.12 時的逐條判讀見這段文字的 git 歷史。
+  - **兩道防線升級後沒有拆**,因為它們不是只為這幾個漏洞:`ImageDesignSource` 只註冊 PNG/JPEG 解碼器(下一個解碼器的洞一樣碰不到);
+    解碼後不留中繼資料(`SkipMetadata` 加上手動清 `IccProfile`,PNG 解碼器到 3.2.0 還是不理 `SkipMetadata`,實測過)。`ImageDesignSourceTests` 鎖住。
+  - **升級要比對像素**:Parity 靠解碼出來的像素取色,解碼器一變量測就可能變,而 `ImageDesignSourceTests` 的雜湊只比同一版內的兩種解碼設定,抓不到跨版本的差異。
+    3.1.12 → 3.2.0 比過:用 `LoadPixelsAsync` 解 518 張圖(18 張涵蓋各種格式的測試圖、500 張真實圖片),像素逐位元相同。下次升級照這樣比。
 - **auto-name 通用名假配對**(ROADMAP 有完整留帳):「Content」這種通用圖層名會撞到
   無關頁面的 `#content`。尺寸合理性防線(面積比 >16 拒配)只擋得住量級差很多的;
   **`auto-container`(LCA 推論)不經這道防線**。要根治得上語意層，動工前先蒐集更多野生樣本。

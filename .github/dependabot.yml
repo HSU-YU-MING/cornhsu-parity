@@ -16,9 +16,9 @@ updates:
         patterns: ["Microsoft.*", "System.*"]
 
     ignore:
-      # ImageSharp 3.2.0 與 4.x 都在建置期強制授權:沒有 sixlabors.lic / SixLaborsLicenseKey
-      # 就直接 error,CI 全紅(4.x 實測於 #19,3.2.0 實測於 #59)。3.1.x 不用金鑰。
-      # 這裡只擋 major,所以 3.2.0 它還是可能提,沒有金鑰之前不要合(見 CLAUDE.md「相依漏洞」)。
+      # ImageSharp 的 major 升級是主動決定,不是自動升級:Parity 靠解碼出來的像素取色,
+      # 升了要重新比對新舊版的像素,量測結果可能跟著變。3.x 內的升級照常(授權金鑰在
+      # src/Parity.Engine/sixlabors.lic,見 CLAUDE.md)。
       # 只有 ImageDesignSource.cs 用到它,而且只用 Image.LoadAsync 與 Rgba32 兩個 API,
       # 真要換掉成本很低 —— 但那是主動決定,不是自動升級。
       - dependency-name: "SixLabors.ImageSharp"

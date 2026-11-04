@@ -135,10 +135,30 @@ public class RepoInvariantsTests
     [Fact]
     public void Dependabot_never_proposes_the_imagesharp_major_upgrade()
     {
-        // ImageSharp 4.0 把授權變成建置期強制,沒有授權檔就 CI 全紅(#19 實測)
+        // major 升級是主動決定,不是自動升級:升了要重新比對新舊版解出來的像素,量測結果可能跟著變
         Assert.Matches(new Regex(
             @"- dependency-name: ""SixLabors\.ImageSharp""\n\s+update-types: \[""version-update:semver-major""\]"),
             Read(".github", "dependabot.yml"));
+    }
+
+    [Fact]
+    public void Imagesharp_license_is_the_assembly_scoped_key_beside_the_only_project_that_references_it()
+    {
+        // 這把金鑰放在公開 repo:官方只允許限定組件的金鑰(前綴 Assembly:),不限組件的與付費金鑰必須保密。
+        // 建置只從專案目錄往下找,放到 repo 根目錄找不到;金鑰只對申請時填的組件名有效,
+        // 所以 Parity.Engine 改 AssemblyName,或別的專案直接引用 Six Labors 的套件,建置都會壞
+        var license = Read("src", "Parity.Engine", "sixlabors.lic");
+        Assert.Contains("Kind=Community;", license);
+        Assert.Contains(";Key=Assembly:", license);
+
+        var engine = Read("src", "Parity.Engine", "Parity.Engine.csproj");
+        Assert.DoesNotContain("<AssemblyName>", engine);
+
+        var referencing = new[] { "src", "tests" }
+            .SelectMany(dir => Directory.GetFiles(Repo.PathOf(dir), "*.csproj", SearchOption.AllDirectories))
+            .Where(p => File.ReadAllText(p).Contains(@"<PackageReference Include=""SixLabors.", StringComparison.Ordinal))
+            .ToList();
+        Assert.Equal("Parity.Engine.csproj", Path.GetFileName(Assert.Single(referencing)));
     }
 
     /// <summary>

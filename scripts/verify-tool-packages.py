@@ -11,6 +11,7 @@
   - 平台包不是 Runner="dotnet"(Windows 上的啟動檔會變成 parity.cmd,bash 叫不到 parity,Action 全壞)
   - 平台包自帶了 .NET runtime(SDK 改預設時會發生,大小差一倍)
   - 少了第三方授權聲明(散布時要附)
+  - ImageSharp 的授權金鑰被夾帶進去(只有建置時要用,使用者不需要)
   - 單一包超過 nuget.org 的 250 MB 上限(push 才會被拒,那時 tag 已經推出去了)
 
 用法:verify-tool-packages.py <目錄> <版本> [--summary <檔案>] [--title <標題>]
@@ -108,6 +109,8 @@ def check_pointer(path: str, errors: list[str]) -> None:
             errors.append(f"指標包的 packageType 是 {package_types(z)},預期 ['DotnetTool']")
         if NOTICES not in z.namelist():
             errors.append(f"指標包少了 {NOTICES}")
+        if any(n.lower().endswith(".lic") for n in z.namelist()):
+            errors.append("指標包夾帶了授權金鑰檔(.lic)")
 
 
 def check_rid_package(path: str, rid: str, errors: list[str]) -> None:
@@ -124,6 +127,8 @@ def check_rid_package(path: str, rid: str, errors: list[str]) -> None:
             err(f"packageType 是 {package_types(z)},預期 ['DotnetToolRidPackage']")
         if NOTICES not in names:
             err(f"少了 {NOTICES}(tool 套件夾帶相依的 DLL 與原生檔,散布時要附授權聲明)")
+        if any(n.lower().endswith(".lic") for n in names):
+            err("夾帶了授權金鑰檔(.lic):金鑰只有建置時要用,不該進套件")
 
         # Runner="dotnet"、不附自己的啟動檔,安裝時由使用者的 SDK 產生——跟單一套件時代一樣。
         # 如果變成 Runner="executable",SDK 在 Windows 上產生的是 parity.cmd,bash(action.yml)叫不到 parity。
