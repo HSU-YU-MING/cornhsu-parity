@@ -148,7 +148,7 @@ git tag v2 v2.0.0 && git push origin v2      # @v2 的使用者從這裡開始�
 保留給使用者的 ⚠ 說明)、`verify-readme-facts.ps1` 綠燈、推 `v2.1.0`、前移 `v2`。發完用
 `parity check --stats-preview` 對 `samples/demo` 跑一次,確認 `toolVersion` 是 `2.1.0` 且 `would be sent`。
 
-## 每個平台一包的第一次發版(下一個 2.x)
+## 每個平台一包的第一次發版(2.2.0)
 
 **這一版有一個硬條件,沒確認就不推 tag(2026-11-04 已確認:`cornhsu.parity` 那條 Active、`Scopes: All`、`Glob Patterns and Packages: *`):**
 

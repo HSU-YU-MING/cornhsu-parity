@@ -2,13 +2,17 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.2.0 — 2026-11-04
 
 > **NuGet 通路改成每個平台一包,安裝指令不變。** `dotnet tool install -g Cornhsu.Parity` 現在只下載你這個平台的那一包,
 > 約 44～54 MB,原本每個人每次都下載 244 MB(GitHub Action 每次執行都會重新下載,這裡省最多)。
 > 從 2.1.0 `dotnet tool update` 上來照常,基準資料庫不用動。
 > *The .NET tool now ships one package per platform, so you download about 44–54 MB instead of 244 MB. The install
 > command and the requirements are unchanged.*
+
+**升級必做 (upgrade required):升級後重跑一次 `parity install-browser`。** Microsoft.Playwright 從 1.63 升到 1.64,Chromium 換成
+revision 1248。不重跑的話,`check` 等要開瀏覽器的指令會 exit 2(`Chromium is not installed yet`)。GitHub Action 每次都會自己裝,不用做。
+*After upgrading, run `parity install-browser` once: Chromium moved to revision 1248. The GitHub Action does this for you.*
 
 - **打包:一個指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parity.<rid>`**(none;六面都沒動,所以是 minor)。
   單一套件到 2.1.0 已 244 MB,離 nuget.org 250 MB 上限只剩幾 MB,再長大就發不出新版。
@@ -27,6 +31,10 @@
   Parity 只解碼 PNG/JPEG 並丟掉中繼資料,這幾個原本就碰不到,所以是降低風險,不是緊急修補。
   新舊兩版用 Parity 實際的解碼路徑解 518 張圖(18 張涵蓋各種格式的測試圖、500 張真實圖片),像素逐位元相同,`designImage` 的量測結果不變。
   3.2.0 起建置需要授權金鑰,repo 裡放了 Six Labors 核發的開源金鑰;**安裝與使用 Parity 不需要金鑰**,它只在建置時檢查,也不會進套件。
+- **相依**:Microsoft.Playwright 1.63 → 1.64.1(Chromium revision 1243 → 1248、內附 Node 24.21 → 24.22,driver 的 Node 下限仍是 20),
+  EF Core 與相關套件 10.0.12 → 10.0.14。`THIRD-PARTY-NOTICES.md` 同步。
+  量測不變:2.1.0 與這一版對同一個真實網站(26 頁、6,911 個節點)和離線示範,報告除了路徑都相同。
+- **文件:兩份 README 加「給 AI 助手」一段**(none):給替人安裝這個工具的 AI 助手看的匿名統計事實摘要。
 - **CI**(none):`pack-smoke` 改成檢查每個包的內容(`scripts/verify-tool-packages.py`)並乾跑發版的推送順序;
   新增 `install-smoke`(六個平台各一台真機:用 Action 的方式裝、真的開瀏覽器跑 check、存讀基準)、
   `install-smoke-no-browser`(Alpine 與 any 後備包)、`install-min-sdk`。
