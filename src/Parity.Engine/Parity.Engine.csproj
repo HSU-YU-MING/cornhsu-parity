@@ -6,6 +6,11 @@
     <Nullable>enable</Nullable>
     <!-- 不單獨發套件:引擎會被打進 Cornhsu.Parity 這個 dotnet tool -->
     <IsPackable>false</IsPackable>
+    <!-- 引擎是函式庫,不自己帶 Playwright 的 Node:沒設的話 Playwright 的 targets 會帶「建置機器平台」的那份,
+         經由 ProjectReference 流進 CLI 的輸出——每個平台一包時,在 ubuntu 上 pack 的 win-x64 包會多夾一份
+         linux-x64 Node(實測 +45 MB)。帶哪些平台的 Node 由 Parity.Cli 決定(PlaywrightPlatform)。
+         外部傳 -p:PlaywrightPlatform=… 時(release.yml 的 npm job)以那個為準。 -->
+    <PlaywrightPlatform Condition="'$(PlaywrightPlatform)' == ''">none</PlaywrightPlatform>
   </PropertyGroup>
 
   <ItemGroup>
