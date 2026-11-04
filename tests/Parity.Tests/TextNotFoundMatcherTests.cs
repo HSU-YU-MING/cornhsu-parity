@@ -1,0 +1,122 @@
+using System.Text.Json;
+using Parity.Engine;
+using Parity.Engine.Comparison;
+using Parity.Engine.DesignSources;
+using Parity.Engine.ImplementationSources;
+using Parity.Engine.Model;
+using static Parity.Tests.TestData;
+
+namespace Parity.Tests;
+
+/// <summary>
+/// 未配對原因 text-not-found:設計稿的文字整頁都找不到(元件不見、文字被改掉),跟「有但分不出來」
+/// (ambiguous-or-missing-text)分開——gate.failOnUnmatched 才擋得準。判斷靠擷取端給的整頁文字
+/// (RenderedNode.PageText);沒有整頁文字(假來源、舊測試)時原因完全照舊,MatcherTests 一條都不用改。
+/// 真瀏覽器那半(整頁文字收不收得到 shadow DOM、iframe……)見 PageTextCaptureTests。
+/// </summary>
+public class TextNotFoundMatcherTests
+{
+    private static RenderedNode Page(string? pageText, params RenderedNode[] children)
+        => Rendered("body", children: children) with { PageText = pageText };
+
+    private static string ReasonOf(DesignNode textNode, RenderedNode rendered)
+        => Assert.Single(Matcher.Match(Design("1", "frame", children: textNode), rendered).Unmatched).Reason;
+
+    [Fact]
+    public void Text_absent_from_the_whole_page_is_text_not_found()
+    {
+        var label = Design("2", "cta-label", DesignNodeType.Text, characters: "Get Started");
+
+        Assert.Equal("text-not-found", ReasonOf(label, Page("Parity Demo\nLocal first")));
+    }
+
+    [Fact]
+    public void An_empty_layer_name_does_not_hide_a_missing_text()
+    {
+        // 圖層名正規化後是空字串(「—」、純符號)原本一律 no-anchor:文字真的不見時同樣該講清楚
+        var label = Design("2", "—", DesignNodeType.Text, characters: "Get Started");
+
+        Assert.Equal("text-not-found", ReasonOf(label, Page("Parity Demo")));
+        Assert.Equal("no-anchor", ReasonOf(label, Page("Parity Demo · Get Started"))); // 文字在 → 照舊
+    }
+
+    [Theory]
+    [InlineData("Hello world")]              // 跨元素斷開:Hello <b>world</b>,byText 只有 "Hello" 和 "world"
+    [InlineData("HELLO   WORLD")]            // text-transform: uppercase、多空白
+    [InlineData("say hello\n world again")]  // 換行也是空白
+    public void Text_present_somewhere_on_the_page_keeps_the_old_reason(string pageText)
+    {
+        var greeting = Design("2", "greeting", DesignNodeType.Text, characters: "Hello world");
+        var rendered = Page(pageText,
+            Rendered("body > p", "p", text: "Hello"),
+            Rendered("body > p > b", "b", text: "world"));
+
+        Assert.Equal("ambiguous-or-missing-text", ReasonOf(greeting, rendered));
+    }
+
+    [Fact]
+    public void Duplicate_text_that_cannot_be_disambiguated_stays_ambiguous()
+    {
+        var edit = Design("2", "label-a", DesignNodeType.Text, characters: "Edit");
+        var rendered = Page("Edit\nEdit",
+            Rendered("body > button:nth-of-type(1)", "button", text: "Edit"),
+            Rendered("body > button:nth-of-type(2)", "button", text: "Edit"));
+
+        Assert.Equal("ambiguous-or-missing-text", ReasonOf(edit, rendered));
+    }
+
+    [Fact]
+    public void Without_page_text_every_reason_is_exactly_the_old_one()
+    {
+        // 假來源與舊測試沒有整頁文字:不能因為「不知道」就說「找不到」
+        var label = Design("2", "cta-label", DesignNodeType.Text, characters: "Get Started");
+        var symbol = Design("2", "—", DesignNodeType.Text, characters: "Get Started");
+
+        Assert.Equal("ambiguous-or-missing-text", ReasonOf(label, Page(null)));
+        Assert.Equal("no-anchor", ReasonOf(symbol, Page(null)));
+    }
+
+    [Fact]
+    public void Nodes_without_text_and_size_implausible_names_keep_their_reasons()
+    {
+        // 只看「有非空 Characters 的設計節點」;其餘原因不受整頁文字影響
+        var badge = Design("2", "hero-badge", box: new Box(0, 0, 120, 32));
+        var blank = Design("2", "spacer", DesignNodeType.Text, characters: "   ");
+        var content = Design("2", "Content", DesignNodeType.Text, box: new Box(0, 0, 1000, 1000), characters: "Lorem");
+        var tiny = Rendered("body > div#content", domId: "content", box: new Box(0, 0, 10, 10));
+
+        Assert.Equal("no-anchor", ReasonOf(badge, Page("")));
+        Assert.Equal("no-anchor", ReasonOf(blank, Page("")));
+        Assert.Equal("size-implausible", ReasonOf(content, Page("", tiny)));
+    }
+
+    [Fact]
+    public void A_text_found_only_across_two_page_text_segments_is_not_found()
+    {
+        // 擷取端用 \u001f 隔開各段(innerText / 組合樹走訪):子字串不能橫跨兩段,否則尾巴接頭會湊出假的命中
+        var label = Design("2", "cta-label", DesignNodeType.Text, characters: "first second");
+
+        Assert.Equal("text-not-found", ReasonOf(label, Page("the first\u001fsecond one")));
+    }
+
+    [Fact]
+    public void Normalizing_the_rendered_tree_keeps_the_page_text()
+    {
+        // FidelityEngine 先正規化再配對:Normalizer 用 with 運算式,丟了整頁文字就等於永遠沒有 text-not-found
+        var root = Page("Parity Demo") with { Box = new Box(8, 8, 800, 600) };
+
+        Assert.Equal("Parity Demo", Normalizer.NormalizeRendered(root).PageText);
+    }
+
+    [Fact]
+    public void Page_text_is_never_serialized()
+    {
+        // serve 的 /api/detail 把整棵實作樹序列化給本機 UI;整頁文字只給配對用,不外流
+        var root = Page("secret page words", Rendered("body > p", "p", text: "hi"));
+
+        var json = JsonSerializer.Serialize(root, ReportWire.Compact);
+
+        Assert.DoesNotContain("secret page words", json);
+        Assert.DoesNotContain("pageText", json, StringComparison.OrdinalIgnoreCase);
+    }
+}

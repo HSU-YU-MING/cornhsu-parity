@@ -295,6 +295,102 @@ public class CliBrowserTests
         Assert.Contains("\"direction\": \"reverse\"", File.ReadAllText(dir.File("rev", "report.json")));
     }
 
+    // ---------- gate.failOnUnmatched:元件不見可以選擇擋 PR ----------
+
+    /// <summary>
+    /// 以 samples/demo/design.json 為設計來源、全部配得上且零落差的頁面(按鈕裡是 &lt;span&gt;Get Started&lt;/span&gt;、
+    /// 徽章是空的絕對定位 div)。G1 拿掉按鈕、G2 拿掉徽章。
+    /// </summary>
+    private static string FaithfulDemoPage(bool button = true, bool badge = true) => Page(
+        $$"""
+        <h1 class="page-title">Parity Demo</h1>
+        <p class="subtitle">Property-level design fidelity checking</p>
+        {{(button ? "<button class=\"cta-button\"><span>Get Started</span></button>" : "")}}
+        <section class="feature-list">
+          <div class="feature-card" id="feature-card-1"><h3>Numeric comparison</h3></div>
+          <div class="feature-card" id="feature-card-2"><h3>Local first</h3></div>
+          <div class="feature-card" id="feature-card-3"><h3>Gates your CI</h3></div>
+        </section>
+        {{(badge ? "<div class=\"hero-badge\"></div>" : "")}}
+        """,
+        """
+        * { box-sizing: border-box; margin: 0; }
+        body { width: 800px; height: 600px; padding: 40px; font-family: Arial, sans-serif; background: #FFFFFF; position: relative; }
+        h1.page-title { width: 300px; font-size: 32px; font-weight: 700; line-height: 40px; color: #111827; margin-bottom: 16px; }
+        p.subtitle { width: 400px; font-size: 16px; line-height: 24px; color: #6B7280; margin-bottom: 32px; }
+        button.cta-button { display: block; width: 160px; height: 48px; padding: 12px 20px; background: #2563EB; color: #FFFFFF;
+          border: none; border-radius: 8px; font: 600 16px/24px Arial, sans-serif; margin-bottom: 40px; }
+        button.cta-button span { display: block; }
+        section.feature-list { display: flex; gap: 24px; width: 720px; height: 120px; }
+        .feature-card { position: relative; width: 224px; height: 120px; background: #F3F4F6; border-radius: 12px; }
+        .feature-card h3 { position: absolute; left: 16px; top: 16px; width: 192px; font-size: 18px; font-weight: 600; line-height: 22px; color: #111827; }
+        .hero-badge { position: absolute; top: 40px; left: 640px; width: 120px; height: 32px; background: #DCFCE7; }
+        """);
+
+    /// <summary>同一個目錄裡一頁一份設定:design.json 共用,gate 區段照測試給。</summary>
+    private static string UnmatchedGateConfig(TempDir dir, string name, string html, string gate)
+    {
+        if (!File.Exists(dir.File("design.json")))
+            File.Copy(Repo.PathOf("samples", "demo", "design.json"), dir.File("design.json"));
+        dir.Write($"{name}.html", html);
+        return dir.Write($"{name}.config.json", $$"""
+            { "designFile": "design.json", "targets": [{ "route": "/", "frame": "", "url": "./{{name}}.html" }],
+              "compare": { "position": "relative" }, "gate": {{gate}} }
+            """);
+    }
+
+    private static Dictionary<string, string> UnmatchedReasons(string reportPath)
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(reportPath));
+        return doc.RootElement.GetProperty("reports")[0].GetProperty("unmatched").EnumerateArray()
+            .ToDictionary(u => u.GetProperty("designLayer").GetString()!, u => u.GetProperty("reason").GetString()!);
+    }
+
+    [Fact]
+    public async Task A_missing_element_gates_only_when_fail_on_unmatched_names_its_reason()
+    {
+        using var dir = new TempDir();
+        const string severities = """{ "failOn": ["critical", "serious"] }""";
+
+        // 前提:基準頁全部配得上、零落差——之後的 GATE FAIL 只可能來自拿掉的那個元素
+        var faithful = await Cli.RunAsync("check", "--config", UnmatchedGateConfig(dir, "base", FaithfulDemoPage(), severities),
+            "--out", dir.File("base.json"));
+        if (Cli.BrowserMissing(faithful)) { Console.WriteLine(Skipped); return; }
+        Assert.Equal(0, faithful.ExitCode);
+        Assert.Contains("matched 12/12 design nodes; 0 with diffs", faithful.Out);
+
+        // G2:徽章沒做。預設設定照舊只列出、不擋(exit 0);failOnUnmatched: ["*"] 才擋,輸出講明是這條
+        var noBadge = FaithfulDemoPage(badge: false);
+        var g2 = await Cli.RunAsync("check", "--config", UnmatchedGateConfig(dir, "g2", noBadge, severities), "--out", dir.File("g2.json"));
+        Assert.Equal(0, g2.ExitCode);
+        Assert.Equal(new() { ["hero-badge"] = "no-anchor" }, UnmatchedReasons(dir.File("g2.json")));
+        Assert.Contains("PASS\x1b[0m (fail on: critical, serious)", g2.Out); // 沒設 failOnUnmatched:那一行與以前一字不差
+
+        var g2Star = await Cli.RunAsync("check", "--config",
+            UnmatchedGateConfig(dir, "g2-star", noBadge, """{ "failOn": ["critical", "serious"], "failOnUnmatched": ["*"] }"""),
+            "--out", dir.File("g2-star.json"));
+        Assert.Equal(1, g2Star.ExitCode);
+        Assert.Contains("GATE FAIL\x1b[0m (fail on: critical, serious; fail on unmatched: *)", g2Star.Out);
+        Assert.Contains("/: 1 unmatched design node blocked by gate.failOnUnmatched (no-anchor: hero-badge)", g2Star.Out);
+
+        // G1:按鈕沒做 → 按鈕裡的文字整頁都找不到。下方的 feature-list 會跟著上移(offsetY 落差),
+        // 所以預設 failOn 本來就 exit 1、證明不了新條件——關掉嚴重度,只留 failOnUnmatched
+        var noButton = FaithfulDemoPage(button: false);
+        var g1 = await Cli.RunAsync("check", "--config",
+            UnmatchedGateConfig(dir, "g1", noButton, """{ "failOn": [], "failOnUnmatched": ["text-not-found"] }"""),
+            "--out", dir.File("g1.json"), "--md", dir.File("g1.md"));
+        Assert.Equal(1, g1.ExitCode);
+        Assert.Equal(new() { ["cta-button"] = "no-anchor", ["cta-label"] = "text-not-found" }, UnmatchedReasons(dir.File("g1.json")));
+        Assert.Contains("GATE FAIL\x1b[0m (fail on unmatched: text-not-found)", g1.Out);
+        Assert.Contains("/: 1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: cta-label)", g1.Out);
+        Assert.Contains("> ⚠️ /: 1 unmatched design node blocked by gate.failOnUnmatched", File.ReadAllText(dir.File("g1.md")));
+
+        var g1Off = await Cli.RunAsync("check", "--config", UnmatchedGateConfig(dir, "g1-off", noButton, """{ "failOn": [] }"""),
+            "--out", dir.File("g1-off.json"));
+        Assert.Equal(0, g1Off.ExitCode); // 同一頁,只關掉 failOnUnmatched → 過:上面的 exit 1 就是新條件擋的
+        Assert.Equal("text-not-found", UnmatchedReasons(dir.File("g1-off.json"))["cta-label"]);
+    }
+
     [Fact]
     public async Task Baseline_mode_falls_back_then_gates_only_new_or_worse_diffs()
     {

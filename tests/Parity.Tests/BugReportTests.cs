@@ -36,7 +36,7 @@ public class BugReportTests
                 { "route": "/another-private-page", "frame": "1:2", "url": "file:///C:/private-folder-name/page.html" }
               ],
               "tolerances": { "sizePx": 3, "colorDeltaE": 1.5 },
-              "gate": { "failOn": ["critical", "serious", "medium"], "minMatchRate": 0.8 },
+              "gate": { "failOn": ["critical", "serious", "medium"], "failOnUnmatched": ["Text-Not-Found", "*"], "minMatchRate": 0.8 },
               "compare": { "position": "none" }
             }
             """);
@@ -76,6 +76,7 @@ public class BugReportTests
         Assert.Contains("sizePx 3", r.Out);
         Assert.Contains("colorDeltaE 1.5", r.Out);
         Assert.Contains("failOn: critical, serious, medium", r.Out);
+        Assert.Contains("gate.failOnUnmatched: text-not-found, *", r.Out); // 白名單值(已驗過),小寫印
         Assert.Contains("minMatchRate: 0.8", r.Out);
         Assert.Contains("compare.position: none", r.Out);
         Assert.Contains("designToken: literal value in the config", r.Out); // 只說有寫死,不印值

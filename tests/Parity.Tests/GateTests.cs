@@ -102,6 +102,102 @@ public class GateTests
         Assert.NotNull(config.GateFailReason(Report(designNodes: 1, matched: 0)));
     }
 
+    // ---------- gate.failOnUnmatched:元件不見可以選擇擋 ----------
+
+    private static FidelityReport WithUnmatched(params (string Layer, string Reason)[] unmatched)
+    {
+        var list = unmatched.Select(u => new UnmatchedNode(u.Layer, u.Layer, u.Reason)).ToList();
+        var nodes = new[] { Node("title") };
+        return new FidelityReport("/", "url", "design", nodes, list,
+            new ReportSummary(nodes.Length + list.Count, nodes.Length, list.Count, 0, 0, 0, 0, 0, Severity.None));
+    }
+
+    [Fact]
+    public void Unmatched_nodes_never_gate_by_default()
+    {
+        var config = new ParityConfig();
+
+        Assert.Null(config.GateFailReason(WithUnmatched(("cta-label", "text-not-found"), ("badge", "no-anchor"))));
+        Assert.Equal("fail on: critical, serious", config.GateCriteria()); // GATE 那一行與以前一字不差
+    }
+
+    [Fact]
+    public void Only_the_listed_reasons_gate_and_the_reason_names_the_layers()
+    {
+        var config = new ParityConfig { Gate = { FailOn = [], FailOnUnmatched = ["text-not-found"] } };
+
+        Assert.Null(config.GateFailReason(WithUnmatched(("badge", "no-anchor"), ("dup", "ambiguous-or-missing-text"))));
+        Assert.Equal("1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: cta-label)",
+            config.GateFailReason(WithUnmatched(("badge", "no-anchor"), ("cta-label", "text-not-found"))));
+        Assert.Equal("fail on unmatched: text-not-found", config.GateCriteria());
+    }
+
+    [Fact]
+    public void The_star_gates_every_reason_and_long_lists_are_cut()
+    {
+        var config = new ParityConfig { Gate = { FailOnUnmatched = ["*"] } };
+        var many = Enumerable.Range(1, 7).Select(i => ($"t{i}", "text-not-found")).Append(("badge", "no-anchor")).ToArray();
+
+        Assert.Equal("8 unmatched design nodes blocked by gate.failOnUnmatched " +
+            "(text-not-found: t1, t2, t3, t4, t5, +2 more; no-anchor: badge)",
+            config.GateFailReason(WithUnmatched(many)));
+        Assert.Equal("fail on: critical, serious; fail on unmatched: *", config.GateCriteria());
+    }
+
+    [Fact]
+    public void Reasons_match_in_any_case_like_fail_on()
+    {
+        var config = new ParityConfig { Gate = { FailOnUnmatched = ["Text-Not-Found"] } };
+
+        Assert.NotNull(config.GateFailReason(WithUnmatched(("cta-label", "text-not-found"))));
+    }
+
+    [Fact]
+    public void Severity_and_unmatched_reasons_are_both_reported()
+    {
+        // 兩條都擋時都講出來,看得出各自是哪條
+        var config = new ParityConfig { Gate = { FailOnUnmatched = ["no-anchor"] } };
+        var unmatched = new UnmatchedNode("badge", "badge", "no-anchor");
+        var report = Report(designNodes: 2, matched: 1, Node("a", Diff(Severity.Serious))) with { Unmatched = [unmatched] };
+
+        Assert.Equal("has critical/serious severity diffs; 1 unmatched design node blocked by gate.failOnUnmatched (no-anchor: badge)",
+            config.GateFailReason(report));
+    }
+
+    [Fact]
+    public void Match_integrity_still_wins_over_fail_on_unmatched()
+    {
+        // 0 配對是「結果不可信」(exit 3),不是元件不見(exit 1):failOnUnmatched 不能把它蓋掉
+        var config = new ParityConfig { Gate = { FailOnUnmatched = ["*"] } };
+        var report = Report(designNodes: 3, matched: 0);
+
+        Assert.Contains("0/3 design nodes matched", config.GateFailReason(report));
+        Assert.DoesNotContain("failOnUnmatched", config.GateFailReason(report));
+        Assert.NotNull(config.MatchIntegrityFailure(report));
+    }
+
+    [Fact]
+    public void Layer_names_in_the_unmatched_reason_cannot_inject_workflow_commands()
+    {
+        var config = new ParityConfig { Gate = { FailOnUnmatched = ["*"] } };
+
+        var reason = config.GateFailReason(WithUnmatched(("label\n::warning::owned", "text-not-found")))!;
+
+        Assert.DoesNotContain("\n", reason);
+        Assert.Contains("label\\n::warning::owned", reason);
+    }
+
+    [Fact]
+    public void Markdown_notes_list_what_fail_on_unmatched_blocked_per_route()
+    {
+        var config = new ParityConfig { Gate = { FailOnUnmatched = ["text-not-found"] } };
+        var blocked = WithUnmatched(("cta-label", "text-not-found"));
+        var other = WithUnmatched(("badge", "no-anchor")) with { Route = "/about" };
+
+        Assert.Equal(["/: 1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: cta-label)"],
+            config.UnmatchedGateFailures([blocked, other]));
+    }
+
     // ---------- baseline 模式用的可信度檢查:與 failOn 分離 ----------
 
     [Fact]

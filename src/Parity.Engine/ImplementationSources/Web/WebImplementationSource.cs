@@ -142,7 +142,11 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                 _screenshots[reference.Url] = await page.ScreenshotAsync(
                     new PageScreenshotOptions { FullPage = true });
 
-            return ParseNode(json);
+            // 整頁文字只掛在根節點(見 RenderedNode.PageText:只給配對用,不外流)
+            var root = ParseNode(json);
+            return json.TryGetProperty("pageText", out var pageText) && pageText.ValueKind == JsonValueKind.String
+                ? root with { PageText = pageText.GetString() }
+                : root;
         }
         finally
         {

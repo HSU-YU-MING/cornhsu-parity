@@ -16,10 +16,19 @@ public sealed record MatchResult(
 ///   2. 文字錨點:TEXT 節點文字 ↔ 頁面元素文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)
 ///   3. 圖層名 ↔ DOM id / class / aria-label / data-testid
 ///   4. 容器推論:配不到的容器,用「已配對子孫的最近共同祖先(LCA)」反推——純結構、不猜
-/// 配不到 → 誠實進未配對清單,不假裝全對上。
+/// 配不到 → 誠實進未配對清單,不假裝全對上。文字節點的文字整頁都找不到(擷取端有給整頁文字時才判斷)
+/// → text-not-found:元件不見或文字被改掉,而不是「有但分不出來」。
 /// </summary>
 public static class Matcher
 {
+    /// <summary>
+    /// 這一版寫得出來的所有未配對原因(report.json 的 <c>unmatched[].reason</c>;報告讀者那邊是開放集合)。
+    /// 設定檔的 <c>gate.failOnUnmatched</c> 對著這張表驗拼字——拼錯的原因永遠對不到,gate 會靜靜失效。
+    /// 新增原因時 ReportVocabularyTests 會逼兩份 README 的字彙表一起改。
+    /// </summary>
+    public static IReadOnlyList<string> UnmatchedReasons { get; } =
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible"];
+
     public static MatchResult Match(DesignNode designRoot, RenderedNode renderedRoot)
     {
         // 設計端為錨:報告長度 = 設計節點數,有界又有意義(不反向掃整頁)
@@ -60,6 +69,17 @@ public static class Matcher
             else
                 remaining.Add(d);
         }
+
+        // 整頁文字(擷取端有提供才有;假來源、舊測試是 null → 下面的原因完全照舊)。
+        // byText 只收元素自己的文字(Hello <b>world</b> 會被拆開),不能拿它判斷「找不到」;
+        // 整頁文字涵蓋跨元素斷開的字、shadow DOM、同源 iframe、表單值、::before/::after(CaptureScript)。
+        // 比法與 byText 一致:壓空白、不分大小寫,再用子字串——只有「整頁確定沒有這段文字」才是 text-not-found,
+        // 有多個同文字分不出來、或文字在但被拆開,都維持 ambiguous-or-missing-text。
+        var pageText = renderedRoot.PageText is { } raw ? NormalizeText(raw) : null;
+        bool TextNotFound(DesignNode d)
+            => pageText is not null
+               && !string.IsNullOrWhiteSpace(d.Characters)
+               && !pageText.Contains(NormalizeText(d.Characters!), StringComparison.OrdinalIgnoreCase);
 
         // --- 第 2 關:文字錨點(主力,不用人做任何事)---
         var byText = candidates
@@ -102,7 +122,7 @@ public static class Matcher
             var key = NormalizeName(d.Name);
             if (key.Length == 0)
             {
-                pending.Add((d, "no-anchor"));
+                pending.Add((d, TextNotFound(d) ? "text-not-found" : "no-anchor"));
                 continue;
             }
 
@@ -113,8 +133,10 @@ public static class Matcher
                 Pair(d, hit, "auto-name");
             else if (named.Count > 0)
                 pending.Add((d, "size-implausible"));
+            else if (string.IsNullOrWhiteSpace(d.Characters))
+                pending.Add((d, "no-anchor"));
             else
-                pending.Add((d, !string.IsNullOrWhiteSpace(d.Characters) ? "ambiguous-or-missing-text" : "no-anchor"));
+                pending.Add((d, TextNotFound(d) ? "text-not-found" : "ambiguous-or-missing-text"));
         }
 
         // --- 第 4 關:容器推論——已配到 ≥2 個子孫的容器,對應到那些子孫的最近共同祖先 ---

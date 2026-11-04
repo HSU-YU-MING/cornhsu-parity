@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1068**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1121**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -184,6 +184,8 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],       // any of minor / medium / serious / critical, one per string
+    "failOnUnmatched": [],                   // optional: unmatched reasons that fail the gate (exit 1), e.g.
+                                             //   ["text-not-found"], or ["*"] for any; [] = list only (default), see below
     "minMatchRate": 0                        // optional: below this match rate (0–1) → exit 3, see below; 0 = no threshold
   },
   "stats": { "share": true }                 // optional: false turns anonymous usage statistics off;
@@ -196,6 +198,38 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
 > matched there are no gaps to catch, so a silent PASS would be a false pass, usually caused by
 > a wrong url or frame. A match rate below `gate.minMatchRate` fails the same way, with exit
 > code 3. `--baseline` mode is not exempt; `--reverse` never gates and always exits 0.
+
+### Gating on missing elements: `gate.failOnUnmatched`
+
+By default an unmatched design node is only **listed** (`unmatched` in the report) — a page that
+lost a badge still passes. `gate.failOnUnmatched` lets you fail the gate on chosen
+[unmatched reasons](#report-vocabulary-for-anyone-parsing-reportjson) instead: exit 1 (GATE FAIL),
+and the reason line names the layers it blocked, e.g.
+`/: 1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: cta-label)`.
+
+- `["text-not-found"]` — the targeted choice: fail when a design text node's text appears **nowhere on
+  the page** (the element is gone, or its copy was changed). Other unmatched nodes stay listed only.
+- `["*"]` — fail on every unmatched node, whatever the reason. (`minMatchRate: 1` also fails on any
+  unmatched node, but as exit 3 — "results are not trustworthy" — not as a GATE FAIL.)
+- Reasons are matched case-insensitively; a misspelled reason is a config error at load (exit 2),
+  because a reason that never matches would silently disable the gate.
+- Match integrity still comes first: zero matches remain exit 3.
+- Applied by `check`, `parity report` and `parity push` (both recompute the verdict from the config),
+  and `parity serve`. **Not applied by `check --baseline`** while a baseline exists — regression mode
+  only gates new or worsened gaps; with no baseline yet it falls back to the normal gate, this
+  condition included.
+
+What `text-not-found` means exactly: the design text, whitespace-collapsed and case-insensitive, is
+not a substring of the page text Parity can see. That page text is the rendered text of the page
+(`innerText`, so `text-transform` and text split across elements like `Hello <b>world</b>` count),
+plus what `innerText` misses: open shadow roots, same-origin iframes, `<input>`/`<textarea>`
+values and placeholders, `::before`/`::after` content, `<img alt>`. Hidden text (`display: none`,
+`visibility: hidden`) and password values do not count. Text Parity cannot reach — cross-origin
+iframes, closed shadow roots, text drawn on a `<canvas>` or baked into an image without `alt` — counts as
+not found, so `text-not-found` means "not found anywhere Parity can see". A text that is present but
+cannot be pinned to one element (several identical texts, or split across elements) stays
+`ambiguous-or-missing-text`. The page text is used for this decision only: it is never written to
+`report.json`, snapshots, statistics or bug reports.
 
 ## Targets: a web page or an Electron desktop app
 
@@ -328,7 +362,9 @@ unaffected and works as usual).
    its already-matched descendants (pure structure — no guessing)
 4. **Manual fallback**: add `data-parity="Layer Name"` in your HTML, or write
    `{ "Layer Name": "CSS selector" }` in `parity.map.json`
-5. Still no match → **honestly listed as unmatched**, so you only fill in what genuinely needs a human
+5. Still no match → **honestly listed as unmatched**, so you only fill in what genuinely needs a human.
+   A text node whose text is nowhere on the page is reported as `text-not-found` (the element is
+   missing), not as an ambiguity — and `gate.failOnUnmatched` can fail the gate on it
 
 ## Architecture
 
@@ -490,8 +526,8 @@ Behaviour:
   "Report a misjudgment" link to the issue form — a link only, nothing is sent) and keeps
   updating that same comment instead of adding new ones — so PMs and reviewers see it without
   ever touching the tool.
-- **Blocks the PR**: gaps beyond `gate.failOn` → exit 1 → red PR. (**The comment is posted
-  first, then the gate is enforced.**)
+- **Blocks the PR**: gaps beyond `gate.failOn` (or unmatched nodes whose reason is in
+  `gate.failOnUnmatched`) → exit 1 → red PR. (**The comment is posted first, then the gate is enforced.**)
 - **Artifacts**: `report.json` plus the Markdown report are uploaded for download (artifact
   name `parity-report` unless you set `artifact-name`; `report.json` and `parity-report.md` at its
   root). `report.json` is picked up from `.parity/report.json` next to the config file — where
@@ -526,7 +562,7 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 
 - **Unknown keys** — consumers must ignore keys they do not recognize. Within 2.x, `report.json` only *gains* fields; existing keys are never removed, renamed or given a different type (that would be 3.0). Closed sets below never gain members within 2.x either.
 - `severity` — **closed set** (spelling and membership frozen): `none` / `minor` / `medium` / `serious` / `critical`. `status`: `mismatch` / `missing`.
-- `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `randomized-id`, `size-implausible`.
+- `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`.
 - `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`.
 - `direction` (top level, since 2.0.0) — **closed set**: `forward` (a normal `check`) / `reverse` (`check --reverse`: expected and actual swapped, never gated). Always written; files without it read as `forward`. Readers accept exactly the lowercase strings `"forward"` and `"reverse"` — any other value (other casing, a number, `null`) is an error, not a guess. `parity report` does not gate a reverse report, and `parity push` refuses one.
 
@@ -550,6 +586,7 @@ parity baseline list     # Browse snapshot history (the score column is the fide
 
 - **New** (absent from the baseline, present now) or **worsened** (higher severity) → exit 1, PR blocked
 - **Fixed** (in the baseline, gone now) is listed as encouragement; **unchanged** existing gaps do not gate
+- `gate.failOnUnmatched` is not applied in this mode (once a baseline exists); unmatched nodes are listed as usual
 - Ideal for gradual adoption: record reality with `baseline save`, then run `check --baseline` in
   CI, and all the team has to commit to is "do not make fidelity worse"
 
