@@ -208,27 +208,54 @@ jobs:
           grep -qx 'cornhsu.parity.${{ matrix.rid }}' picked-sc.txt
           echo "✓ 兩種形式都裝到 Cornhsu.Parity.${{ matrix.rid }}"
 
-      - name: --version and --help
+      # 啟動檔的形狀:framework 平台包是 Runner="dotnet",SDK 在 Windows 上產生 parity.exe(跟現在的單一套件一樣,
+      # bash 叫得到)。Runner="executable" 的包(self-contained 一定是)在 Windows 上產生的是 parity.cmd 批次檔:
+      # PowerShell/cmd 叫得到、bash 叫不到——action.yml 每一步都是 shell: bash。第一輪 CI 就是這樣紅的
+      - name: Launcher files the SDK created
+        run: |
+          set -euo pipefail
+          ls -la "$HOME/.dotnet/tools/" sc-tool/
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            test -f "$HOME/.dotnet/tools/parity.exe" || { echo "✗ framework 的啟動檔不是 parity.exe"; exit 1; }
+            if [ -f sc-tool/parity.cmd ]; then echo "(紀錄)self-contained 在 Windows 上的啟動檔是 parity.cmd:bash 叫不到"; fi
+          fi
+
+      - name: --version and --help (bash, the way action.yml runs parity)
         run: |
           set -euo pipefail
           parity --version
           parity --help > /dev/null
-          sc-tool/parity --version
-          sc-tool/parity --help > /dev/null
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            sc-tool/parity --version
+            sc-tool/parity --help > /dev/null
+          fi
+
+      - name: --version (Windows PowerShell, both forms)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:USERPROFILE\.dotnet\tools\parity.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & .\sc-tool\parity.cmd --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Install Chromium
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then parity install-browser --with-deps; else parity install-browser; fi
 
-      # 計數與 build-test 的 jq 斷言相同(沒有 parity.map.json 的 checkout:12 個節點配到 11)
-      - name: Real check on the offline demo (framework and self-contained)
+      # 計數與 build-test 的 jq 斷言相同(沒有 parity.map.json 的 checkout:12 個節點配到 11)。
+      # set +e:GitHub 的 bash 預設帶 -e,check 預期的 exit 1 會直接結束這一步(第一輪 CI 踩到)
+      - name: Real check on the offline demo (bash)
         run: |
+          set +e
           set -uo pipefail
           status=0
-          for tool in parity sc-tool/parity; do
+          tools="parity"
+          if [ "$RUNNER_OS" != "Windows" ]; then tools="$tools sc-tool/parity"; fi
+          for tool in $tools; do
             work="$RUNNER_TEMP/demo-$(echo "$tool" | tr '/' '-')"
             rm -rf "$work"; cp -r samples/demo "$work"
-            case "$tool" in /*) bin="$tool" ;; parity) bin=parity ;; *) bin="$PWD/$tool" ;; esac
+            case "$tool" in parity) bin=parity ;; *) bin="$PWD/$tool" ;; esac
             (cd "$work" && "$bin" check --config parity.config.json)
             code=$?
             report="$work/.parity/report.json"
@@ -243,6 +270,26 @@ jobs:
             fi
           done
           exit $status
+
+      # Windows 的 self-contained 只能從 PowerShell/cmd 叫(parity.cmd);順便確認批次檔有把 exit code 原樣傳出來
+      - name: Real check, self-contained through parity.cmd (Windows PowerShell)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'demo-sc-pwsh'
+          if (Test-Path $work) { Remove-Item -Recurse -Force $work }
+          Copy-Item -Recurse samples/demo $work
+          $bin = (Resolve-Path .\sc-tool\parity.cmd).Path
+          Push-Location $work
+          & $bin check --config parity.config.json
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 1) { Write-Host "✗ 預期 exit 1(GATE FAIL),實際 $code"; exit 1 }
+          $summary = (Get-Content (Join-Path $work '.parity/report.json') -Raw | ConvertFrom-Json).reports[0].summary
+          if ($summary.designNodes -ne 12 -or $summary.matched -ne 11 -or $summary.serious -ne 5 -or $summary.minor -ne 1) {
+            Write-Host "✗ 報告計數與預期不符"; $summary | Format-List; exit 1
+          }
+          Write-Host "✓ self-contained(parity.cmd)在 PowerShell 裡 check 成功,exit code 1 原樣傳出"
 
   # 舊 SDK:新舊兩種套件都裝一次。關心的不是「舊 SDK 能不能裝」,而是「新形式有沒有比現在更挑 SDK」
   rid-compat:
@@ -285,7 +332,7 @@ jobs:
           }
           legacy=$(result legacy legacy 0.0.0-ci.legacy)
           rid=$(result rid fd 0.0.0-ci)
-          tail -3 install-legacy.log install-rid.log
+          tail -n 3 install-legacy.log install-rid.log
           echo "| SDK $(dotnet --version) | 現在的單一套件:$legacy | 每個平台一包:$rid |" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "${{ matrix.sdk }}" = "10.0.100" ]; then
             if [ "$legacy" != ok ] || [ "$rid" != ok ]; then echo "✗ 最早的 .NET 10 SDK 應該兩種都裝得起來"; exit 1; fi
@@ -339,10 +386,12 @@ jobs:
             echo "|---|---|---|---|---|"
             grep '|' musl.txt | sed 's/^/| /; s/$/ |/'
           } >> "$GITHUB_STEP_SUMMARY"
-          # 本機實測(2026-11-04):現在的單一套件能跑不開瀏覽器的指令;六個平台包會裝到 linux-x64、啟動檔起不來;
-          # 加了 musl 平台包就回到跟現在一樣。這裡把三件事釘住,SDK 行為一變就會知道
+          # 本機實測(2026-11-04):現在的單一套件能跑不開瀏覽器的指令(check 本來就因為 Playwright 的 Node 是 glibc 版而不能跑);
+          # 六個平台包會被配到 linux-x64,因為平台包是 Runner="dotnet"、啟動檔由 Alpine 上的 SDK 產生,同樣跑得動
+          # (只差在讀既有的 baseline 資料庫:linux-x64 包的 SQLite 原生檔是 glibc 版,本機實測 baseline list exit 2);
+          # 加了 musl 平台包就連那一點也一樣。這裡把三件事釘住,SDK 行為一變就會知道
           grep -q '^legacy|ok|cornhsu.parity |ok|ok$' musl.txt
-          grep -q '^fd|ok|cornhsu.parity cornhsu.parity.linux-x64 |fail' musl.txt
+          grep -q '^fd|ok|cornhsu.parity cornhsu.parity.linux-x64 |ok|ok$' musl.txt
           grep -q '^musl|ok|cornhsu.parity cornhsu.parity.linux-musl-x64 |ok|ok$' musl.txt
           echo "✓ Alpine 的三種結果與本機實測一致"
 

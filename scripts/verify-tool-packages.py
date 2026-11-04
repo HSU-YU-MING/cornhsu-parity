@@ -97,14 +97,25 @@ def check_rid_package(path: str, rid: str, form: str, errors: list[str]) -> None
         root = settings_path.rsplit("/", 1)[0] + "/"  # tools/<tfm|any>/<rid>/
         if not root.endswith(f"/{rid}/"):
             err(f"DotnetToolSettings.xml 在 {settings_path},不在 {rid} 的資料夾")
-        if 'Runner="executable"' not in xml:
-            err("平台包應該用平台的啟動檔(Runner=executable)")
         if package_types(z) != ["DotnetToolRidPackage"]:
             err(f"packageType 是 {package_types(z)},預期 ['DotnetToolRidPackage']")
 
-        exe = "parity.exe" if rid.startswith("win-") else "parity"
-        if root + exe not in names:
-            err(f"找不到啟動檔 {root + exe}")
+        # framework:Runner="dotnet"、不附自己的啟動檔,安裝時由使用者的 SDK 產生——跟現在的單一套件一樣。
+        # 如果變成 Runner="executable",SDK 在 Windows 上產生的是 parity.cmd,bash(action.yml)叫不到 parity。
+        # self-contained 一定是 executable(自帶 runtime 要有自己的啟動檔),Windows 上就是 parity.cmd。
+        apphost = root + ("parity.exe" if rid.startswith("win-") else "parity")
+        if form == "framework":
+            if 'EntryPoint="parity.dll" Runner="dotnet"' not in xml:
+                err('framework 平台包應該是 Runner="dotnet"、EntryPoint="parity.dll"(否則 Windows 上的啟動檔會變成 parity.cmd)')
+            if apphost in names:
+                err(f"framework 平台包不該附自己的啟動檔 {apphost}(UseAppHost=false 沒生效?)")
+            if root + "parity.dll" not in names:
+                err(f"找不到 {root}parity.dll")
+        else:
+            if 'Runner="executable"' not in xml:
+                err('self-contained 平台包應該是 Runner="executable"')
+            if apphost not in names:
+                err(f"找不到啟動檔 {apphost}")
 
         node_dirs = sorted({n[len(root):].split("/")[2] for n in names
                             if n.startswith(root + ".playwright/node/") and n.count("/") > root.count("/") + 2})

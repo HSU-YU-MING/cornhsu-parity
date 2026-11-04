@@ -64,6 +64,15 @@
     <SelfContained>true</SelfContained>
     <PublishSelfContained>true</PublishSelfContained>
   </PropertyGroup>
+  <!-- framework 形式的平台包不附自己的啟動檔(UseAppHost=false),SDK 就把它標成 Runner="dotnet"、
+       安裝時由使用者自己的 SDK 產生啟動檔——跟現在的單一套件一模一樣。不這麼做的話是 Runner="executable",
+       SDK 在 Windows 上產生的是 parity.cmd(批次檔)而不是 parity.exe:bash 叫不到 `parity`
+       (CI 實測 command not found;action.yml 每一步都是 shell: bash),在 Linux/macOS 則是指向包裡
+       glibc 啟動檔的 symlink(Alpine 起不來)。見 SDK 的 ShellShimRepository.CreateShim。
+       自帶 runtime 的建置一定要有啟動檔,所以 SelfContained=true(含 npm job)不受影響。 -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and '$(SelfContained)' != 'true'">
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
   <!-- PublishTrimmed 不能只在帶 RID 時設:restore(沒有 RID)時若是 false,裁剪工具包不會被還原,
        內層 pack 就**靜靜不裁**、大小與 self-contained 一模一樣(實測)。外層的指標包由 SDK 強制關掉裁剪。 -->
   <PropertyGroup Condition="'$(ParityToolDeployment)' == 'trimmed'">
