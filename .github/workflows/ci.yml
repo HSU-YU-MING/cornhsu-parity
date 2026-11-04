@@ -290,6 +290,8 @@ jobs:
             Write-Host "✗ 報告計數與預期不符"; $summary | Format-List; exit 1
           }
           Write-Host "✓ self-contained(parity.cmd)在 PowerShell 裡 check 成功,exit code 1 原樣傳出"
+          # GitHub 的 pwsh 包裝會拿最後一個原生指令的 $LASTEXITCODE(這裡是預期的 1)當這一步的結果,要明講成功
+          exit 0
 
   # 舊 SDK:新舊兩種套件都裝一次。關心的不是「舊 SDK 能不能裝」,而是「新形式有沒有比現在更挑 SDK」
   rid-compat:
