@@ -270,6 +270,8 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 
 - **相依漏洞:2026-11-04 實掃 0 個**(`dotnet list Parity.slnx package --vulnerable --include-transitive`)。
   `SQLitePCLRaw` 手動 pin 到 3.0.5 蓋掉 EF Sqlite 傳遞進來的 NU1903 版本,dependabot 每月盯著。
+  - **3.x 線的安全修補到 2027-05-12**(官方公告:每個 major 在下一代首版後再維護 12 個月),在那之前要決定升不升 4.x。
+    4.x 要 .NET 8+,官方列了 API 調整與解碼端的改動(ICC 轉換選項、JPEG 色彩正規化),升之前一定要比對像素;金鑰能不能沿用官方沒寫,要實測。
   - **ImageSharp 3.2.0(2026-11-04 從 3.1.12 升上來)** 修掉六個 GHSA(高:j3p4-wp97-rph4、j9gm-c75j-xc9q、jjfr-hcj7-qf5w、v76p-62qx-wwq2;
     中:wmxv-xphr-5c9g、gwg2-r3hj-4w44)。之前留在 3.1.12 時的逐條判讀見這段文字的 git 歷史。
   - **兩道防線升級後沒有拆**,因為它們不是只為這幾個漏洞:`ImageDesignSource` 只註冊 PNG/JPEG 解碼器(下一個解碼器的洞一樣碰不到);
