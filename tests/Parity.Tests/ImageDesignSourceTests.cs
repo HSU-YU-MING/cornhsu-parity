@@ -82,7 +82,7 @@ public class ImageDesignSourceTests
     public async Task Only_png_and_jpeg_are_decoded(string format)
     {
         // 決策 #7(2.0.0):designImage 一直只文件化 PNG/JPG,1.x 的 Image.LoadAsync 卻依內容自動判格式、
-        // 什麼都解(ImageSharp 3.1.12 的 BigTIFF 解碼 DoS 就從這裡進來;3.1 線沒有修補版)。
+        // 什麼都解(ImageSharp 3.1.12 的 BigTIFF 解碼 DoS 就是從這裡進來的,3.2.0 修了)。
         // 現在只註冊 PNG 與 JPEG 解碼器,其他格式給明確的錯——副檔名改成 .png 也一樣擋得住
         var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
@@ -401,7 +401,7 @@ public class ImageDesignSourceTests
     public async Task Decoded_design_images_carry_no_icc_or_exif_profile(string fixture)
     {
         // GHSA-gwg2-r3hj-4w44:3.1.12 在讀 IccProfile.Entries 時才解析 CLUT。設計圖解碼後不留任何 ICC,
-        // 這條路就不存在。PNG 要特別測:3.1.12 的 PNG 解碼器不理 SkipMetadata,iCCP 照收(2026-10-23 實測),
+        // 這條路就不存在。PNG 要特別測:PNG 解碼器不理 SkipMetadata,iCCP 照收(3.1.12 與 3.2.0 都實測過),
         // 是 LoadPixelsAsync 解碼後丟掉的
         var dir = Path.Combine(Path.GetTempPath(), $"parity-img-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);

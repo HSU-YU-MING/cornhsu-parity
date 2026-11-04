@@ -22,6 +22,11 @@
 - **改善:沒有瀏覽器的平台,錯誤訊息看得懂了**(面 2 的 exit code 不變)。Alpine 與其他平台上,`check`、`snapshot`、`serve`、
   `map`、`baseline save` 一樣 exit 2、`install-browser` 一樣 exit 1,但訊息直接說這個平台不能開瀏覽器、哪些平台可以、
   哪些指令照常能用,不再是一條找不到的 node 路徑或「請先 build 你的專案」。
+- **安全:ImageSharp 升到 3.2.0**(none;量測不變)。修掉 6 個已公布的漏洞(GHSA-j3p4-wp97-rph4、GHSA-j9gm-c75j-xc9q、
+  GHSA-jjfr-hcj7-qf5w、GHSA-v76p-62qx-wwq2、GHSA-wmxv-xphr-5c9g、GHSA-gwg2-r3hj-4w44),`dotnet list package --vulnerable` 回到 0 個。
+  Parity 只解碼 PNG/JPEG 並丟掉中繼資料,這幾個原本就碰不到,所以是降低風險,不是緊急修補。
+  新舊兩版用 Parity 實際的解碼路徑解 518 張圖(18 張涵蓋各種格式的測試圖、500 張真實圖片),像素逐位元相同,`designImage` 的量測結果不變。
+  3.2.0 起建置需要授權金鑰,repo 裡放了 Six Labors 核發的開源金鑰;**安裝與使用 Parity 不需要金鑰**,它只在建置時檢查,也不會進套件。
 - **CI**(none):`pack-smoke` 改成檢查每個包的內容(`scripts/verify-tool-packages.py`)並乾跑發版的推送順序;
   新增 `install-smoke`(六個平台各一台真機:用 Action 的方式裝、真的開瀏覽器跑 check、存讀基準)、
   `install-smoke-no-browser`(Alpine 與 any 後備包)、`install-min-sdk`。
