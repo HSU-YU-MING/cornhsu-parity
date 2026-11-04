@@ -2,6 +2,32 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 未發佈
+
+> **NuGet 通路改成每個平台一包,安裝指令不變。** `dotnet tool install -g Cornhsu.Parity` 現在只下載你這個平台的那一包,
+> 約 44～54 MB,原本每個人每次都下載 244 MB(GitHub Action 每次執行都會重新下載,這裡省最多)。
+> 從 2.1.0 `dotnet tool update` 上來照常,基準資料庫不用動。
+> *The .NET tool now ships one package per platform, so you download about 44–54 MB instead of 244 MB. The install
+> command and the requirements are unchanged.*
+
+- **打包:一個指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parity.<rid>`**(none;六面都沒動,所以是 minor)。
+  單一套件到 2.1.0 已 244 MB,離 nuget.org 250 MB 上限只剩幾 MB,再長大就發不出新版。
+  - 六個完整平台(win-x64、win-arm64、linux-x64、linux-arm64、osx-x64、osx-arm64),每包只帶自己平台的 Playwright Node 與
+    SQLite 原生檔,43.9～53.5 MB。
+  - `linux-musl-x64`、`linux-musl-arm64`(Alpine,各 4.2 MB)與 `any`(其他平台的後備,30.4 MB)不帶 Playwright:
+    這些平台本來就跑不了要開瀏覽器的指令,留著它們是為了「現在裝得起來的人,改了之後都還裝得起來」。
+  - 需求不變:.NET 10 SDK(最早的 10.0.100 實測可以,Ubuntu、Fedora、Alpine 自己打包的 SDK 也實測可以;.NET 8/9 SDK 跟以前一樣裝不起來)。
+    不自帶 .NET runtime、不裁剪。
+  - `action.yml` 與 npm 通路都不用改:Action 一樣是 `dotnet tool install`,npm 的 `dotnet publish` 檔案清單不變。
+- **改善:沒有瀏覽器的平台,錯誤訊息看得懂了**(面 2 的 exit code 不變)。Alpine 與其他平台上,`check`、`snapshot`、`serve`、
+  `map`、`baseline save` 一樣 exit 2、`install-browser` 一樣 exit 1,但訊息直接說這個平台不能開瀏覽器、哪些平台可以、
+  哪些指令照常能用,不再是一條找不到的 node 路徑或「請先 build 你的專案」。
+- **CI**(none):`pack-smoke` 改成檢查每個包的內容(`scripts/verify-tool-packages.py`)並乾跑發版的推送順序;
+  新增 `install-smoke`(六個平台各一台真機:用 Action 的方式裝、真的開瀏覽器跑 check、存讀基準)、
+  `install-smoke-no-browser`(Alpine 與 any 後備包)、`install-min-sdk`。
+- **發版流程**(none):`release.yml` 先推平台包、等 nuget.org 查得到、重新登入(臨時金鑰只活 1 小時)、最後才推指標包;
+  中途失敗時指標包還沒上架,使用者照樣裝到上一版,重跑 job 即可。第一次發版的注意事項見 RELEASING.md。
+
 ## 2.1.0 — 2026-10-28
 
 > **⚠ 這一版起,`parity check` 預設會送匿名使用統計(CI 也是)。** 只有計數與分數區間——不含網址、名稱、selector、

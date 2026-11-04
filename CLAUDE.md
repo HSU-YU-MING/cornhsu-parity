@@ -156,12 +156,25 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
 真實瀏覽器，沒裝會**自己靜靜略過**——那條測的是量測正確性，靜靜略過等於沒驗。
 調換順序不會有任何錯誤訊息，只會少驗一批東西。
 
-### `PlaywrightPlatform=all` 不能「優化」掉
+### 每個平台一包:pack 綠不代表包是對的
 
-`Parity.Cli.csproj` 收齊五個平台的 Playwright driver。預設只複製建置當下平台的 node，
-在 ubuntu runner 上 pack 出來的包，Windows 使用者裝了直接 `Driver not found`——
-**0.9.1 真的這樣發出去過**。`pack` 綠不代表裝得起來，所以 CI 有 `pack-smoke` job
-真的把包裝起來跑一次 `--help`。
+NuGet 通路是一個指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parity.<rid>`(單一套件到 2.1.0 已 244 MB,離 nuget.org 上限只剩幾 MB)。
+**下面每一條改錯了 pack 都照樣綠**(0.9.1 就是 pack 綠、Windows 使用者裝了直接 `Driver not found`),所以
+`scripts/verify-tool-packages.py` 看每個包的內容,CI 的 `install-smoke*` 真的裝,`ToolPackagePlatformTests` 守設定彼此對得上:
+
+- **`PlaywrightPlatform` 每個平台要帶對。** `all` 只管沒帶 RID 的建置(`dotnet run`、測試輸出),**不能「優化」掉**,否則換台機器就沒有 driver。
+  平台包依 RID 覆寫;Playwright 不認得的值會落回全收、又回到 240 MB,所以 win-arm64 是 `win`、`any` 與 musl 是 `none`。
+  `Parity.Engine` 也要設 `none`,否則它帶的「建置機器平台」Node 會流進每個平台包(+45 MB)。
+- **`UseAppHost=false` 不能拿掉。** 拿掉就變 `Runner="executable"`,Windows 上的啟動檔是 `parity.cmd`,bash 叫不到 `parity`,
+  Action 每一步都是 bash,會全壞。官方文件沒寫,實驗第一輪 CI 才抓到。
+- **不要裁剪、不要自帶 runtime。** 官方文件說平台包是 self-contained and trimmed,那是它的範例自己設的,不是 SDK 預設。
+  裁剪:`check` 一讀設定檔就崩潰。自帶 runtime:每包多約 50 MB、.NET 的安全修補要等 Parity 重發、又會變成 `parity.cmd`。
+- **`release.yml` 的 pack 不能帶 `--no-build`、不能 `dotnet nuget push *.nupkg`。** 平台包要各自建置;指標包要最後推,
+  中間要等 nuget.org 查得到(臨時金鑰只活 1 小時,所以推指標包前重新登入)。
+- **平台清單可以加、不能減。** 拿掉一個,那個平台的使用者就裝不起來,而且 nuget.org 上的 ID 刪不掉。
+  改清單要同步 `Parity.Cli.csproj` 與 `verify-tool-packages.py` 的 `EXPECTED_RIDS`(有瀏覽器的還有 `NODE_DIR`、ci.yml 的 `install-smoke`)。
+- **`any` 與 `linux-musl-*` 不帶 Playwright driver。** 這些平台本來就跑不了要開瀏覽器的指令;`WebImplementationSource.NoDriverMessage`
+  負責講清楚,exit code 跟單一套件時代一樣(`check` 這類 2、`install-browser` 1)。
 
 ### 量測前的「定案」是幾何保證，不是等待
 

@@ -53,22 +53,61 @@ jobs:
       - run: dotnet restore Parity.slnx
       - run: dotnet build Parity.slnx -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
       - run: dotnet test Parity.slnx -c Release --no-build
-      - run: dotnet pack Parity.slnx -c Release --no-build -p:Version=${{ steps.ver.outputs.version }} -o ./artifacts
+
+      # 每個平台一包:pack 產出指標包 Cornhsu.Parity + 九個平台包 Cornhsu.Parity.<rid>。
+      # 不能再帶 --no-build:平台包要各自以 RuntimeIdentifier 建置,上面的 dotnet build 沒有建那九份,
+      # 帶 --no-build 會 MSB3030(找不到 bin/Release/net10.0/<rid>/parity.runtimeconfig.json,實測)。
+      # 只 pack CLI:它是唯一可打包的專案。
+      - name: Pack (pointer package + one package per platform)
+        env:
+          PARITY_VERSION: ${{ steps.ver.outputs.version }}
+        run: dotnet pack src/Parity.Cli/Parity.Cli.csproj -c Release -p:Version="$PARITY_VERSION" -o ./artifacts
+
+      # pack 綠不代表包是對的(0.9.1):推之前確認每個平台包只帶自己平台的 Node 與 SQLite、指標包列齊九個平台、
+      # 每包都在 nuget.org 250 MB 上限之內。tag 推出去之後才發現就只能刪 tag 重來,但總比發出壞包好。
+      - name: Verify the packages before pushing
+        env:
+          PARITY_VERSION: ${{ steps.ver.outputs.version }}
+        run: python3 scripts/verify-tool-packages.py ./artifacts "$PARITY_VERSION" --summary "$GITHUB_STEP_SUMMARY" --title "NuGet packages"
 
       # Trusted Publishing:用 GitHub OIDC 向 nuget.org 換一把只活 1 小時的臨時金鑰,
-      # 不需保管長效 API key、也不需 repo secret(需先在 nuget.org 設定 trusted publisher policy)
-      - name: NuGet login (OIDC → temp API key)
+      # 不需保管長效 API key、也不需 repo secret(需先在 nuget.org 設定 trusted publisher policy)。
+      # 每個平台一包多了九個新的套件 ID:policy 的範圍(Scope 的 glob 與「可否建立新套件」)要涵蓋
+      # Cornhsu.Parity.*,第一次發佈前由維護者到 nuget.org 確認。
+      - name: NuGet login (OIDC → temp API key, platform packages)
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0(v1 當時所指的 commit)
         id: login
         with:
           user: Cornhsu   # nuget.org 使用者名稱(不是 email)
 
-      - name: Push to NuGet
-        run: >
-          dotnet nuget push "./artifacts/*.nupkg"
-          -k ${{ steps.login.outputs.NUGET_API_KEY }}
-          -s https://api.nuget.org/v3/index.json
-          --skip-duplicate
+      # 順序是重點:使用者裝的是指標包,指標包先上架而平台包還沒好的那段時間,所有安裝都會失敗。
+      # 所以平台包先推 → 等到 nuget.org 真的查得到 → 指標包最後推(細節見 scripts/push-tool-packages.sh)。
+      # 發到一半失敗:指標包還沒推,使用者照樣裝到上一版;直接重跑這個 job(--skip-duplicate 略過已上架的)。
+      - name: Push platform packages
+        env:
+          PARITY_VERSION: ${{ steps.ver.outputs.version }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: scripts/push-tool-packages.sh platform "$PARITY_VERSION" ./artifacts
+
+      # nuget.org 收到之後還要驗證、建索引(2.1.0 的 243 MB 包等了半小時以上)。腳本自己 120 分鐘逾時。
+      - name: Wait until nuget.org serves every platform package
+        timeout-minutes: 125
+        env:
+          PARITY_VERSION: ${{ steps.ver.outputs.version }}
+        run: scripts/push-tool-packages.sh wait "$PARITY_VERSION" ./artifacts
+
+      # 上面那把臨時金鑰只活 1 小時,等驗證可能就超過了:推指標包前重新換一把(一個 OIDC token 只能換一次)
+      - name: NuGet login again (pointer package)
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0(v1 當時所指的 commit)
+        id: login_pointer
+        with:
+          user: Cornhsu
+
+      - name: Push the pointer package (what users install)
+        env:
+          PARITY_VERSION: ${{ steps.ver.outputs.version }}
+          NUGET_API_KEY: ${{ steps.login_pointer.outputs.NUGET_API_KEY }}
+        run: scripts/push-tool-packages.sh pointer "$PARITY_VERSION" ./artifacts
 
       # 建 GitHub Release。Marketplace 的版本呈現綁 Release,而使用者被要求 pin @vX.Y.Z 時,
       # Releases 頁是他們唯一看得到「這版改了什麼」的地方 —— 先前四個 repo 幾乎都是空的。

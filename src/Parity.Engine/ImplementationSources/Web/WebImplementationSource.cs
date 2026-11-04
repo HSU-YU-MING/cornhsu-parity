@@ -226,8 +226,29 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             => Rgba.TryParseCss(Str(e, prop), out var c) ? c : null;
     }
 
+    /// <summary>
+    /// any 與 linux-musl-*(Alpine)的平台包不帶 Playwright driver:Playwright 沒有那些平台的 Node。
+    /// install-browser 也用這段。exit code 跟單一套件時代一樣(check 這類 2、install-browser 1),只是看得懂。
+    /// 平台清單對應 scripts/verify-tool-packages.py 的 NODE_DIR(ToolPackagePlatformTests 守著)。
+    /// </summary>
+    public const string NoDriverMessage =
+        "This platform cannot run commands that open a browser: Playwright has no driver for it, so this package does not include one. "
+        + "They need win-x64, win-arm64, linux-x64, linux-arm64, osx-x64 or osx-arm64. "
+        + "Commands that do not open a browser, such as `parity lint` and `parity baseline list`, still work.";
+
     private async Task<IPlaywright> GetPlaywrightAsync()
-        => _playwright ??= await Playwright.CreateAsync();
+    {
+        if (_playwright is not null) return _playwright;
+        try
+        {
+            return _playwright = await Playwright.CreateAsync();
+        }
+        catch (PlaywrightException ex) when (ex.Message.StartsWith("Driver not found", StringComparison.Ordinal))
+        {
+            // Playwright 原文只有一條找不到的 node 路徑,使用者看不出是平台不支援;路徑留著,真的裝壞時查得到
+            throw new InvalidOperationException($"{NoDriverMessage} ({ex.Message})", ex);
+        }
+    }
 
     private async Task<IBrowser> GetBrowserAsync()
     {

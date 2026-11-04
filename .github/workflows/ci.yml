@@ -9,9 +9,9 @@ on:
 permissions:
   contents: read
 
-# 匿名使用統計(2.1.0 起 parity check 預設會送)整份 workflow 關掉:單元測試(CliBrowserTests)與離線示範跑的
-# 都是真的 check,維護者自己的 CI 不能混進研究資料。從原始碼建的 0.0.0-dev 本來就不送,這是第二道;
-# pack-smoke 裝的 0.0.0-ci 不算開發版,只靠這一行(它現在只跑 --help)。
+# 匿名使用統計(2.1.0 起 parity check 預設會送)整份 workflow 關掉:單元測試(CliBrowserTests)、離線示範與 install-smoke
+# 跑的都是真的 check,維護者自己的 CI 不能混進研究資料。從原始碼建的 0.0.0-dev 與 install-smoke 裝的 0.0.0-ci
+# 本來就不送(版號以 0.0.0- 開頭),這是第二道。
 env:
   DO_NOT_TRACK: '1'
 
@@ -42,15 +42,12 @@ jobs:
           dotnet-version: '10.0.x'
       - run: dotnet test Parity.slnx -c Release
 
-  # 打包 + 真的把工具裝起來跑一次 --help。
-  # `dotnet pack` 成功不代表裝得起來:Playwright driver 的平台檔案要真的進到包裡,
-  # 而那件事只有「安裝後執行」才驗得到(0.9.1 正是 pack 綠、安裝後才爆)。
+  # 打包(在 ubuntu 上,跟 release 同一個環境)、檢查每個包的內容、乾跑一次發版的推送順序。
+  # `dotnet pack` 成功不代表包是對的:Playwright driver 的平台檔案要真的進到包裡,
+  # 而那件事只有看包的內容或安裝後執行才驗得到(0.9.1 正是 pack 綠、安裝後才爆)。
+  # 下游的 install-smoke* 拿這裡打好的包去各平台真的裝。
   pack-smoke:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -58,19 +55,189 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Pack
         run: dotnet pack src/Parity.Cli/Parity.Cli.csproj -c Release -p:Version=0.0.0-ci -o nupkg
-      - name: Install the packed tool and run it
-        shell: bash
+      - name: Verify the packages
+        run: python3 scripts/verify-tool-packages.py nupkg 0.0.0-ci --summary "$GITHUB_STEP_SUMMARY" --title "NuGet packages"
+
+      # release.yml 推套件的腳本對本機資料夾乾跑:確認平台包全推完才推指標包,而且推完裝得起來
+      - name: Dry-run the release push order against a local folder feed
         run: |
           set -euo pipefail
-          dotnet tool install --global --add-source ./nupkg --version 0.0.0-ci Cornhsu.Parity
-          export PATH="$HOME/.dotnet/tools:$PATH"
-          parity --help > /dev/null
-          echo "✓ 打包出來的工具在 ${{ matrix.os }} 上裝得起來也跑得動"
+          mkdir -p feed
+          NUGET_API_KEY=dry-run NUGET_SOURCE="$PWD/feed" FLAT_CONTAINER='' \
+            bash scripts/push-tool-packages.sh all 0.0.0-ci nupkg | tee push.log
+          grep -E '^Pushing ' push.log | tail -1 | grep -q 'Pushing Cornhsu.Parity.0.0.0-ci.nupkg' \
+            || { echo "✗ 最後推的不是指標包"; exit 1; }
+          [ "$(grep -cE '^Pushing ' push.log)" -eq 10 ] || { echo "✗ 應該推 10 個套件(九個平台包 + 指標包)"; exit 1; }
+          dotnet tool install --tool-path feed-tool --add-source feed --version 0.0.0-ci Cornhsu.Parity
+          feed-tool/parity --version
+          echo "✓ 推送順序正確(九個平台包 → 指標包),推完裝得起來"
+
+      # nupkg 本來就壓縮過,上傳不再壓;只留 3 天,夠下游 job 用就好
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: matrix.os == 'ubuntu-latest'
         with:
           name: nupkg
           path: nupkg/*.nupkg
+          compression-level: 0
+          retention-days: 3
+
+  # 六個有瀏覽器的平台各一台真機。套件是 ubuntu 上 pack 的(跟 release 一樣),在這裡用 action.yml 的方式裝
+  # (--global + setup-dotnet 10.0.x),再真的開瀏覽器跑一次離線示範,報告計數要跟 build-test 一字不差,
+  # 基準資料庫也存讀一次:每個平台包只帶自己的 Node 與 SQLite 原生檔,帶錯了只有在那個平台上才看得到。
+  install-smoke:
+    needs: pack-smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, rid: linux-x64 }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: windows-11-arm, rid: win-arm64 }
+          - { os: macos-latest, rid: osx-arm64 }
+          - { os: macos-15-intel, rid: osx-x64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nupkg
+          path: pkgs
+
+      - name: Install the way action.yml does
+        run: |
+          set -euo pipefail
+          dotnet tool install --global --add-source pkgs --version 0.0.0-ci Cornhsu.Parity
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: The CLI picked this platform's package
+        run: |
+          set -euo pipefail
+          ls "$HOME/.dotnet/tools/.store/cornhsu.parity/0.0.0-ci/" | tee picked.txt
+          grep -qx 'cornhsu.parity.${{ matrix.rid }}' picked.txt
+          echo "✓ 裝到 Cornhsu.Parity.${{ matrix.rid }}"
+
+      # 平台包是 Runner="dotnet",SDK 在 Windows 上產生 parity.exe,bash 叫得到。Runner="executable" 的話是 parity.cmd 批次檔:
+      # PowerShell/cmd 叫得到、bash 叫不到——action.yml 每一步都是 shell: bash。實驗時第一輪 CI 就是這樣紅的
+      - name: The launcher on Windows is parity.exe
+        if: runner.os == 'Windows'
+        run: test -f "$HOME/.dotnet/tools/parity.exe" || { echo "✗ 啟動檔不是 parity.exe"; ls -la "$HOME/.dotnet/tools/"; exit 1; }
+
+      - name: --version and --help (bash, the way action.yml runs parity)
+        run: |
+          set -euo pipefail
+          parity --version
+          parity --help > /dev/null
+
+      - name: --version (Windows PowerShell)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:USERPROFILE\.dotnet\tools\parity.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Install Chromium
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then parity install-browser --with-deps; else parity install-browser; fi
+
+      # 計數與 build-test 的 jq 斷言相同(沒有 parity.map.json 的 checkout:12 個節點配到 11)。
+      # set +e:GitHub 的 bash 預設帶 -e,check 預期的 exit 1 會直接結束這一步
+      - name: Real check on the offline demo
+        run: |
+          set +e
+          set -uo pipefail
+          work="$RUNNER_TEMP/demo"
+          rm -rf "$work"; cp -r samples/demo "$work"
+          (cd "$work" && parity check --config parity.config.json)
+          code=$?
+          report="$work/.parity/report.json"
+          if [ "$code" -ne 1 ]; then echo "✗ 預期 exit 1(GATE FAIL),實際 $code"; exit 1; fi
+          jq -e '(.reports | length) == 1
+              and (.reports[0].summary | .designNodes == 12 and .matched == 11 and .unmatched == 1
+                   and .nodesWithDiffs == 3 and .critical == 0 and .serious == 5 and .medium == 0 and .minor == 1)
+              and ([.reports[0].nodes[].diffs[] | select(.soft)] | length) == 1' "$report" > /dev/null \
+            || { echo "✗ 報告計數與預期不符"; jq '.reports[0].summary' "$report"; exit 1; }
+          echo "✓ check 開了瀏覽器、寫出報告,計數正確"
+
+      - name: Baseline database (this platform's SQLite)
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/demo-baseline"
+          rm -rf "$work"; cp -r samples/demo "$work"
+          cd "$work"
+          parity baseline save --config parity.config.json
+          parity baseline list --config parity.config.json | grep -q '#1'
+          parity check --config parity.config.json --baseline
+          echo "✓ 基準存得進去、讀得出來,跟基準比沒有新問題"
+
+  # 沒有 Playwright Node 的平台:Alpine 的 musl 包在真的容器裡裝;any 後備包讓 SDK 以為自己在 32 位元 ARM 上裝。
+  # 基準資料庫由同架構的一般平台包真的開瀏覽器寫一份,讀別台機器寫的資料庫才是 SQLite 原生檔裝對了的證據。
+  install-smoke-no-browser:
+    needs: pack-smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, musl: linux-musl-x64 }
+          - { os: ubuntu-24.04-arm, musl: linux-musl-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nupkg
+          path: pkgs
+      - name: Write a real baseline database
+        run: |
+          set -euo pipefail
+          dotnet tool install --tool-path host-tool --add-source pkgs --version 0.0.0-ci Cornhsu.Parity
+          host-tool/parity install-browser --with-deps
+          cp -r samples/demo demo
+          (cd demo && ../host-tool/parity baseline save --config parity.config.json)
+      - name: The any package (a platform with no package of its own)
+        env:
+          INSTALL_RUNTIME_ID: linux-arm
+        run: sh scripts/smoke-no-browser-platform.sh "$PWD/pkgs" 0.0.0-ci any "$PWD/demo"
+      - name: Alpine in a container
+        run: |
+          docker run --rm -e DO_NOT_TRACK=1 -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 -v "$PWD:/repo:ro" \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine \
+            sh /repo/scripts/smoke-no-browser-platform.sh /repo/pkgs 0.0.0-ci ${{ matrix.musl }} /repo/demo
+
+  # 最早的 .NET 10 SDK 要裝得起來、跑得動:README 寫的需求是「.NET 10 SDK」,不挑小版本。
+  # 打包用的 SDK 會跟著 10.0.x 往上滾,哪天它打出來的包舊 SDK 看不懂,這裡會先紅。
+  install-min-sdk:
+    needs: pack-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        id: sdk
+        with:
+          dotnet-version: '10.0.100'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nupkg
+          path: pkgs
+      - name: Install and run with exactly this SDK
+        env:
+          SDK_VERSION: ${{ steps.sdk.outputs.dotnet-version }}
+        run: |
+          set -euo pipefail
+          # runner 上預裝了好幾版 SDK;global.json 鎖死成剛裝的這一版,不讓它往上滾
+          mkdir -p work && cd work
+          printf '{"sdk":{"version":"%s","rollForward":"disable"}}\n' "$SDK_VERSION" > global.json
+          echo "SDK in use: $(dotnet --version)"
+          dotnet tool install --tool-path tool --add-source ../pkgs --version 0.0.0-ci Cornhsu.Parity
+          tool/parity --version
+          echo "✓ 最早的 .NET 10 SDK 裝得起來、跑得動"
 
   # 網頁外殼前端(web/ → Parity.Server wwwroot)。tsc --noEmit 含在 build script 裡,
   # 型別錯誤就紅——伺服器端 API 形狀改了而前端型別沒跟上時,這裡會先叫。
