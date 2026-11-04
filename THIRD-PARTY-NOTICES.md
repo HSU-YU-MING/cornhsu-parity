@@ -22,16 +22,16 @@ Versions are the ones resolved for `src/Parity.Cli` (`obj/project.assets.json`).
 
 | Component | Version | License | Copyright | Project |
 |---|---|---|---|---|
-| Microsoft.Playwright (.NET binding) | 1.63.0 | MIT | © Microsoft Corporation | https://github.com/microsoft/playwright-dotnet |
-| Playwright driver (`playwright-core`, inside Microsoft.Playwright) | 1.63.0 | Apache-2.0 | Copyright (c) Microsoft Corporation; portions Copyright 2017 Google Inc. | https://github.com/microsoft/playwright |
-| Node.js (inside Microsoft.Playwright; **NuGet package only**) | 24.21.0 | MIT, plus the licenses of the dependencies it bundles | Copyright Node.js contributors; Copyright Joyent, Inc. and other Node contributors | https://github.com/nodejs/node |
+| Microsoft.Playwright (.NET binding) | 1.64.1 | MIT | © Microsoft Corporation | https://github.com/microsoft/playwright-dotnet |
+| Playwright driver (`playwright-core`, inside Microsoft.Playwright) | 1.64.1 | Apache-2.0 | Copyright (c) Microsoft Corporation; portions Copyright 2017 Google Inc. | https://github.com/microsoft/playwright |
+| Node.js (inside Microsoft.Playwright; **NuGet package only**) | 24.22.1 | MIT, plus the licenses of the dependencies it bundles | Copyright Node.js contributors; Copyright Joyent, Inc. and other Node contributors | https://github.com/nodejs/node |
 | SixLabors.ImageSharp | 3.2.0 | Apache-2.0 ([why](#sixlaborsimagesharp-apache-20)) | Copyright © Six Labors | https://github.com/SixLabors/ImageSharp |
 | SQLitePCLRaw.core, SQLitePCLRaw.provider.e_sqlite3 | 3.0.5 | Apache-2.0 | Copyright 2014-2025 SourceGear, LLC | https://github.com/ericsink/SQLitePCL.raw |
 | SQLitePCLRaw.bundle_e_sqlite3, SQLitePCLRaw.config.e_sqlite3 | 3.0.5 | Apache-2.0 | Copyright 2014-2026 SourceGear, LLC | https://github.com/ericsink/SQLitePCL.raw |
 | SQLite (native `e_sqlite3`, NuGet package `SQLite` built by SourceGear) | 3.53.4 | Public domain | SQLite is in the public domain; package Copyright 2014-2026 SourceGear, LLC | https://sqlite.org/copyright.html |
-| Microsoft.EntityFrameworkCore, .Abstractions, .Relational, .Sqlite, .Sqlite.Core | 10.0.12 | MIT | © Microsoft Corporation | https://github.com/dotnet/efcore |
-| Microsoft.Data.Sqlite.Core | 10.0.12 | MIT | © Microsoft Corporation | https://github.com/dotnet/efcore |
-| Microsoft.Extensions.DependencyModel | 10.0.12 | MIT | © Microsoft Corporation | https://github.com/dotnet/runtime |
+| Microsoft.EntityFrameworkCore, .Abstractions, .Relational, .Sqlite, .Sqlite.Core | 10.0.14 | MIT | © Microsoft Corporation | https://github.com/dotnet/efcore |
+| Microsoft.Data.Sqlite.Core | 10.0.14 | MIT | © Microsoft Corporation | https://github.com/dotnet/efcore |
+| Microsoft.Extensions.DependencyModel | 10.0.14 | MIT | © Microsoft Corporation | https://github.com/dotnet/runtime |
 | Microsoft.Bcl.AsyncInterfaces | 6.0.0 | MIT | © Microsoft Corporation | https://github.com/dotnet/runtime |
 | .NET runtime (**npm platform packages only**) | 10.0.x used by the release build | MIT | Copyright (c) .NET Foundation and Contributors | https://github.com/dotnet/runtime |
 | ASP.NET Core shared framework (**npm platform packages only**) | 10.0.x used by the release build | MIT | Copyright (c) .NET Foundation and Contributors | https://github.com/dotnet/aspnetcore |
