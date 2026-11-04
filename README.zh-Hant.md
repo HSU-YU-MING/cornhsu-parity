@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1087 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1153 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -163,6 +163,8 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "ignore": ["[data-parity-ignore]"],
   "gate": {
     "failOn": ["critical", "serious"],       // minor / medium / serious / critical 任選,一個字串放一個等級
+    "failOnUnmatched": [],                   // 選配:要擋的未配對原因(exit 1),例如 ["text-not-found"],
+                                             //   ["*"] = 全部;[] = 只列出不擋(預設),見下方說明
     "minMatchRate": 0                        // 選配:配對率低於此值(0–1)→ exit 3,見下方說明;0 = 不設門檻
   },
   "stats": { "share": true }                 // 選配:false = 不送匿名使用統計;見下方「匿名使用統計」(也有 projectId)
@@ -172,6 +174,27 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
 > gate 除了看落差,也驗**配對可信度**:完全 0 配對(或設計端 0 節點)一律失敗,exit code 是 3(`MATCH INTEGRITY TOO LOW`)而不是 1——
 > 沒配到就沒落差可擋,沉默 PASS 會是假的通過(通常是 url/frame 指錯)。配對率低於 `gate.minMatchRate`
 > 也是同樣的失敗、同樣 exit 3。`--baseline` 模式也不豁免;`--reverse` 不做把關,永遠 exit 0。
+
+### 元件不見也要擋:`gate.failOnUnmatched`
+
+預設情況下,配不到的設計節點只會**列出來**(報告的 `unmatched`)——頁面少了一個徽章照樣通過。
+`gate.failOnUnmatched` 讓你選擇哪些[未配對原因](#報告字彙表給解析-reportjson-的人)要擋:exit 1(GATE FAIL),
+原因那一行會列出被擋的圖層,例如 `/: 1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: cta-label)`。
+
+- `["text-not-found"]`——精準的選擇:設計稿某個文字節點的文字**整頁都找不到**(元件不見,或文案被改掉)才擋;其他未配對照舊只列出。
+- `["*"]`——任何未配對都擋,不管原因。(`minMatchRate: 1` 也會在有任何未配對時失敗,但那是 exit 3「結果不可信」,不是 GATE FAIL。)
+- 原因不分大小寫;拼錯的原因在載入時就是設定錯誤(exit 2)——永遠對不到的原因會讓 gate 靜靜失效。
+- 配對可信度仍然優先:0 配對照舊 exit 3。
+- `check`、`parity report` 與 `parity push`(兩者都依設定檔重算結果)、`parity serve` 都套用。**`check --baseline` 在已有基準時不套用**——回歸模式只擋新增/惡化的落差;還沒有基準時退回一般 gate,這條也包含在內。
+
+`text-not-found` 的確切意思:設計稿的文字不是「Parity 看得到的整頁文字」的子字串。
+比對時不分大小寫,忽略所有空白與軟連字號這類看不見的字元,彎引號視同直引號,所以設計稿手動斷行或引號寫法不同都不算文字不見。
+整頁文字是頁面渲染出來的文字(`innerText`,所以 `text-transform` 與拆在多個元素裡的文字如 `Hello <b>world</b>` 都算),
+再補上 `innerText` 看不到的:open shadow root、同源 iframe、`<input>`/`<textarea>` 的值與 placeholder、`::before`/`::after` 的 content、`<img alt>`。
+隱藏的文字(`display: none`、`visibility: hidden`)與密碼欄位的值不算。Parity 搆不到的文字——跨域 iframe、closed shadow root、
+畫在 `<canvas>` 上或做成圖片又沒有 `alt` 的字——算「找不到」,所以 `text-not-found` 的意思是「在 Parity 看得到的範圍內找不到」。
+文字在、但對不到單一元素(有多個相同文字,或拆在多個元素裡)時維持 `ambiguous-or-missing-text`。
+整頁文字只用在這個判斷:不會寫進 `report.json`、快照、統計或 bug 回報。
 
 ## 目標:網頁或 Electron 桌面 app
 
@@ -274,7 +297,7 @@ route 只是報告上的標籤,取好認的名字就行。frame 尺寸 ≠ 想�
 2. **圖層名 ↔ id / class / aria-label**(沒有 aria-label 時改看 `data-testid`):`CTA Button` 自動對上 `class="cta-button"`
 3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)
 4. **手動補漏**:HTML 加 `data-parity="圖層名"`,或 `parity.map.json` 寫 `{ "圖層名": "CSS selector" }`
-5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)
+5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)。文字節點的文字整頁都找不到時,原因是 `text-not-found`(元件不見),而不是「分不出來」——`gate.failOnUnmatched` 可以拿它擋 PR
 
 ## 架構
 
@@ -414,7 +437,7 @@ jobs:
 
 行為:
 - **PR 留言**:自動貼一則還原度報告(分數 + 落差表 + **建議修法**,最後一行是連到誤判/漏判回報表單的「Report a misjudgment」——只是連結,不會送出任何東西),同一則反覆更新不洗版——PM/reviewer 不用碰工具就看得到。
-- **擋 PR**:落差超過 `gate.failOn` → exit 1 → PR 打紅(**留言會先貼、再擋**)。
+- **擋 PR**:落差超過 `gate.failOn`(或未配對節點的原因列在 `gate.failOnUnmatched` 裡)→ exit 1 → PR 打紅(**留言會先貼、再擋**)。
 - **artifact**:`report.json` + Markdown 報告上傳供下載(artifact 名稱預設 `parity-report`,可用 `artifact-name` 改;根目錄就是 `report.json` 與 `parity-report.md`)。`report.json` 從設定檔旁邊的 `.parity/report.json`(`check` 寫出的位置)取,`config` 指向子目錄時也一樣。
 - **同一次執行呼叫多次**:優先用 **matrix**(每個網站或設定檔一個 job),每次給不同的 `artifact-name`(例如 `parity-report-${{ matrix.site }}`)。每個名稱各自一個 artifact、各自一則 PR 留言;名稱相同的兩次呼叫,artifact 上傳會撞名。同一個 job 裡呼叫兩次,只在第一次通過時可行:第一次的 gate 失敗,job 就停在那一次的最後一步,第二次根本不會跑(沒有它的報告、留言或 artifact)。
 - **匿名使用統計**:預設打開([送什麼、為什麼](#匿名使用統計));`share-stats: false` 關掉。job summary 會多一行,寫明送了、或為什麼沒送。
@@ -429,7 +452,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 
 - **未知的 key** — 消費端必須忽略不認得的 key。2.x 之內 `report.json` 只會**新增**欄位,既有的 key 不刪、不改名、不改型別(那是 3.0 的事)。下面的封閉集在 2.x 之內也不會多成員。
 - `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
-- `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`randomized-id`、`size-implausible`。
+- `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。
 - `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
 
@@ -447,6 +470,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 
 - **新增**(基準沒有、現在有)或**惡化**(嚴重度變高)→ exit 1 擋 PR
 - **修好**(基準有、現在沒了)會列出來鼓勵;**不變**的既有落差不擋
+- 這個模式(已有基準時)不套用 `gate.failOnUnmatched`;未配對節點照常列出
 - 適合漸進導入:先 `baseline save` 記錄現況,之後 CI 用 `check --baseline`,團隊只需「不要讓還原度更差」
 
 儲存層是獨立的 `Parity.Storage`(EF Core + SQLite,`Pooling=False` 即時釋放檔案),引擎裡的 `BaselineComparer` 是純函式、可單元測試。

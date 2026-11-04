@@ -70,6 +70,8 @@ public class ReportCommandTests
     [Theory]
     [InlineData("""{ "targets": [] }""", "❌ **GATE FAIL**")]                                 // 預設 failOn 含 serious
     [InlineData("""{ "targets": [], "gate": { "failOn": ["critical"] } }""", "✅ PASS")]   // gate 依 config 重算
+    [InlineData("""{ "targets": [], "gate": { "failOn": [], "failOnUnmatched": ["no-anchor"] } }""", "❌ **GATE FAIL**")] // 未配對原因也重算
+    [InlineData("""{ "targets": [], "gate": { "failOn": [], "failOnUnmatched": ["text-not-found"] } }""", "✅ PASS")]
     public async Task Gate_verdict_is_recomputed_from_the_config(string configJson, string verdict)
     {
         using var dir = new TempDir();
@@ -92,6 +94,24 @@ public class ReportCommandTests
         Assert.Equal(0, r.ExitCode);
         Assert.Contains("> ⚠️ /: 0/1 design nodes matched", r.Out);
         Assert.Contains("❌ **GATE FAIL**", r.Out);
+    }
+
+    [Fact]
+    public async Task Unmatched_nodes_that_fail_on_unmatched_blocked_show_up_as_a_note()
+    {
+        // 與 check --md 同一句:分數可能很高(配上的都沒落差),只看 GATE FAIL 會以為是誤判
+        using var dir = new TempDir();
+        var config = Setup(dir, """{ "targets": [], "gate": { "failOn": [], "failOnUnmatched": ["*"] } }""");
+
+        var r = await Cli.RunAsync("report", "--config", config);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("❌ **GATE FAIL**", r.Out);
+        Assert.Contains("> ⚠️ /: 1 unmatched design node blocked by gate.failOnUnmatched (no-anchor: Badge)", r.Out);
+
+        var off = await Cli.RunAsync("report", "--config", Setup(dir, """{ "targets": [], "gate": { "failOn": [] } }"""));
+        Assert.Contains("✅ PASS", off.Out);
+        Assert.DoesNotContain("⚠️", off.Out);
     }
 
     [Fact]

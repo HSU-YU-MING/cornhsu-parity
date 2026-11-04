@@ -2,6 +2,28 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 未發佈
+
+- **新增:元件不見可以選擇性地擋 PR——未配對原因 `text-not-found` 與設定 `gate.failOnUnmatched`**(面 1、2、4 都是加法,minor)。
+  頁面少了一個元件時,原本 `check` 是 exit 0、只列在未配對清單;唯一擋得住的 `gate.minMatchRate: 1` 連單純配不到的也一起擋,
+  而且是 exit 3。
+  - **`text-not-found`**(`unmatched[].reason` 的新值):設計稿的文字節點,文字整頁都找不到——元件不見,
+    或文案被改掉。比對不分大小寫,忽略所有空白與看不見的格式字元,彎引號視同直引號,所以設計稿手動斷行的中文、靠 margin 隔開的行內元素
+    不會被誤標。原本跟「有多個同文字分不出來」混在 `ambiguous-or-missing-text` 裡;圖層名正規化後是空字串的文字節點原本一律
+    `no-anchor`,文字真的不見時現在也是 `text-not-found`。文字在、但對不到單一元素時照舊。
+  - **整頁文字**:擷取端多收一份頁面文字,只給這個判斷用,不進 `report.json`、快照、統計或 bug-report。
+    `document.body.innerText` 看不到的另外補上(Chromium 實測):open shadow root、同源 iframe、`<input>`/`<textarea>` 的值與
+    placeholder、`::before`/`::after` 的 content、`<img alt>`;隱藏的文字與密碼欄位的值不收。跨域 iframe、closed shadow root、
+    canvas 與沒有 `alt` 的圖片裡的字讀不到,算「找不到」(README 寫明)。
+  - **`gate.failOnUnmatched`**(選填,預設 `[]`):要擋的原因清單,`["*"]` = 全部。命中 → GATE FAIL(exit 1),原因那一行列出被擋的圖層;
+    配對可信度仍然優先(exit 3 不變)。拼錯的原因、`null` 在載入時 exit 2。`check`、`parity report`、`parity push`(重算)、`parity serve`
+    都套用;**`check --baseline` 在已有基準時不套用**(印一行 note),沒有基準時退回一般 gate、包含這條。`bug-report` 的設定摘要多一行。
+  - **行為變化**:沒設 `failOnUnmatched` 的 exit code 不變;但有一部分未配對節點的 `reason` 會從 `ambiguous-or-missing-text`/`no-anchor`
+    變成 `text-not-found`。依 reason 字串做事的下游要容忍新值(它本來就是開放集合)。預設設定下 `samples/demo` 的計數不變。
+  - *New: `unmatched[].reason` gains `text-not-found` (the design text appears nowhere on the page Parity can see), and the optional
+    `gate.failOnUnmatched` (e.g. `["text-not-found"]`, or `["*"]`) turns chosen unmatched reasons into a GATE FAIL (exit 1).
+    Not applied by `check --baseline` while a baseline exists.*
+
 ## 2.2.0 — 2026-11-04
 
 > **NuGet 通路改成每個平台一包,安裝指令不變。** `dotnet tool install -g Cornhsu.Parity` 現在只下載你這個平台的那一包,

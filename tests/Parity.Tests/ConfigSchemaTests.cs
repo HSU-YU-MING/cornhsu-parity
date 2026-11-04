@@ -56,6 +56,7 @@ public class ConfigSchemaTests
         var config = new ParityConfig();
 
         Assert.Equal(["critical", "serious"], config.Gate.FailOn);
+        Assert.Empty(config.Gate.FailOnUnmatched); // 未配對只列出、不擋:舊設定檔的結果不變
         Assert.Equal(0, config.Gate.MinMatchRate);
         Assert.Equal("relative", config.Compare.Position);
         Assert.True(config.ComparePosition);
@@ -76,6 +77,7 @@ public class ConfigSchemaTests
 
         Assert.Equal(new Tolerances(), config.ToEngineTolerances());
         Assert.Equal(["critical", "serious"], config.Gate.FailOn);
+        Assert.Empty(config.Gate.FailOnUnmatched);
         Assert.Equal("relative", config.Compare.Position);
         Assert.Empty(config.Targets);
         Assert.Empty(config.Ignore);
@@ -163,6 +165,7 @@ public class ConfigSchemaTests
     [Theory]
     [InlineData("""{ "gate": null }""", "\"gate\" is null")]
     [InlineData("""{ "gate": { "failOn": null } }""", "\"gate.failOn\" is null")]
+    [InlineData("""{ "gate": { "failOnUnmatched": null } }""", "\"gate.failOnUnmatched\" is null")]
     [InlineData("""{ "compare": null }""", "\"compare\" is null")]
     [InlineData("""{ "stats": null }""", "\"stats\" is null")] // 隱私開關:寫成 null 不猜成「不送」或「照送」
     public void A_null_section_that_load_reads_is_an_error_naming_the_field(string json, string expected)
@@ -313,6 +316,49 @@ public class ConfigSchemaTests
             [], new ReportSummary(1, 1, 0, 1, 1, 0, 0, 0, Severity.Critical));
 
         Assert.Equal("has Critical severity diffs", config.GateFailReason(report));
+    }
+
+    // ---------- gate.failOnUnmatched(面 1 的加法:選填、預設空)----------
+
+    [Fact]
+    public void Fail_on_unmatched_takes_known_reasons_in_any_case_and_the_star()
+    {
+        var config = LoadJson("""{ "gate": { "failOnUnmatched": ["text-not-found", "No-Anchor", "*"] } }""");
+
+        Assert.Equal(["text-not-found", "No-Anchor", "*"], config.Gate.FailOnUnmatched);
+        Assert.Equal(["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible"],
+            Parity.Engine.Comparison.Matcher.UnmatchedReasons);
+        foreach (var reason in Parity.Engine.Comparison.Matcher.UnmatchedReasons)
+            Assert.Equal([reason], LoadJson($$"""{ "gate": { "failOnUnmatched": ["{{reason}}"] } }""").Gate.FailOnUnmatched);
+    }
+
+    [Theory]
+    [InlineData("text-missing")]      // 拼錯:永遠對不到,gate 會靜靜失效
+    [InlineData("all")]               // 「全部」是 "*"
+    [InlineData(" text-not-found")]   // 前後空白不吃
+    [InlineData("text-not-found,no-anchor")]
+    [InlineData("")]
+    public void Fail_on_unmatched_rejects_anything_that_is_not_a_reason(string value)
+    {
+        using var dir = new TempDir();
+        var path = dir.Write("parity.config.json", $$"""{ "gate": { "failOnUnmatched": ["{{value}}"] } }""");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ParityConfig.Load(path));
+        Assert.Equal($"config {path}: gate.failOnUnmatched contains \"{value}\", which is not an unmatched reason " +
+            "(use: no-anchor, ambiguous-or-missing-text, text-not-found, randomized-id, size-implausible, or \"*\" for every reason — one per string).",
+            ex.Message);
+    }
+
+    [Fact]
+    public void Fail_on_unmatched_errors_escape_control_characters_and_reject_null_entries()
+    {
+        // 錯誤訊息會印到 CI log:值裡的換行不能變成 workflow command
+        var ex = Assert.Throws<InvalidOperationException>(() => LoadJson("""{ "gate": { "failOnUnmatched": ["x\n::warning::y"] } }"""));
+        Assert.Contains("\"x\\n::warning::y\"", ex.Message);
+        Assert.DoesNotContain("\n", ex.Message);
+
+        Assert.Contains("gate.failOnUnmatched contains \"\"",
+            Assert.Throws<InvalidOperationException>(() => LoadJson("""{ "gate": { "failOnUnmatched": [null] } }""")).Message);
     }
 
     // ---------- stats(2.1.0,匿名使用統計;面 1 的加法)----------

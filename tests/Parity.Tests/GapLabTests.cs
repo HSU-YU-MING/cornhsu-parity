@@ -171,9 +171,9 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
         // 補上對應的能力後,這些列會紅:把那一列的預期值改成新行為。
 
         // 按鈕整個不見:擋下來的原因卻是下方 feature-list 的 offsetY(上移 88px),不是「按鈕不見了」;
-        // 不見的按鈕只在未配對清單裡,cta-label 的原因還是籠統的 ambiguous-or-missing-text
+        // 不見的按鈕只在未配對清單裡,cta-label 的原因是 text-not-found;這張表沒開 gate.failOnUnmatched,所以它不擋
         new("G1", "按鈕不見", Group.Lab, Remove(Button), 1,
-            ["feature-list.offsetY"], ["cta-button (no-anchor)", "cta-label (ambiguous-or-missing-text)"]),
+            ["feature-list.offsetY"], ["cta-button (no-anchor)", "cta-label (text-not-found)"]),
         // 絕對定位的徽章不見:沒有任何落差,只在未配對清單裡,gate 照樣通過
         new("G2", "徽章不見", Group.Lab, Remove(Badge), 0, [], ["hero-badge (no-anchor)"]),
         // 要擋得用 minMatchRate,但那是「配對可信度」(exit 3:結果不可信),不是「做錯了」(exit 1)

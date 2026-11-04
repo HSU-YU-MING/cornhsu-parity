@@ -11,6 +11,7 @@ namespace Parity.Engine.ImplementationSources.Web;
 ///     web components 網站的內容不再整塊看不見。closed shadow root 與跨域 iframe 拿不到,誠實跳過。
 ///     限制:map 檔的 selector 用 document.querySelector 解析,搆不到 shadow/iframe 內
 ///     (data-parity 屬性不受限,照常可用);shadow/iframe 內的 selector 以「host &gt;&gt;&gt; 內部路徑」表示,僅供人讀與 UI 顯示。
+///   - 根節點另外帶 pageText(整頁文字,只給 Matcher 判斷 text-not-found;見 RenderedNode.PageText)
 /// </summary>
 internal static class CaptureScript
 {
@@ -181,11 +182,82 @@ internal static class CaptureScript
             };
           };
 
+          // 整頁文字(text-not-found 用):Matcher 只拿它判斷「設計稿的這段文字整頁都找不到」,不進報告。
+          // body.innerText 看不到的(Chromium 實測):shadow DOM、同源 iframe、<input>/<textarea> 的值與 placeholder、
+          // ::before/::after 的 content、<img alt>——所以另走一遍組合樹(與 walk 同一套:shadowRoot、slot、同源 iframe)補上。
+          // 原則是「寧可多收」:多收只會讓 text-not-found 少標(退回 ambiguous-or-missing-text),
+          // 少收才會把看得到的文字誤標成找不到、開了 gate 就是誤擋。display:none 的子樹不收、visibility:hidden 的文字不收
+          // (畫面上看不到);password 的值不收(畫面上是圓點)。各段以 \u001f 隔開,子字串比對不會橫跨兩段。
+          // 跨域 iframe、closed shadow root、canvas 與圖片裡的字讀不到——語意是「在 Parity 看得到的範圍內找不到」。
+          const collectPageText = () => {
+            const NO_TEXT = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'META', 'LINK', 'TITLE', 'DESC']);
+            const cssUnescape = (str) => str.replace(/\\([0-9a-fA-F]{1,6})\s?|\\([\s\S])/g, (_, hex, ch) => {
+              if (hex === undefined) return ch === '\n' ? '' : ch;
+              const cp = parseInt(hex, 16);
+              return cp > 0 && cp <= 0x10FFFF ? String.fromCodePoint(cp) : '\uFFFD';
+            });
+            // computed content:Chromium 會把 attr() 解成字串,counter() 原樣留著(解不出來,只取引號內的字)
+            const pseudo = (win, el, which) => {
+              const c = win.getComputedStyle(el, which).content;
+              if (!c || c === 'none' || c === 'normal') return '';
+              let out = '';
+              for (const m of c.matchAll(/"((?:[^"\\]|\\[\s\S])*)"|'((?:[^'\\]|\\[\s\S])*)'/g)) out += cssUnescape(m[1] ?? m[2]);
+              return out;
+            };
+            const docs = new Set([document]);
+            let flat = '';
+            const visit = (node, shown) => {
+              if (node.nodeType === 3) { if (shown) flat += node.data; return; }
+              if (node.nodeType !== 1 || NO_TEXT.has(node.tagName.toUpperCase())) return; // SVG 的 title/style 是小寫
+              const el = node, win = el.ownerDocument.defaultView;
+              const s = win.getComputedStyle(el);
+              if (s.display === 'none') return;
+              const vis = s.visibility === 'visible';
+              // 區塊元素前後補換行(近似 innerText 的分段);行內元素不補,Hello<b>world</b> 才不會被拆成兩個字
+              const block = !s.display.startsWith('inline') && s.display !== 'contents';
+              if (block) flat += '\n';
+              if (vis) flat += pseudo(win, el, '::before');
+              const tag = el.tagName.toUpperCase();
+              if (tag === 'BR') flat += '\n';
+              else if (tag === 'INPUT') {
+                const type = (el.type || '').toLowerCase();
+                // 沒寫 value 的 submit/reset 顯示瀏覽器的預設字(英文介面是 Submit/Reset)
+                if (vis && type !== 'password' && type !== 'hidden')
+                  flat += ' ' + (el.value || (type === 'submit' ? 'Submit' : type === 'reset' ? 'Reset' : '')) +
+                    ' ' + (el.placeholder || '') + ' ' + (type === 'image' ? (el.alt || '') : '') + ' ';
+              } else if (tag === 'TEXTAREA') {
+                if (vis) flat += ' ' + el.value + ' ' + (el.placeholder || '') + ' ';
+              } else if (tag === 'IMG' || tag === 'AREA') {
+                if (vis && el.alt) flat += ' ' + el.alt + ' ';
+              } else if (tag === 'IFRAME' || tag === 'OBJECT') {
+                try {
+                  const d = el.contentDocument;
+                  if (d && d.body && !docs.has(d)) { docs.add(d); flat += '\n'; visit(d.body, true); flat += '\n'; }
+                } catch { /* 跨域 */ }
+              } else {
+                const kids = el.shadowRoot ? el.shadowRoot.childNodes
+                  : tag === 'SLOT' ? (el.assignedNodes().length ? el.assignedNodes() : el.childNodes)
+                  : el.childNodes;
+                for (const k of kids) visit(k, vis);
+              }
+              if (vis) flat += pseudo(win, el, '::after');
+              if (block) flat += '\n';
+            };
+            visit(document.body, true);
+            // innerText 另外留一份:它套用 text-transform、分段也最準;走訪那份補它看不到的
+            const parts = [];
+            for (const d of docs) { try { if (d.body) parts.push(d.body.innerText); } catch { } }
+            parts.push(flat);
+            return parts.join('\u001f');
+          };
+
           // 回傳 JSON 字串(而非物件):Playwright 的 JS→C# 值序列化外殼會把每層巢狀放大成
           // 數層協定 JSON,~16 層以上的真實 DOM 就會超過 System.Text.Json 預設 MaxDepth(64)而 crash。
           // 字串在協定裡只有一層,C# 端再自行用放寬的 MaxDepth 解析。
-          return JSON.stringify(walk(document.body,
-            { ox: scrollX, oy: scrollY, stop: document.body, prefix: '', rootLabel: 'body', csx: 1, csy: 1 }));
+          const root = walk(document.body,
+            { ox: scrollX, oy: scrollY, stop: document.body, prefix: '', rootLabel: 'body', csx: 1, csy: 1 });
+          if (root) root.pageText = collectPageText();
+          return JSON.stringify(root);
         }
         """;
 }

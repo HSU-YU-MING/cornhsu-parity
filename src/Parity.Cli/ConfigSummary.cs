@@ -21,6 +21,7 @@ internal sealed record ConfigSummary(
     int IgnoreRules,
     ToleranceConfig Tolerances,
     IReadOnlyList<string> FailOn,
+    IReadOnlyList<string> FailOnUnmatched,
     double MinMatchRate,
     string ComparePosition)
 {
@@ -49,6 +50,7 @@ internal sealed record ConfigSummary(
             IgnoreRules: config.Ignore.Count,
             Tolerances: config.Tolerances,
             FailOn: config.Gate.FailOn.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過只有四個等級名
+            FailOnUnmatched: config.Gate.FailOnUnmatched.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過:已知原因或 "*"
             MinMatchRate: config.Gate.MinMatchRate,
             // 載入時已驗過只有 relative/none(不分大小寫);印引擎讀到的小寫值
             ComparePosition: config.Compare.Position.ToLowerInvariant() is "relative" or "none" ? config.Compare.Position.ToLowerInvariant() : "<other>");
@@ -73,6 +75,7 @@ internal sealed record ConfigSummary(
         yield return $"tolerances: sizePx {N(Tolerances.SizePx)}, spacingPx {N(Tolerances.SpacingPx)}, " +
             $"colorDeltaE {N(Tolerances.ColorDeltaE)}, fontSizePx {N(Tolerances.FontSizePx)}, positionPx {N(Tolerances.PositionPx)}";
         yield return $"gate.failOn: {(FailOn.Count == 0 ? "(empty)" : string.Join(", ", FailOn))}";
+        yield return $"gate.failOnUnmatched: {(FailOnUnmatched.Count == 0 ? "(empty)" : string.Join(", ", FailOnUnmatched))}";
         yield return $"gate.minMatchRate: {N(MinMatchRate)}";
         yield return $"compare.position: {ComparePosition}";
     }
