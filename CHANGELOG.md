@@ -7,8 +7,9 @@
 - **新增:元件不見可以選擇性地擋 PR——未配對原因 `text-not-found` 與設定 `gate.failOnUnmatched`**(面 1、2、4 都是加法,minor)。
   頁面少了一個元件時,原本 `check` 是 exit 0、只列在未配對清單;唯一擋得住的 `gate.minMatchRate: 1` 連單純配不到的也一起擋,
   而且是 exit 3。
-  - **`text-not-found`**(`unmatched[].reason` 的新值):設計稿的文字節點,文字(壓空白、不分大小寫)整頁都找不到——元件不見,
-    或文案被改掉。原本跟「有多個同文字分不出來」混在 `ambiguous-or-missing-text` 裡;圖層名正規化後是空字串的文字節點原本一律
+  - **`text-not-found`**(`unmatched[].reason` 的新值):設計稿的文字節點,文字整頁都找不到——元件不見,
+    或文案被改掉。比對不分大小寫,忽略所有空白與看不見的格式字元,彎引號視同直引號,所以設計稿手動斷行的中文、靠 margin 隔開的行內元素
+    不會被誤標。原本跟「有多個同文字分不出來」混在 `ambiguous-or-missing-text` 裡;圖層名正規化後是空字串的文字節點原本一律
     `no-anchor`,文字真的不見時現在也是 `text-not-found`。文字在、但對不到單一元素時照舊。
   - **整頁文字**:擷取端多收一份頁面文字,只給這個判斷用,不進 `report.json`、快照、統計或 bug-report。
     `document.body.innerText` 看不到的另外補上(Chromium 實測):open shadow root、同源 iframe、`<input>`/`<textarea>` 的值與

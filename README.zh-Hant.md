@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1121 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1134 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -187,7 +187,8 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
 - 配對可信度仍然優先:0 配對照舊 exit 3。
 - `check`、`parity report` 與 `parity push`(兩者都依設定檔重算結果)、`parity serve` 都套用。**`check --baseline` 在已有基準時不套用**——回歸模式只擋新增/惡化的落差;還沒有基準時退回一般 gate,這條也包含在內。
 
-`text-not-found` 的確切意思:設計稿的文字(壓空白、不分大小寫)不是「Parity 看得到的整頁文字」的子字串。
+`text-not-found` 的確切意思:設計稿的文字不是「Parity 看得到的整頁文字」的子字串。
+比對時不分大小寫,忽略所有空白與軟連字號這類看不見的字元,彎引號視同直引號,所以設計稿手動斷行或引號寫法不同都不算文字不見。
 整頁文字是頁面渲染出來的文字(`innerText`,所以 `text-transform` 與拆在多個元素裡的文字如 `Hello <b>world</b>` 都算),
 再補上 `innerText` 看不到的:open shadow root、同源 iframe、`<input>`/`<textarea>` 的值與 placeholder、`::before`/`::after` 的 content、`<img alt>`。
 隱藏的文字(`display: none`、`visibility: hidden`)與密碼欄位的值不算。Parity 搆不到的文字——跨域 iframe、closed shadow root、

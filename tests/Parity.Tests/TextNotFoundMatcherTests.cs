@@ -54,6 +54,31 @@ public class TextNotFoundMatcherTests
         Assert.Equal("ambiguous-or-missing-text", ReasonOf(greeting, rendered));
     }
 
+    [Theory]
+    [InlineData("歡迎使用\n我們的服務", "歡迎使用我們的服務")]    // 設計稿手動斷行,頁面是一整行:中文沒有字間空白
+    [InlineData("歡迎使用我們的服務", "歡迎使用\n我們的服務")]    // 反過來:頁面斷行(<br>、區塊元素),設計稿一整行
+    [InlineData("Price: $10", "Price:$10")]                       // 行內元素靠 margin 隔開,innerText 沒有空白
+    [InlineData("Don't miss", "Don’t miss")]                 // 設計稿直引號,頁面彎引號
+    [InlineData("Don’t miss", "Don't miss")]                 // 反過來
+    [InlineData("“Quoted”", "\"Quoted\"")]              // 雙引號
+    public void A_whitespace_or_quote_difference_is_not_a_missing_text(string characters, string pageText)
+    {
+        // 開了 gate.failOnUnmatched 就會擋 PR:文字看得到卻標 text-not-found 是誤擋。文案差異不是這條要抓的
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: characters);
+
+        Assert.Equal("ambiguous-or-missing-text", ReasonOf(copy, Page(pageText)));
+    }
+
+    [Theory]
+    [InlineData("歡迎使用我們的服務", "歡迎光臨我們的服務")]      // 中文真的不一樣
+    [InlineData("Don't miss", "Do not miss")]                     // 忽略引號不等於忽略文字
+    public void A_really_different_text_is_still_not_found(string characters, string pageText)
+    {
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: characters);
+
+        Assert.Equal("text-not-found", ReasonOf(copy, Page(pageText)));
+    }
+
     [Fact]
     public void Duplicate_text_that_cannot_be_disambiguated_stays_ambiguous()
     {

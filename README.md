@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1121**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1134**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -219,8 +219,10 @@ and the reason line names the layers it blocked, e.g.
   only gates new or worsened gaps; with no baseline yet it falls back to the normal gate, this
   condition included.
 
-What `text-not-found` means exactly: the design text, whitespace-collapsed and case-insensitive, is
-not a substring of the page text Parity can see. That page text is the rendered text of the page
+What `text-not-found` means exactly: the design text is not a substring of the page text Parity can
+see. The comparison ignores case, all whitespace, and invisible characters such as soft hyphens, and
+treats curly quotes as straight ones, so a manual line break in the design or a different quote style
+is not a missing text. That page text is the rendered text of the page
 (`innerText`, so `text-transform` and text split across elements like `Hello <b>world</b>` count),
 plus what `innerText` misses: open shadow roots, same-origin iframes, `<input>`/`<textarea>`
 values and placeholders, `::before`/`::after` content, `<img alt>`. Hidden text (`display: none`,

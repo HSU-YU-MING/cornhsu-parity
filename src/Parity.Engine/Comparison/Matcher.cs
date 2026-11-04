@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Parity.Engine.DesignSources;
 using Parity.Engine.ImplementationSources;
@@ -73,13 +74,13 @@ public static class Matcher
         // 整頁文字(擷取端有提供才有;假來源、舊測試是 null → 下面的原因完全照舊)。
         // byText 只收元素自己的文字(Hello <b>world</b> 會被拆開),不能拿它判斷「找不到」;
         // 整頁文字涵蓋跨元素斷開的字、shadow DOM、同源 iframe、表單值、::before/::after(CaptureScript)。
-        // 比法與 byText 一致:壓空白、不分大小寫,再用子字串——只有「整頁確定沒有這段文字」才是 text-not-found,
+        // 比法比 byText 寬(見 TextFingerprint),再用不分大小寫的子字串——只有「整頁確定沒有這段文字」才是 text-not-found,
         // 有多個同文字分不出來、或文字在但被拆開,都維持 ambiguous-or-missing-text。
-        var pageText = renderedRoot.PageText is { } raw ? NormalizeText(raw) : null;
+        var pageText = renderedRoot.PageText is { } raw ? TextFingerprint(raw) : null;
         bool TextNotFound(DesignNode d)
             => pageText is not null
                && !string.IsNullOrWhiteSpace(d.Characters)
-               && !pageText.Contains(NormalizeText(d.Characters!), StringComparison.OrdinalIgnoreCase);
+               && !pageText.Contains(TextFingerprint(d.Characters!), StringComparison.OrdinalIgnoreCase);
 
         // --- 第 2 關:文字錨點(主力,不用人做任何事)---
         var byText = candidates
@@ -268,6 +269,30 @@ public static class Matcher
     /// <summary>文字正規化:壓空白、不分大小寫。</summary>
     internal static string NormalizeText(string s)
         => string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    /// <summary>
+    /// text-not-found 專用的比對鍵:拿掉所有空白與看不見的格式字元(軟連字號、零寬空白),彎引號當直引號。
+    /// 這個判斷開了 gate.failOnUnmatched 就會擋 PR,所以寧可少標,不能誤標,下面這些文字畫面上都看得到:
+    /// 設計稿手動斷行的中文(<c>歡迎使用\n我們的服務</c> 壓空白後中間多一個空格,頁面上是連著的)、
+    /// 靠 margin 隔開的行內元素(innerText 是 <c>Price:$10</c>)、設計工具和網頁各用一種引號。
+    /// 文案差異不是元件不見。各段之間的 \u001f 是控制字元,不會被拿掉,子字串仍然不會橫跨兩段。
+    /// 配對(byText)刻意不用它:配對要對到單一元素,放寬會多配。
+    /// </summary>
+    internal static string TextFingerprint(string s)
+    {
+        var sb = new StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            if (char.IsWhiteSpace(c) || char.GetUnicodeCategory(c) == UnicodeCategory.Format) continue;
+            sb.Append(c switch
+            {
+                '‘' or '’' or '‚' or '‛' => '\'',
+                '“' or '”' or '„' or '‟' => '"',
+                _ => c,
+            });
+        }
+        return sb.ToString();
+    }
 
     /// <summary>名稱正規化:只留字母數字、小寫。"CTA Button" == "cta-button" == "ctaButton"。</summary>
     internal static string NormalizeName(string s)

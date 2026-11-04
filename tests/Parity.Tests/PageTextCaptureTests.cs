@@ -40,6 +40,11 @@ public class PageTextCaptureTests(PageTextCaptureTests.CapturedPage page) : ICla
           <p>Price: <span class="price">99</span></p>
           <span class="tag" data-label="New arrival"></span>
           <svg width="200" height="40"><text x="0" y="20">Chart <tspan>label</tspan></text><title>Svg tooltip</title></svg>
+          <p>請先<b>登入</b><br>帳號</p>
+          <p>歡迎使用<b>我們的</b>服務</p>
+          <div><span>Total:</span><span style="margin-left: 4px">$10</span></div>
+          <p>Don&rsquo;t miss out</p>
+          <p>Inter&shy;nationalization</p>
           <div style="display: none">Hidden copy</div>
           <div style="visibility: hidden">Invisible copy</div>
           <script>
@@ -166,6 +171,19 @@ public class PageTextCaptureTests(PageTextCaptureTests.CapturedPage page) : ICla
     [InlineData("Price: $99")]           // 父層的字 + 子元素 ::before
     [InlineData("New arrival →")]        // content: attr(...) 加 CSS 跳脫字元
     public void Pseudo_element_content_is_found(string characters)
+    {
+        if (!Captured()) return;
+
+        Assert.Equal("ambiguous-or-missing-text", ReasonFor(characters));
+    }
+
+    [Theory]
+    [InlineData("歡迎使用\n我們的服務")]  // 設計稿手動斷行,頁面是一整行
+    [InlineData("請先登入帳號")]          // 頁面用 <br> 斷行,設計稿一整行
+    [InlineData("Total: $10")]            // 兩個行內元素靠 margin 隔開,innerText 沒有空白
+    [InlineData("Don't miss out")]        // 設計稿直引號,頁面彎引號
+    [InlineData("Internationalization")]  // 頁面有軟連字號(&shy;),畫面上通常看不到
+    public void Whitespace_and_typography_differences_are_not_missing_text(string characters)
     {
         if (!Captured()) return;
 
