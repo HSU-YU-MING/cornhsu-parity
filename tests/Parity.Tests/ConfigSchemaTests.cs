@@ -60,6 +60,8 @@ public class ConfigSchemaTests
         Assert.Equal(0, config.Gate.MinMatchRate);
         Assert.Equal("relative", config.Compare.Position);
         Assert.True(config.ComparePosition);
+        Assert.Equal("none", config.Compare.Extras); // 多餘元件清單預設關閉:報告的 extras 是 null
+        Assert.False(config.ListExtras);
 
         var target = new TargetConfig();
         Assert.Equal("/", target.Route);
@@ -79,6 +81,7 @@ public class ConfigSchemaTests
         Assert.Equal(["critical", "serious"], config.Gate.FailOn);
         Assert.Empty(config.Gate.FailOnUnmatched);
         Assert.Equal("relative", config.Compare.Position);
+        Assert.Equal("none", config.Compare.Extras);
         Assert.Empty(config.Targets);
         Assert.Empty(config.Ignore);
         Assert.Null(config.DesignFile);
@@ -258,6 +261,43 @@ public class ConfigSchemaTests
         var ex = Assert.Throws<InvalidOperationException>(() => LoadJson($$"""{ "compare": { "position": "{{value}}" } }"""));
         Assert.Contains("compare.position", ex.Message);
         Assert.Contains("relative, none", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("none", false)]
+    [InlineData("NONE", false)]
+    [InlineData("list", true)]
+    [InlineData("List", true)]
+    public void Compare_extras_accepts_none_and_list_in_any_case(string value, bool lists)
+    {
+        var config = LoadJson($$"""{ "compare": { "extras": "{{value}}" } }""");
+
+        Assert.Equal(lists, config.ListExtras);
+        Assert.True(config.ComparePosition); // 同一個區段的 position 照預設
+    }
+
+    [Theory]
+    [InlineData("\"false\"")]   // 刻意用字串而非布林,就是為了讓這種手誤在載入時報錯
+    [InlineData("\"true\"")]
+    [InlineData("\"yes\"")]
+    [InlineData("\"\"")]
+    [InlineData("null")]
+    public void Compare_extras_rejects_anything_else_at_load_time(string json)
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() => LoadJson($$"""{ "compare": { "extras": {{json}} } }"""));
+        Assert.Contains("compare.extras", ex.Message);
+        Assert.Contains("none, list", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("false")]
+    [InlineData("1")]
+    public void Compare_extras_as_a_json_boolean_or_number_is_a_load_error_too(string json)
+    {
+        // 型別不對是 System.Text.Json 的錯誤(訊息帶 $.compare.extras 路徑),與其他欄位的型別錯誤一樣是 exit 2
+        var ex = Assert.ThrowsAny<System.Text.Json.JsonException>(() => LoadJson($$"""{ "compare": { "extras": {{json}} } }"""));
+        Assert.Contains("compare.extras", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

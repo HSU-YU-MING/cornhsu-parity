@@ -23,6 +23,21 @@
   - *New: `unmatched[].reason` gains `text-not-found` (the design text appears nowhere on the page Parity can see), and the optional
     `gate.failOnUnmatched` (e.g. `["text-not-found"]`, or `["*"]`) turns chosen unmatched reasons into a GATE FAIL (exit 1).
     Not applied by `check --baseline` while a baseline exists.*
+- **新增:`compare.extras` 列出設計稿沒有的頁面元素**(minor;預設關閉,沒寫的設定檔行為不變)。配對以設計端為錨,
+  頁面上多出一條 800×200 的橫幅原本不會有任何提示。`"compare": { "extras": "list" }` 會在 `check` 的輸出、`--md` 與
+  `parity report` 的 Markdown 裡列出這類元素。**只列出,永遠不擋**:gate、exit code、分數、`summary` 計數、`--baseline`、
+  匿名統計都不受影響;`check --reverse` 一律不算。
+  - 列入條件:沒被配對、不是已配對元素的祖先、不在已配對的設計葉節點(或子節點全沒配到的已配對元素)裡面、看得見
+    (有自己的文字、是 `img`/`svg`、或背景不是全透明)、落在視窗內的面積至少 64×64 px²。巢狀的只列最外層。
+    門檻第一版固定、不開放設定。
+  - 已知限制:擷取端沒有記錄邊框、陰影、`opacity` 與裁切——只靠邊框才看得見的元素不會被列出。
+  - 設定(面 1):`compare.extras` 只收 `"none"`(預設)/`"list"`,不分大小寫;其他值(含 `"false"`、`null`)載入時 exit 2。
+    bug-report 的設定摘要多一行。
+  - `report.json`(面 4):每份報告新增 `extras`。沒開是 `null`,開了是 `{ total, items: [{ selector, tag, box }] }`
+    (依面積由大到小、每頁最多 20 筆,`total` 是全部的數量;不帶元素文字)。舊報告讀成 `null`,既有欄位不變,
+    Parity.Server 照常收件。本機報告 UI 與儀表板這一版還不顯示它。
+  *New: `compare.extras: "list"` lists page elements the design has no node for. It only lists — the gate, exit code,
+  score and summary are unchanged. Off by default; reports gain an `extras` key that is `null` when off.*
 
 ## 2.2.0 — 2026-11-04
 

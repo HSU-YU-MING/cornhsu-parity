@@ -27,7 +27,8 @@ internal static class BaselineCommand
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.Baseline);
         var configPath = ResolveConfig(opts);
 
-        await using var session = new ScanSession(configPath, headless: !opts.ContainsKey("--headed"));
+        // 基準只存落差;多餘元件清單不進 baseline,不必算
+        await using var session = new ScanSession(configPath, headless: !opts.ContainsKey("--headed"), extrasAllowed: false);
         var scans = await session.RunAsync(opts.GetValueOrDefault("--target"));
 
         // 配對不可信(0 配對等)時拒存:存下去的會是「0 條落差」的空基準,

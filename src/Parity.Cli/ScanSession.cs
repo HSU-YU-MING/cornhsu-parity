@@ -24,7 +24,12 @@ public sealed class ScanSession : IAsyncDisposable
     private readonly WebImplementationSource _implSource;
     private readonly FidelityEngine _engine;
 
-    public ScanSession(string configPath, bool refreshCache = false, bool headless = true, bool captureScreenshots = false)
+    /// <param name="extrasAllowed">
+    /// false = 不管設定檔怎麼寫都不算多餘元件(報告的 extras 是 null):<c>check --reverse</c> 的報告不帶它,
+    /// <c>baseline save</c> 只存落差、用不到它。
+    /// </param>
+    public ScanSession(string configPath, bool refreshCache = false, bool headless = true, bool captureScreenshots = false,
+        bool extrasAllowed = true)
     {
         ConfigPath = configPath;
         Config = ParityConfig.Load(configPath);
@@ -36,7 +41,11 @@ public sealed class ScanSession : IAsyncDisposable
         _implSource = new WebImplementationSource(
             new WebCaptureOptions(Headless: headless, CaptureScreenshot: captureScreenshots));
         _engine = new FidelityEngine(_designSource, _implSource,
-            new EngineOptions(Config.ToEngineTolerances()) { ComparePosition = Config.ComparePosition });
+            new EngineOptions(Config.ToEngineTolerances())
+            {
+                ComparePosition = Config.ComparePosition,
+                ListExtras = extrasAllowed && Config.ListExtras,
+            });
     }
 
     /// <summary>map 檔路徑(未設定時預設 parity.map.json,parity map 寫入用)。</summary>

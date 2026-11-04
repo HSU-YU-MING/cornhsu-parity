@@ -64,13 +64,6 @@ internal static class CheckCommand
             ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory())
             ?? throw new FileNotFoundException("parity.config.json not found (run `parity init` to generate a template).");
 
-        await using var session = new ScanSession(
-            configPath,
-            refreshCache: opts.ContainsKey("--refresh"),
-            headless: !opts.ContainsKey("--headed"));
-
-        Console.WriteLine($"\x1b[1mParity\x1b[0m — property-level design fidelity check\nconfig: {configPath}\n");
-
         // --reverse:方向反過來——「現況(實作)是真相,設計稿是被檢視的草稿」。
         // 場景:設計師照著現有頁面重畫/改版,想看自己的稿跟現況差在哪。
         // 資料對稱,只需:交換期望/實際欄位(在所有輸出之前)、不做把關
@@ -78,6 +71,14 @@ internal static class CheckCommand
         var reverse = opts.ContainsKey("--reverse");
         if (reverse && opts.ContainsKey("--baseline"))
             throw new InvalidOperationException("--reverse and --baseline cannot be combined (reverse mode does not gate).");
+
+        await using var session = new ScanSession(
+            configPath,
+            refreshCache: opts.ContainsKey("--refresh"),
+            headless: !opts.ContainsKey("--headed"),
+            extrasAllowed: !reverse); // reverse 報告一律不帶多餘元件清單(extras 是 null)
+
+        Console.WriteLine($"\x1b[1mParity\x1b[0m — property-level design fidelity check\nconfig: {configPath}\n");
 
         // --stats-preview:照常執行,匿名統計什麼都不送,只在 stderr 印出這次會送的 JSON 與會不會送、為什麼(UsageStats)
         var statsPreview = opts.ContainsKey("--stats-preview");
@@ -284,6 +285,18 @@ internal static class CheckCommand
                 Console.WriteLine("  \x1b[90mhint: randomized-id = the baseline froze a selector containing a randomly generated id " +
                     "(React useId, CSS-in-JS, …). Newer baselines use structural paths that survive id regeneration — " +
                     "re-run `parity snapshot` once to migrate.\x1b[0m");
+        }
+
+        // compare.extras = "list" 且有發現才印(沒開是 null、開了沒有是 total 0,兩者都不印)。selector 來自頁面:過 Safe
+        if (report.Extras is { Total: > 0 } extras)
+        {
+            Console.WriteLine($"  \x1b[36mextras: {extras.Total} element(s) on the page have no node in the design " +
+                "(listed only, never gated)\x1b[0m");
+            foreach (var e in extras.Items)
+                Console.WriteLine($"    \x1b[90m+\x1b[0m ‹{ConsoleText.Safe(e.Selector)}› <{ConsoleText.Safe(e.Tag)}> {ExtraBox.Describe(e.Box)}");
+            if (extras.Total > extras.Items.Count)
+                Console.WriteLine($"    \x1b[90m…and {extras.Total - extras.Items.Count} smaller one(s) " +
+                    $"(report.json keeps the {extras.Items.Count} largest)\x1b[0m");
         }
         Console.WriteLine();
     }

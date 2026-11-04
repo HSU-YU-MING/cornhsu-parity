@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1153 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1190 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -158,7 +158,11 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "targets": [
     { "route": "/", "frame": "10:2", "url": "http://localhost:8080/" }
   ],
-  "compare": { "position": "relative" },     // relative = 比相對位置(預設);none = 不比位置
+  "compare": {
+    "position": "relative",                  // relative = 比相對位置(預設);none = 不比位置
+    "extras": "none"                         // 選配:"list" = 另外列出設計稿沒有的頁面元素;
+                                             //   只列出、永遠不擋(見下方「設計稿沒有的元素」)
+  },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "gate": {
@@ -298,6 +302,27 @@ route 只是報告上的標籤,取好認的名字就行。frame 尺寸 ≠ 想�
 3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)
 4. **手動補漏**:HTML 加 `data-parity="圖層名"`,或 `parity.map.json` 寫 `{ "圖層名": "CSS selector" }`
 5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)。文字節點的文字整頁都找不到時,原因是 `text-not-found`(元件不見),而不是「分不出來」——`gate.failOnUnmatched` 可以拿它擋 PR
+
+## 設計稿沒有的元素(`compare.extras`)
+
+配對以設計端為錨,所以預設情況下,設計稿根本沒有的元素——例如頁面頂端多一條 800×200 的橫幅——不會產生任何落差,
+check 一聲不吭地通過。`"compare": { "extras": "list" }` 會在報告裡另外列出這類元素。**它只列出**:gate、exit code、
+還原度分數、`summary` 計數、`--baseline` 與匿名統計,都跟沒開時一模一樣。預設是 `"none"`;`none` / `list` 以外的值
+是設定錯誤(exit 2)——它是字串不是布林,`"false"` 這種手誤會直接報錯。
+
+頁面元素同時符合下列條件才會列出:
+
+- 沒被配對,也不是任何已配對元素的祖先(那些是版面容器);
+- 不在已配對的設計**葉節點**裡面(一顆按鈕、一張圖裡面怎麼拆是實作細節),也不在「設計端子節點一個都沒配到」的已配對元素裡面
+  (那些子節點已經在未配對清單裡,再列頁面那一邊等於同一個落差報兩次);
+- 看得見:自己有文字、是 `img` 或 `svg`、或背景不是全透明;
+- 落在渲染視窗(預設就是設計 frame 的尺寸)內的面積至少 **64×64 = 4,096 px²**。門檻刻意取保守——圖示、細線、
+  一個短字都在門檻下——第一版不開放設定。
+
+巢狀的只列最外層符合條件的那一個。`ignore` 照常生效,`check --reverse` 一律不算。有東西時 `check` 會印出清單,
+`--md` 與 `parity report` 會加一張表;本機報告 UI 與儀表板目前還不顯示(儀表板把它留在報告原文裡)。已知限制:擷取端沒有
+記錄邊框、陰影、`opacity` 與裁切,所以**只靠邊框才看得見的元素不會被列出**,而被 `opacity: 0`、祖先的 `overflow: hidden`
+或疊在上面的元素擋住的,可能被列出。
 
 ## 架構
 
@@ -454,6 +479,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 - `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
 - `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。
+- `extras`(每份報告,`compare.extras`)— 沒開時是 `null`(預設、`check --reverse`、以及這個欄位出現之前寫的所有報告);開了是 `{ "total": n, "items": [{ "selector", "tag", "box" }] }`,`total: 0` 加上空的 `items` 表示「開了、沒有」。`items` 依面積由大到小,每頁最多 20 筆;`total` 是全部的數量。不帶元素文字。永遠不影響 gate 與分數。
 - `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
 
 ## 回歸把關:baseline(M5)

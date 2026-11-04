@@ -37,7 +37,7 @@ public class BugReportTests
               ],
               "tolerances": { "sizePx": 3, "colorDeltaE": 1.5 },
               "gate": { "failOn": ["critical", "serious", "medium"], "failOnUnmatched": ["Text-Not-Found", "*"], "minMatchRate": 0.8 },
-              "compare": { "position": "none" }
+              "compare": { "position": "none", "extras": "list" }
             }
             """);
     }
@@ -79,6 +79,7 @@ public class BugReportTests
         Assert.Contains("gate.failOnUnmatched: text-not-found, *", r.Out); // 白名單值(已驗過),小寫印
         Assert.Contains("minMatchRate: 0.8", r.Out);
         Assert.Contains("compare.position: none", r.Out);
+        Assert.Contains("compare.extras: list", r.Out);
         Assert.Contains("designToken: literal value in the config", r.Out); // 只說有寫死,不印值
     }
 
@@ -152,13 +153,14 @@ public class BugReportTests
         // 引擎照樣當環境變數讀,摘要卻說成 literal value。照引擎的讀法描述
         using var dir = new TempDir();
         var config = dir.Write("parity.config.json", """
-            { "designFile": "d.json", "designToken": "ENV:FIGMA_TOKEN", "compare": { "position": "RELATIVE" },
+            { "designFile": "d.json", "designToken": "ENV:FIGMA_TOKEN", "compare": { "position": "RELATIVE", "extras": "List" },
               "targets": [{ "route": "/", "frame": "", "url": "./page.html" }] }
             """);
 
         var r = await Cli.RunAsync("bug-report", "--config", config);
 
         Assert.Contains("compare.position: relative", r.Out);
+        Assert.Contains("compare.extras: list", r.Out);
         Assert.Contains("designToken: read from an environment variable", r.Out);
     }
 

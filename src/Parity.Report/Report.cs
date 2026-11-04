@@ -45,14 +45,32 @@ public sealed record ReportSummary(
     int Minor,
     Severity MaxSeverity);
 
-/// <summary>引擎輸出:可序列化成 JSON / 餵給 UI / 決定 exit code(規畫書 4.1)。</summary>
+/// <summary>
+/// 引擎輸出:可序列化成 JSON / 餵給 UI / 決定 exit code(規畫書 4.1)。
+/// <see cref="Extras"/> 是 2.x 的加法(compare.extras),放在最後、有預設值:舊報告沒有這個 key,讀起來是 null。
+/// </summary>
 public sealed record FidelityReport(
     string Route,
     string Url,
     string DesignReference,
     IReadOnlyList<NodeResult> Nodes,
     IReadOnlyList<UnmatchedNode> Unmatched,
-    ReportSummary Summary);
+    ReportSummary Summary,
+    ExtraElements? Extras = null);
+
+/// <summary>
+/// 實作端多出來的元件(<c>compare.extras: "list"</c>)。**null = 沒開**(預設、<c>check --reverse</c>、
+/// 這個欄位出現之前的舊報告);開了但沒找到是 <c>{ total: 0, items: [] }</c>——讀的人分得出「沒開」和「沒有」。
+/// <see cref="Total"/> 是截斷前的總數,<see cref="Items"/> 依面積由大到小、有上限。
+/// 只是清單:不進 gate、分數、summary、baseline 與匿名統計。
+/// </summary>
+public sealed record ExtraElements(int Total, IReadOnlyList<ExtraElement> Items);
+
+/// <summary>
+/// 多出來的一個元件:只有 selector、標籤名與框(座標與 <c>renderedBox</c> 同一套,相對 body 原點)。
+/// **刻意不帶元素文字**:report.json 會被推到伺服器,不多帶一種新的內容。
+/// </summary>
+public sealed record ExtraElement(string Selector, string Tag, Model.Box Box);
 
 /// <summary>
 /// report.json 的頂層信封(0.10.0 起;1.0 凍結面 4)。裸陣列無從辨識版本;包一層

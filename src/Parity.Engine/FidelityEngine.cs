@@ -68,9 +68,20 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
             Minor: Count(Severity.Minor),
             MaxSeverity: nodes.Count == 0 ? Severity.None : nodes.Max(n => n.Severity));
 
+        // 6. 實作端多出來的元件(選用,只列出):放在彙總之後,summary 與 gate 看不到它。
+        // 視窗換到正規化後的座標系:擷取端的座標是「頁面座標 + 捲動」,正規化再減掉 body 原點。
+        // 沒有高度的話(只有引擎直接被呼叫、給了寬沒給高才會發生)那一軸不設限
+        ExtraElements? extras = null;
+        if (_opts.ListExtras)
+        {
+            var viewport = new Model.Box(-renderedOrigin.X, -renderedOrigin.Y,
+                implRef.ViewportWidth!.Value, implRef.ViewportHeight ?? double.PositiveInfinity);
+            extras = ExtrasFinder.Find(renderedTree, match.Pairs, viewport);
+        }
+
         var report = new FidelityReport(
             req.Route, req.Impl.Url, $"{req.Design.Source}#{req.Design.NodeId}",
-            nodes, match.Unmatched, summary);
+            nodes, match.Unmatched, summary, extras);
         return new ScanResult(report, designTree, renderedTree, renderedOrigin);
 
         int Count(Severity s) => nodes.SelectMany(n => n.Diffs).Count(x => x.Severity == s);
