@@ -16,7 +16,8 @@
     SQLite 原生檔,43.9～53.5 MB。
   - `linux-musl-x64`、`linux-musl-arm64`(Alpine,各 4.2 MB)與 `any`(其他平台的後備,30.4 MB)不帶 Playwright:
     這些平台本來就跑不了要開瀏覽器的指令,留著它們是為了「現在裝得起來的人,改了之後都還裝得起來」。
-  - 需求不變:.NET 10 SDK(最早的 10.0.100 實測可以;.NET 8/9 SDK 跟以前一樣裝不起來)。不自帶 .NET runtime、不裁剪。
+  - 需求不變:.NET 10 SDK(最早的 10.0.100 實測可以,Ubuntu、Fedora、Alpine 自己打包的 SDK 也實測可以;.NET 8/9 SDK 跟以前一樣裝不起來)。
+    不自帶 .NET runtime、不裁剪。
   - `action.yml` 與 npm 通路都不用改:Action 一樣是 `dotnet tool install`,npm 的 `dotnet publish` 檔案清單不變。
 - **改善:沒有瀏覽器的平台,錯誤訊息看得懂了**(面 2 的 exit code 不變)。Alpine 與其他平台上,`check`、`snapshot`、`serve`、
   `map`、`baseline save` 一樣 exit 2、`install-browser` 一樣 exit 1,但訊息直接說這個平台不能開瀏覽器、哪些平台可以、

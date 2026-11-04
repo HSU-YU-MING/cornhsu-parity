@@ -180,7 +180,9 @@ dotnet tool install --tool-path /tmp/parity-check Cornhsu.Parity --version 2.x.0
 `dotnet tool search parity`。**九個新 ID 建立之後刪不掉**,只能取消列出(unlist),所以平台清單可以加、不能減。
 
 **實驗時驗到的**(draft PR #61,2026-11-04):六個平台真機裝起來跑 check,報告計數跟 build-test 一字不差;從 nuget.org 的 2.1.0
-`dotnet tool update` 上來再退回去都成功,舊的基準資料庫讀得到;.NET 8/9 SDK 新舊形式都裝不起來(沒有變得更挑)。
+`dotnet tool update` 上來再退回去都成功,舊的基準資料庫讀得到;.NET 8/9 SDK 新舊形式都裝不起來(沒有變得更挑)。發行版自己打包的 SDK 真的在容器裡裝過,都配到對的包(run 41788557499):
+Ubuntu 24.04(SDK 10.0.114,回報 `ubuntu.24.04-x64` → `linux-x64`)、Fedora 43(10.0.113,`fedora.43-x64` → `linux-x64`)、
+Alpine 3.23(10.0.110,`alpine.3.23-x64` → `linux-musl-x64`)。那個 job 只跑一次就拿掉了:裝不起來也修不了,留著只會因為外部套件庫而紅。
 **沒驗到的**:真的推上 nuget.org(新 ID 的政策行為、驗證時間、網站搜尋的呈現);九個 snupkg 的符號驗證(pdb 內容相同;
 失敗的話主套件照常,只差符號)。
 
@@ -207,7 +209,7 @@ rm -rf ./artifacts    # 用完整個刪掉(.gitignore 已排除 artifacts/)
   是路徑太長,不是包壞了;一般安裝路徑只有約 115 字元。
 
 想看別的平台會配到哪一包,安裝時設 `DOTNET_RUNTIME_ID`:`DOTNET_RUNTIME_ID=linux-arm dotnet tool install …` 會裝到 `any`。
-SDK 對照表裡沒有的名稱(微軟版 SDK 上的 `ubuntu.24.04-x64`)會裝失敗,那是模擬的假象:發行版自己打包的 SDK 帶著自己的對照表。
+SDK 對照表裡沒有的名稱(微軟版 SDK 上的 `ubuntu.24.04-x64`)會裝失敗,那是模擬的假象:發行版自己打包的 SDK 帶著自己的對照表,實測裝得起來(見上一節)。
 
 npm 通路沒有本機乾跑的指令(要各 RID `dotnet publish` 再跑 `npm/prepare.mjs`),發佈前靠 release.yml 的 npm job。
 

@@ -239,42 +239,6 @@ jobs:
           tool/parity --version
           echo "✓ 最早的 .NET 10 SDK 裝得起來、跑得動"
 
-  # 【一次性】發行版自己打包的 SDK:它們回報的平台名稱是 ubuntu.24.04-x64 這一種,微軟版 SDK 的對照表裡沒有,
-  # 模擬不出來,只能在真的發行版裡裝。這一輪驗完就拿掉,結果記在 PR 與 RELEASING.md。
-  distro-sdk:
-    needs: pack-smoke
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { image: 'ubuntu:24.04', setup: 'apt-get update -qq && apt-get install -y -qq dotnet-sdk-10.0', expected: linux-x64 }
-          - { image: 'alpine:3.23', setup: 'apk add --no-cache -q dotnet10-sdk', expected: linux-musl-x64 }
-          - { image: 'fedora:43', setup: 'dnf install -y -q dotnet-sdk-10.0', expected: linux-x64 }
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: nupkg
-          path: pkgs
-      - name: Install with the distro's own SDK
-        env:
-          IMAGE: ${{ matrix.image }}
-          SETUP: ${{ matrix.setup }}
-          EXPECTED: ${{ matrix.expected }}
-        run: |
-          set -euo pipefail
-          docker run --rm -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 -e DO_NOT_TRACK=1 -e SETUP -e EXPECTED \
-            -v "$PWD/pkgs:/pkgs:ro" "$IMAGE" sh -c '
-              set -e
-              eval "$SETUP"
-              echo "SDK $(dotnet --version), RID $(dotnet --info | grep -m1 "RID:" | awk "{print \$2}")"
-              dotnet tool install --tool-path /tmp/tool --add-source /pkgs --version 0.0.0-ci Cornhsu.Parity
-              ls /tmp/tool/.store/cornhsu.parity/0.0.0-ci/
-              ls /tmp/tool/.store/cornhsu.parity/0.0.0-ci/ | grep -qx "cornhsu.parity.$EXPECTED"
-              /tmp/tool/parity --version
-            ' | tee distro.log
-          echo "| $IMAGE | $(grep -m1 '^SDK ' distro.log) | $EXPECTED |" >> "$GITHUB_STEP_SUMMARY"
-
   # 網頁外殼前端(web/ → Parity.Server wwwroot)。tsc --noEmit 含在 build script 裡,
   # 型別錯誤就紅——伺服器端 API 形狀改了而前端型別沒跟上時,這裡會先叫。
   web-build:
