@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1047 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1067 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -84,6 +84,11 @@ dotnet tool install -g Cornhsu.Parity
 > Playwright 預設會另外自帶一份 Node,npm 版把它拿掉、改用你現成的 Node,
 > 每個平台包因此至少省下 88 MB。這份 Node 必須是 **20 以上**——內附 Playwright driver 的下限
 > (`engines.node` 也這樣宣告)。
+
+> .NET 通路需要 **.NET 10 SDK**,只下載你這個平台的那一包(約 44～54 MB)。要開瀏覽器的指令
+> (`check`、`snapshot`、`serve`、`map`、`baseline save`)支援 win-x64、win-arm64(以 x64 模擬執行)、
+> linux-x64、linux-arm64、osx-x64、osx-arm64。其他平台(含 Alpine)一樣裝得起來,不開瀏覽器的指令
+> (例如 `lint`、`baseline list`)照常能用,只是 Playwright 沒有這些平台的 driver。
 
 > **`parity check` 預設會送匿名使用統計**(只有計數與分數區間,用於學術研究)。送什麼、為什麼、
 > 每一種關掉的方法,見[匿名使用統計](#匿名使用統計)。想先看會送出的內容、什麼都不送:

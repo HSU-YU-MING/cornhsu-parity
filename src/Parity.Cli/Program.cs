@@ -679,6 +679,13 @@ internal static class InstallBrowserCommand
     {
         var opts = CliOptions.Parse(args, Usage.Flags.InstallBrowser);
         if (opts.ContainsKey("--help")) return Usage.Print(Usage.InstallBrowser);
+        // any 與 linux-musl-* 的平台包不帶 driver。Playwright 自己的訊息是「請先 build 你的專案」,使用者看不懂;
+        // exit code 維持 1,跟 Playwright 失敗時一樣
+        if (!HasBundledDriver(AppContext.BaseDirectory))
+        {
+            Console.Error.WriteLine($"\x1b[31merror: {Parity.Engine.ImplementationSources.Web.WebImplementationSource.NoDriverMessage}\x1b[0m");
+            return 1;
+        }
         // --with-deps:連同系統相依一起裝(CI 的 Linux runner 需要,否則 Chromium 起不來)
         var withDeps = opts.ContainsKey("--with-deps");
         string[] pwArgs = withDeps ? ["install", "--with-deps", "chromium"] : ["install", "chromium"];
@@ -689,6 +696,10 @@ internal static class InstallBrowserCommand
         Console.WriteLine(exitCode == 0 ? "Done." : "Install failed.");
         return exitCode;
     }
+
+    /// <summary>driver 的 JS 在不在。看 package/cli.js 而不是 node/:npm 通路拿掉了 Node、改用使用者現成的,driver 還是有的。</summary>
+    internal static bool HasBundledDriver(string baseDirectory)
+        => File.Exists(Path.Combine(baseDirectory, ".playwright", "package", "cli.js"));
 }
 
 /// <summary>

@@ -12,6 +12,7 @@
    - Repository owner：`HSU-YU-MING`
    - Repository：`cornhsu-parity`
    - Workflow：`release.yml`
+   - **範圍(Scope)要涵蓋 `Cornhsu.Parity` 與九個平台包 `Cornhsu.Parity.<rid>`,也要允許建立新套件**(見下面「每個平台一包的第一次發版」)
 
 3. 確認 `release.yml` 裡 `NuGet/login` 的 `user:` = 你的 **nuget.org 使用者名稱**（目前 `Cornhsu`）。
 
@@ -61,7 +62,7 @@ pwsh scripts/verify-readme-facts.ps1 -Update    # 確認新數字對之後,一�
 
 `release.yml` 會自動發**兩個通路**（版號都從 tag 推導,`-p:Version` 覆蓋 csproj 裡的本機預設值）:
 
-- **NuGet**（`Cornhsu.Parity`,dotnet tool）:build → test → pack → OIDC → `dotnet nuget push`;含 snupkg + SourceLink,可 step-in 除錯。
+- **NuGet**（指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parity.<rid>`,dotnet tool）:build → test → pack → 檢查每個包的內容 → OIDC → 推平台包 → 等 nuget.org 查得到 → 重新 OIDC → 推指標包;平台包含 snupkg + SourceLink,可 step-in 除錯。
 - **npm**（`cornhsu-parity` + 6 個 `@cornhsu/parity-<platform>` 平台子套件,支援 `npx`）:各 RID `dotnet publish --self-contained` → `prepare.mjs` 組裝 → OIDC 信任發布（已存在的版號跳過,可安全重跑）。
 
 ## 1.0.0 首發（介面凍結,一次性)
@@ -147,26 +148,69 @@ git tag v2 v2.0.0 && git push origin v2      # @v2 的使用者從這裡開始�
 保留給使用者的 ⚠ 說明)、`verify-readme-facts.ps1` 綠燈、推 `v2.1.0`、前移 `v2`。發完用
 `parity check --stats-preview` 對 `samples/demo` 跑一次,確認 `toolVersion` 是 `2.1.0` 且 `would be sent`。
 
+## 每個平台一包的第一次發版(下一個 2.x)
+
+**這一版有一個硬條件,沒確認就不推 tag:**
+
+- [ ] **登入 nuget.org → Trusted Publishing,確認 Parity 那條政策的範圍涵蓋 `Cornhsu.Parity.*`,也允許建立新套件。**
+      這九個都是新 ID,第一次推才會建立。官方文件(2026-09 版)只說政策有 Scope 與 glob、沒講細節,維護者以外看不到設定。
+      有前例但不是保證:`Cornhsu.Parity`、`Cornhsu.XamlContrast`、`Cornhsu.Labeling` 的第一版都是這條路建立新 ID 的(2026-07)。
+      `Cornhsu.` 前綴已保留,所以新 ID 別人搶不走,發出去也會有驗證勾勾。
+
+接著照「每次發布」:CHANGELOG 的 `## 未發佈` 改成 `## 2.x.0 — <日期>`、`verify-readme-facts.ps1` 綠燈、推 tag。
+**第一次發版就是新推送流程的第一次實跑**:流程不支援預覽版號,CI 只能對本機資料夾乾跑。好在指標包最後才推,失敗不會影響使用者。
+
+發到一半失敗會留下什麼:
+
+| 狀況 | 使用者看到 | 怎麼辦 |
+|---|---|---|
+| 政策不允許(第一個平台包就被拒) | 還是上一版 | 改政策,重跑 job |
+| 平台包推到一半、等待逾時、指標包推失敗 | 還是上一版(指標包還沒上架) | 重跑 job;每次 push 都帶 `--skip-duplicate`,已上架的會略過 |
+| 平台包上架了、指標包沒推 | 還是上一版;nuget.org 多了幾個沒人會裝到的套件(`DotnetToolRidPackage`,不能直接裝) | 同上,重跑 |
+| 某個平台包在 nuget.org 驗證失敗 | 還是上一版(指標包不會推) | 看 nuget.org 的訊息;能不能重推同版號沒有查到文件,必要時改發下一個 patch |
+
+發完之後,在 `v2` 前移之前先驗:
+
+```sh
+dotnet tool install --tool-path /tmp/parity-check Cornhsu.Parity --version 2.x.0   # 版號寫確切的,確認指標包與平台包都查得到
+/tmp/parity-check/parity --version
+```
+
+再對 `samples/demo` 跑一次真的 `check`(預期 exit 1),看一眼 nuget.org:`Cornhsu.Parity` 的頁面正常、平台包不會出現在
+`dotnet tool search parity`。**九個新 ID 建立之後刪不掉**,只能取消列出(unlist),所以平台清單可以加、不能減。
+
+**實驗時驗到的**(draft PR #61,2026-11-04):六個平台真機裝起來跑 check,報告計數跟 build-test 一字不差;從 nuget.org 的 2.1.0
+`dotnet tool update` 上來再退回去都成功,舊的基準資料庫讀得到;.NET 8/9 SDK 新舊形式都裝不起來(沒有變得更挑)。
+**沒驗到的**:真的推上 nuget.org(新 ID 的政策行為、驗證時間、網站搜尋的呈現);九個 snupkg 的符號驗證(pdb 內容相同;
+失敗的話主套件照常,只差符號)。
+
 ## 本機乾跑（不發佈,驗證封裝可裝可跑）
 
 ```sh
 v=0.0.0-local.$(date +%s)
-dotnet pack Parity.slnx -c Release -o ./artifacts -p:Version=$v
+dotnet pack src/Parity.Cli/Parity.Cli.csproj -c Release -o ./artifacts -p:Version=$v
+python3 scripts/verify-tool-packages.py ./artifacts $v  # 看每個包的內容;機器上沒有 Python 就略過,CI 的 pack-smoke 與 release 都會跑
 dotnet tool install --tool-path ./artifacts/tool --add-source ./artifacts Cornhsu.Parity --version $v
 ./artifacts/tool/parity version && ./artifacts/tool/parity help
 rm -rf ./artifacts    # 用完整個刪掉(.gitignore 已排除 artifacts/)
 ```
 
-2026-10-23 照上面跑過一次:pack 出 `Cornhsu.Parity.0.0.0-local.<時間戳>.nupkg`(約 237 MB),裝到 `./artifacts/tool`,
-`parity version` 印 `parity 0.0.0-local.<時間戳>+<commit>`。三個坑(舊版指令三個都踩):
+`parity version` 印 `parity 0.0.0-local.<時間戳>+<commit>`。四個坑(前三個舊版指令都踩過):
 
 - **一定要帶 `--version`**:不帶的話,本地這個預覽版號不會被選,會從 nuget.org 裝到**已發佈的正式版**——
   看起來裝成功了,測的卻不是你剛 pack 的東西。舊版指令寫死 `--version 0.1.0`,裝到的正是 nuget.org 上的 0.1.0
   (pack 不帶 `-p:Version` 時產物是 csproj 的 `0.0.0-dev`,根本沒有 0.1.0)。
 - **每次用新的版本號**(上面用時間戳):同一個版本號第二次 pack 再裝,可能拿到先前裝過、快取住的那一份。
 - **用 `--tool-path`,不要 `--global`**:`--global` 會跟你已經裝好的 parity 衝突(已安裝就失敗,或把你日常用的那一份換掉)。
+- **Windows 上工具目錄別太深**:路徑長到 SQLite 原生檔超過約 250 字元時,`any` 包的 `baseline` 指令會報
+  `The type initializer for 'Microsoft.Data.Sqlite.SqliteConnection' threw an exception`(2026-11-04 踩到,252 字元失敗、242 字元正常)。
+  是路徑太長,不是包壞了;一般安裝路徑只有約 115 字元。
+
+想看別的平台會配到哪一包,安裝時設 `DOTNET_RUNTIME_ID`:`DOTNET_RUNTIME_ID=linux-arm dotnet tool install …` 會裝到 `any`。
+SDK 對照表裡沒有的名稱(微軟版 SDK 上的 `ubuntu.24.04-x64`)會裝失敗,那是模擬的假象:發行版自己打包的 SDK 帶著自己的對照表。
 
 npm 通路沒有本機乾跑的指令(要各 RID `dotnet publish` 再跑 `npm/prepare.mjs`),發佈前靠 release.yml 的 npm job。
 
-> NuGet 套件約 243 MB（2.1.0 實測;2.0.0 約 237 MB。`PlaywrightPlatform=all` 收齊五平台 driver,**離 nuget.org 250 MB 上限只剩幾 MB**,
-> 加相依或 Playwright 升版前先 pack 量大小;2.1.0 在 NuGet 的驗證也比小套件慢上半小時以上);npm 平台子套件各約 129 MB（已刪掉 Playwright 自帶 Node、改用使用者現成 Node）。兩者第一次都仍需 `parity install-browser` 下載 Chromium 本體。
+> NuGet 平台包:六個完整平台各 44～54 MB、Alpine 各 4 MB、`any` 30 MB,指標包 0.1 MB,一次發版總共上傳約 331 MB。單一套件時代到 2.1.0 是 243 MB,
+> **離 nuget.org 250 MB 上限只剩幾 MB**,這是改成每個平台一包的原因;2.1.0 在 NuGet 的驗證也比小套件慢上半小時以上。
+> npm 平台子套件各約 129 MB（已刪掉 Playwright 自帶 Node、改用使用者現成 Node）。兩者第一次都仍需 `parity install-browser` 下載 Chromium 本體。

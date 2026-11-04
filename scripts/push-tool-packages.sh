@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 【實驗】把「每個平台一包」的 dotnet tool 推上 NuGet:平台包先推、等 nuget.org 真的查得到、指標包最後推。
+# 把「每個平台一包」的 dotnet tool 推上 NuGet:平台包先推、等 nuget.org 真的查得到、指標包最後推。
 #
 # 為什麼要分三段而不是 `dotnet nuget push *.nupkg`:
 #   - 使用者裝的是指標包,指標包只寫「去拿 Cornhsu.Parity.<rid>」。指標包先上架、平台包還沒好的那段時間,
