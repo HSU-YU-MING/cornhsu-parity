@@ -50,6 +50,17 @@ git push origin v0.1.0
 git tag -f v2 v2.x.y && git push -f origin v2
 ```
 
+**tag 要打在 master 上**:先 `git switch master && git pull`,確認本機等於 `origin/master` 再打(2.2.0 忘了切回來,tag 打在 PR 分支的 commit 上;內容相同所以沒事,但不該靠運氣)。
+
+推 tag 之前還有兩件事要查,**CI 都不會擋**(2.2.0 發版前都抓到問題):
+
+- **相依變動**:`git diff v<上一版>..HEAD -- '*.csproj'`。dependabot 升版不會寫 CHANGELOG,也不會改 `THIRD-PARTY-NOTICES.md`。
+  Playwright 換版會連 Chromium 一起換:要標「升級必做」(重跑 `parity install-browser`,否則 `check` exit 2),
+  並比對新舊版量測:nuget.org 上的舊版與這一版跑同一批頁面(作品集 26 頁 + 離線示範的乾淨複本),`report.json` 除了路徑要相同。
+  **舊版是正式版號,跑的時候一定要設 `DO_NOT_TRACK=1`**,否則測試資料會送進研究資料。
+- **照 release.yml 的順序用真版號跑一次**:`dotnet build -p:Version=<真版號>` → `dotnet test --no-build`(要有瀏覽器)→ `dotnet pack`。
+  CI 平常是 `0.0.0-dev`,發版機器又沒裝瀏覽器,寫死開發版號的測試兩邊都抓不到。NuGet 快取要隔離(`NUGET_PACKAGES`),本機做的真版號包不能留在你的快取裡。
+
 推 tag 之前先在本機跑一次文件檢查(CI 也會擋,但先跑比較快):
 
 ```sh
@@ -183,8 +194,15 @@ dotnet tool install --tool-path /tmp/parity-check Cornhsu.Parity --version 2.x.0
 `dotnet tool update` 上來再退回去都成功,舊的基準資料庫讀得到;.NET 8/9 SDK 新舊形式都裝不起來(沒有變得更挑)。發行版自己打包的 SDK 真的在容器裡裝過,都配到對的包(run 41788557499):
 Ubuntu 24.04(SDK 10.0.114,回報 `ubuntu.24.04-x64` → `linux-x64`)、Fedora 43(10.0.113,`fedora.43-x64` → `linux-x64`)、
 Alpine 3.23(10.0.110,`alpine.3.23-x64` → `linux-musl-x64`)。那個 job 只跑一次就拿掉了:裝不起來也修不了,留著只會因為外部套件庫而紅。
-**沒驗到的**:真的推上 nuget.org(新 ID 的政策行為、驗證時間、網站搜尋的呈現);九個 snupkg 的符號驗證(pdb 內容相同;
-失敗的話主套件照常,只差符號)。
+
+**2.2.0 實際發版的結果(2026-11-04,run 41802855420):一次成功,不用重跑。**
+
+- 政策(`Scopes: All`、`*`)真的建立了九個新 ID,設定不用改。
+- 平台包推完到 flat container 查得到花了 **1138 秒(約 19 分鐘)**,推送本身只要 21 秒;入口套件與 npm 再約 6 分鐘才看得到,別誤判成失敗。
+- 平台包查 ID 搜得到,帶驗證勾勾,類型是 `DotnetToolRidPackage`,帳號底下也列得出來;`dotnet tool search` 只列入口套件。
+- 發佈後在 Windows 從 nuget.org 與 npm 真的裝過:`check`、基準、`--version "2.*"`、從 2.1.0 更新都正常。其他平台是發版前 CI 用打包好的包驗的。
+
+**還沒查的**:九個 snupkg 的符號驗證結果(pdb 內容相同;失敗的話主套件照常,只差符號)。某個平台包驗證失敗後能不能重推同版號,這次沒遇到。
 
 ## ImageSharp 的授權金鑰
 
