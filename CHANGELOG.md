@@ -25,8 +25,8 @@
     Not applied by `check --baseline` while a baseline exists.*
 - **新增:`compare.extras` 列出設計稿沒有的頁面元素**(minor;預設關閉,沒寫的設定檔行為不變)。配對以設計端為錨,
   頁面上多出一條 800×200 的橫幅原本不會有任何提示。`"compare": { "extras": "list" }` 會在 `check` 的輸出、`--md` 與
-  `parity report` 的 Markdown 裡列出這類元素。**只列出,永遠不擋**:gate、exit code、分數、`summary` 計數、`--baseline`、
-  匿名統計都不受影響;`check --reverse` 一律不算。
+  `parity report` 的 Markdown 裡列出這類元素。**只列出,永遠不擋**:gate、exit code、分數、`summary` 計數、`--baseline`
+  都不受影響;`check --reverse` 一律不算。匿名統計多送一個總數(見下一條)。
   - 列入條件:沒被配對、不是已配對元素的祖先、不在已配對的設計葉節點(或子節點全沒配到的已配對元素)裡面、看得見
     (有自己的文字、是 `img`/`svg`、或背景不是全透明)、落在視窗內的面積至少 64×64 px²。巢狀的只列最外層。
     門檻第一版固定、不開放設定。
@@ -38,6 +38,11 @@
     Parity.Server 照常收件。本機報告 UI 與儀表板這一版還不顯示它。
   *New: `compare.extras: "list"` lists page elements the design has no node for. It only lists — the gate, exit code,
   score and summary are unchanged. Off by default; reports gain an `extras` key that is `null` when off.*
+- **匿名統計多送兩個計數**(不動六面)。只有數字,圖層名、selector 一律不送;`--stats-preview` 看得到。收集站 2026-11-05 已先上線。
+  - `data.unmatchedBy`:沒配對到的設計節點依原因計數,每次都送,全部配對到是 `{}`。這一版沒列出的原因算 `other`,原字串不送。
+  - `data.extras`:`compare.extras` 找到的多餘元素總數,只有開了才送。沒有這個欄位代表沒開,跟 `0`(開了、沒有)不一樣。
+  *Anonymous statistics gain two counts: `data.unmatchedBy` (unmatched design nodes per reason) and `data.extras` (how many extra
+  elements `compare.extras` found, only when it is on). Numbers only, never layer names or selectors.*
 
 ## 2.2.0 — 2026-11-04
 

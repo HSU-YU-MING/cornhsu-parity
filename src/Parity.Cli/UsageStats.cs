@@ -137,6 +137,14 @@ internal static class UsageStats
         ("fontFamily", null),
     ];
 
+    /// <summary>
+    /// 協定 §7.2 <c>unmatchedBy</c> 的**封閉集**,順序也就是 JSON 裡的順序。報告的 reason 是開放集合,
+    /// 這張表以外的原因一律計入 other:reason 字串不能直接當 key 送,多一個不認得的 key,收集站會拒收整筆。
+    /// UsageStatsTests 核對 <see cref="Parity.Engine.Comparison.Matcher.UnmatchedReasons"/> 都在表上。
+    /// </summary>
+    internal static readonly IReadOnlyList<string> UnmatchedReasons =
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "other"];
+
     /// <summary>abs(delta) 落在第幾桶。邊界左閉右開:剛好等於邊界值的進右邊那一桶(長度的 1 → 「1–2」)。</summary>
     internal static int Bucket(double absDelta, double[] edges)
     {
@@ -163,6 +171,10 @@ internal static class UsageStats
             else if (diff.Delta is { } delta && PropFamilies[i].Edges is { } edges) buckets[i][Bucket(Math.Abs(delta), edges)]++;
         }
 
+        var unmatched = reports.SelectMany(r => r.Unmatched)
+            .CountBy(u => UnmatchedReasons.Contains(u.Reason) ? u.Reason : "other")
+            .ToDictionary();
+
         return new ParityStats(
             Score: FidelityScore.Compute(reports), // 與 CLI 印的「fidelity score」同一個數
             GateFailed: exitCode != 0,             // 含 --baseline 的語意:看的是這次 check 真正的 exit code
@@ -178,7 +190,13 @@ internal static class UsageStats
             Props: PropFamilies
                 .Select((f, i) => new PropStats(f.Prop, count[i], missing[i], buckets[i]))
                 .Where(p => p.Count > 0) // 只列至少有一條落差的屬性
-                .ToList());
+                .ToList(),
+            UnmatchedBy: UnmatchedReasons
+                .Select(reason => new ReasonCount(reason, unmatched.GetValueOrDefault(reason)))
+                .Where(r => r.Count > 0) // 只列 > 0 的;全部都配對到就是空的
+                .ToList(),
+            // null = 沒開 compare.extras,跟「開了但沒找到」的 0 不一樣。用截斷前的總數:Items 每頁最多 20 筆
+            Extras: reports.Any(r => r.Extras is not null) ? reports.Sum(r => r.Extras?.Total ?? 0) : null);
     }
 
     /// <summary>
@@ -274,6 +292,10 @@ internal static class UsageStats
                 w.WriteEndObject();
             }
             w.WriteEndObject();
+            w.WriteStartObject("unmatchedBy");
+            foreach (var reason in d.UnmatchedBy) w.WriteNumber(reason.Reason, reason.Count);
+            w.WriteEndObject();
+            if (d.Extras is { } extras) w.WriteNumber("extras", extras); // 選填:沒開 compare.extras 就沒有這個欄位
             w.WriteEndObject();
             w.WriteEndObject();
         }
@@ -463,9 +485,14 @@ internal sealed record ParityStats(
     int DesignNodes,
     int Matched,
     SeverityTotals Severity,
-    IReadOnlyList<PropStats> Props);
+    IReadOnlyList<PropStats> Props,
+    IReadOnlyList<ReasonCount> UnmatchedBy,
+    int? Extras);
 
 internal sealed record SeverityTotals(int Critical, int Serious, int Medium, int Minor);
+
+/// <summary>一種未配對原因(協定的封閉集)與它的節點數。</summary>
+internal sealed record ReasonCount(string Reason, int Count);
 
 /// <summary>一個屬性的落差:條數(含 missing)、其中 missing 的條數、有 delta 的依 abs(delta) 分桶。</summary>
 internal sealed record PropStats(string Prop, int Count, int Missing, IReadOnlyList<int> Buckets);

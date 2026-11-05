@@ -85,7 +85,8 @@ cd web && npm run dev                  # vite dev，/api 代理到 127.0.0.1:432
 - **匿名使用統計(2.1.0,`src/Parity.Cli/UsageStats.cs`)。協定的唯一真相源是 `D:\擴充功能\nuget\stats-collector\PROTOCOL.md`**
   (與 XamlContrast 1.1 共用)。要改任何欄位:先改協定、收集站先上線新版,工具才能送——收集站對多一個、少一個欄位一律 400,
   工具這邊改了而收集站沒改,資料就靜靜全丟。**不在協定封閉集裡的屬性不送,也不替它發明家族**:`DiffEngine` 多一種屬性時
-  `UsageStatsTests` 會紅,先回去改協定。對使用者的承諾(只送計數、不影響結果、說明只在 stderr)寫在 README 的
+  `UsageStatsTests` 會紅,先回去改協定。未配對原因同理:`Matcher.UnmatchedReasons` 多一種時也會紅;執行時它會計入 `other`,
+  不會被拒收,但要不要進協定要先決定。對使用者的承諾(只送計數、不影響結果、說明只在 stderr)寫在 README 的
   「Anonymous usage statistics」,改行為時兩份 README 一起改。
   - **預設打開是 `UsageStats.SendByDefault` 這一個常數**。倫理審查若要求主動同意就改它;協定還要求那時「第一次在終端機
     詢問」,目前沒有實作,Action 的 `share-stats` 預設值也要一起決定。

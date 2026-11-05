@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1190 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1198 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -102,8 +102,8 @@ dotnet tool install -g Cornhsu.Parity
 - **預設打開,CI 也送**:每次 `parity check` 跑出報告(exit 0、1 或 3)之後,送一筆請求到
   `https://stats.cornhsu.com/v1/parity` —— .NET 工具與 npm 套件都一樣。開發版(版本以 `0.0.0-` 開頭的)永遠不送。
 - **送什麼 —— 只有計數與區間**:工具版本、作業系統、是不是在 CI、還原度分數、gate 有沒有失敗、頁數、設計來源的種類、
-  設計節點與配對節點的總數、各嚴重度的落差數,以及每個量測屬性有幾筆落差、差多少(分區間)。
-  沒有 ID,除非使用者自己在設定檔加一個。
+  設計節點與配對節點的總數、各嚴重度的落差數、每個量測屬性有幾筆落差、差多少(分區間)、沒配對到的設計節點依原因的計數,
+  以及開了 `compare.extras` 時找到幾個多餘元素。沒有 ID,除非使用者自己在設定檔加一個。
 - **一律不送**:網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、色碼、設計稿內容、token、
   repo 名稱、使用者名稱、機器名稱。請求不帶 User-Agent 或 cookie,收集站不存 IP。
 - **送到哪裡、做什麼用**:`stats.cornhsu.com`,學術研究「真實實作離設計稿有多遠」;
@@ -307,7 +307,8 @@ route 只是報告上的標籤,取好認的名字就行。frame 尺寸 ≠ 想�
 
 配對以設計端為錨,所以預設情況下,設計稿根本沒有的元素——例如頁面頂端多一條 800×200 的橫幅——不會產生任何落差,
 check 一聲不吭地通過。`"compare": { "extras": "list" }` 會在報告裡另外列出這類元素。**它只列出**:gate、exit code、
-還原度分數、`summary` 計數、`--baseline` 與匿名統計,都跟沒開時一模一樣。預設是 `"none"`;`none` / `list` 以外的值
+還原度分數、`summary` 計數與 `--baseline`,都跟沒開時一模一樣。匿名統計會多送一個數字,也就是找到幾個這類元素,
+不會送是哪些元素。預設是 `"none"`;`none` / `list` 以外的值
 是設定錯誤(exit 2)——它是字串不是布林,`"false"` 這種手誤會直接報錯。
 
 頁面元素同時符合下列條件才會列出:
@@ -545,6 +546,8 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 | `data.designNodes`、`data.matched` | 設計節點數與配對到的節點數,所有頁加總 |
 | `data.severity` | 各嚴重度的落差條數:`critical`、`serious`、`medium`、`minor` |
 | `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`fontFamily` 沒有區間,只有條數 |
+| `data.unmatchedBy` | 沒配對到的設計節點,依原因計數:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`,這一版沒列出的原因算 `other`。只列至少有一個節點的原因,全部都配對到是 `{}`。不送圖層名稱 |
+| `data.extras` | `compare.extras` 找到幾個多餘的頁面元素,所有頁加總(截斷前的總數,不受每頁 20 筆的上限影響)。只有開了才有這個欄位。不送 selector、標籤名或框 |
 
 **一律不送:** 網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、顏色值、設計稿內容、token、repo 名稱或 ID、
 使用者名稱、機器名稱。請求不帶 User-Agent、不帶 cookie。收集站不存 IP,也不存收到的時間(只記日期);

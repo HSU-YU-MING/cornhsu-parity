@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1190**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1198**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -111,8 +111,9 @@ up for someone, to pass on as it is. The full description is in
   Development builds (any version starting with `0.0.0-`) never send.
 - **What is sent — counts and ranges only:** the tool version, the OS, whether it runs in CI, the fidelity
   score, whether the gate failed, the number of pages, the kind of design source, the design and matched
-  node totals, gap counts per severity, and for each measured property how many gaps and how large, in
-  ranges. There is no ID unless the user adds one to the config.
+  node totals, gap counts per severity, for each measured property how many gaps and how large, in ranges,
+  how many design nodes could not be matched per reason, and, if `compare.extras` is on, how many extra
+  elements were found. There is no ID unless the user adds one to the config.
 - **Never sent:** URLs, routes, page or layer names, selectors, file names or paths, screenshots, colour
   values, design content, tokens, or repository, user or machine names. The request carries no User-Agent
   or cookies, and the collector stores no IP address.
@@ -377,8 +378,9 @@ unaffected and works as usual).
 Matching is anchored on the design side, so by default an element the design never had — say an
 800×200 banner across the top of the page — produces no gap at all and the check passes without a
 word. `"compare": { "extras": "list" }` adds a list of such elements to the report. **It only
-lists**: the gate, the exit code, the fidelity score, the `summary` counts, `--baseline` and the
-anonymous statistics are exactly what they would be without it. The default is `"none"`; any value
+lists**: the gate, the exit code, the fidelity score, the `summary` counts and `--baseline` are exactly
+what they would be without it. The anonymous statistics gain one number, how many such elements were
+found, and never which ones. The default is `"none"`; any value
 other than `none` / `list` is a config error (exit 2) — it is a string, not a boolean, so a typo
 like `"false"` fails loudly.
 
@@ -681,6 +683,8 @@ for, how long it is kept — is **<https://stats.cornhsu.com/>**.
 | `data.designNodes`, `data.matched` | Design nodes and matched nodes, summed over all pages |
 | `data.severity` | Gap counts per severity: `critical`, `serious`, `medium`, `minor` |
 | `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`/`background` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), and weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300). `fontFamily` has no ranges, only counts |
+| `data.unmatchedBy` | Design nodes that could not be matched, counted per reason: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, or `other` for any reason this version does not list. Only reasons with at least one node; `{}` when everything matched. Never the layer names |
+| `data.extras` | How many extra page elements `compare.extras` found, summed over all pages (the total, before the 20-per-page cap). Only present when the list is on. Never their selectors, tags or boxes |
 
 **Never sent:** URLs, routes, page or layer names, selectors, file names or paths, screenshots, colour
 values, design content, tokens, repository names or IDs, user names, machine names. The request has no

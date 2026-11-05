@@ -62,7 +62,7 @@ public sealed record FidelityReport(
 /// 實作端多出來的元件(<c>compare.extras: "list"</c>)。**null = 沒開**(預設、<c>check --reverse</c>、
 /// 這個欄位出現之前的舊報告);開了但沒找到是 <c>{ total: 0, items: [] }</c>——讀的人分得出「沒開」和「沒有」。
 /// <see cref="Total"/> 是截斷前的總數,<see cref="Items"/> 依面積由大到小、有上限。
-/// 只是清單:不進 gate、分數、summary、baseline 與匿名統計。
+/// 只是清單:不進 gate、分數、summary、baseline。匿名統計只送 <see cref="Total"/>,不送 <see cref="Items"/>。
 /// </summary>
 public sealed record ExtraElements(int Total, IReadOnlyList<ExtraElement> Items);
 

@@ -331,6 +331,94 @@ public class UsageStatsTests
         Assert.Equal("snapshot", stats.DesignSource);
     }
 
+    // ---------- 未配對與多餘元件(協定 §7.2 的選填欄位)----------
+
+    private static FidelityReport WithUnmatched(params string[] reasons)
+    {
+        var unmatched = reasons.Select((reason, i) => new UnmatchedNode($"layer {i}", $"9:{i}", reason)).ToList();
+        return new FidelityReport("/", "http://x/", "d", [], unmatched,
+            new ReportSummary(unmatched.Count, 0, unmatched.Count, 0, 0, 0, 0, 0, Severity.None));
+    }
+
+    private static ParityStats StatsOf(params FidelityReport[] reports) => UsageStats.Compute(reports, 1, "figma");
+
+    private static JsonDocument JsonOf(ParityStats stats)
+        => JsonDocument.Parse(UsageStats.ToJson(new StatsPayload(Release, "linux", Ci: true, null, stats), indented: false));
+
+    [Fact]
+    public void Unmatched_nodes_are_counted_per_reason_across_pages_in_protocol_order()
+    {
+        var stats = StatsOf(WithUnmatched("text-not-found", "no-anchor"), WithUnmatched("no-anchor", "size-implausible"));
+
+        Assert.Equal(
+            [new ReasonCount("no-anchor", 2), new ReasonCount("text-not-found", 1), new ReasonCount("size-implausible", 1)],
+            stats.UnmatchedBy);
+        using var doc = JsonOf(stats);
+        StatsProtocol.AssertMatches(doc.RootElement);
+    }
+
+    [Fact]
+    public void A_reason_outside_the_protocol_is_counted_as_other_and_never_sent_as_written()
+    {
+        var stats = StatsOf(WithUnmatched("brand-new-reason", "another-new-one", "no-anchor"));
+
+        Assert.Equal([new ReasonCount("no-anchor", 1), new ReasonCount("other", 2)], stats.UnmatchedBy);
+        using var doc = JsonOf(stats);
+        StatsProtocol.AssertMatches(doc.RootElement);
+        Assert.DoesNotContain("new", doc.RootElement.GetRawText());
+    }
+
+    [Fact]
+    public void When_everything_matched_unmatched_by_is_an_empty_object_not_left_out()
+    {
+        using var doc = JsonOf(StatsOf(Report([], designNodes: 3, matched: 3)));
+
+        StatsProtocol.AssertMatches(doc.RootElement);
+        Assert.Empty(doc.RootElement.GetProperty("data").GetProperty("unmatchedBy").EnumerateObject());
+    }
+
+    [Fact]
+    public void The_reason_list_is_exactly_the_protocols_closed_set_in_its_order()
+        => Assert.Equal(StatsProtocol.UnmatchedReasons, UsageStats.UnmatchedReasons);
+
+    [Fact]
+    public void Every_unmatched_reason_the_engine_can_write_is_in_the_protocols_closed_set()
+    {
+        // 引擎多一種原因:執行時會計入 other,不會被拒收,但研究資料就分不出來了。
+        // 這裡紅,就先決定要不要改協定與收集站;要併進 other 也要是決定過的
+        Assert.Empty(Parity.Engine.Comparison.Matcher.UnmatchedReasons.Except(UsageStats.UnmatchedReasons));
+    }
+
+    [Fact]
+    public void Extras_is_left_out_when_the_list_is_off()
+    {
+        var stats = StatsOf(Report([]), Report([]));
+
+        Assert.Null(stats.Extras);
+        using var doc = JsonOf(stats);
+        StatsProtocol.AssertMatches(doc.RootElement);
+        Assert.False(doc.RootElement.GetProperty("data").TryGetProperty("extras", out _));
+    }
+
+    [Fact]
+    public void Extras_is_zero_when_the_list_is_on_and_found_nothing()
+    {
+        // 「開了、沒有」跟「沒開」要分得出來
+        using var doc = JsonOf(StatsOf(Report([]) with { Extras = new ExtraElements(0, []) }));
+
+        StatsProtocol.AssertMatches(doc.RootElement);
+        Assert.Equal(0, doc.RootElement.GetProperty("data").GetProperty("extras").GetInt32());
+    }
+
+    [Fact]
+    public void Extras_is_the_total_before_the_cap_summed_over_all_pages()
+    {
+        var capped = new ExtraElements(25, [new ExtraElement("#a", "div", default)]);
+        var stats = StatsOf(Report([]) with { Extras = capped }, Report([]) with { Extras = new ExtraElements(3, []) });
+
+        Assert.Equal(28, stats.Extras);
+    }
+
     [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
@@ -431,16 +519,18 @@ public class UsageStatsTests
     [Fact]
     public void The_payload_carries_only_counts_none_of_the_reports_strings()
     {
-        // 報告裡的網址、route、圖層名、selector、設計值都不能出現在送出的內容裡
+        // 報告裡的網址、route、圖層名、selector、設計值、多餘元件的內容都不能出現在送出的內容裡。
+        // 未配對原因只有協定封閉集裡的固定字彙會送(見 A_reason_outside_the_protocol…),這裡的是封閉集以外的
         var report = new FidelityReport("/secret-route", "https://intranet.example/page", "design.json#9:9",
             [new NodeResult("Secret Layer", "9:9", "#secret-selector", "auto-name", Severity.Serious,
                 [new PropDiff("color", "#123456", "#654321", null, 12.5, 2, Severity.Serious)])],
-            [new UnmatchedNode("Hidden Layer", "9:10", "no-anchor")],
-            new ReportSummary(2, 1, 1, 1, 0, 1, 0, 0, Severity.Serious));
+            [new UnmatchedNode("Hidden Layer", "9:10", "secret-reason")],
+            new ReportSummary(2, 1, 1, 1, 0, 1, 0, 0, Severity.Serious),
+            new ExtraElements(1, [new ExtraElement("#secret-extra", "aside", default)]));
         var json = UsageStats.ToJson(new StatsPayload(Release, "windows", false, null,
             UsageStats.Compute([report], 1, "figma")), indented: true);
 
-        foreach (var secret in new[] { "secret", "intranet", "Layer", "design.json", "#12", "#65", "9:9", "no-anchor", "auto-name" })
+        foreach (var secret in new[] { "secret", "intranet", "Layer", "design.json", "#12", "#65", "9:9", "9:10", "auto-name", "aside" })
             Assert.DoesNotContain(secret, json, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -466,7 +556,9 @@ public class UsageStatsTests
         List<NodeResult> nodes = diffs.Count == 0 ? [] :
             [new NodeResult("layer", "1:1", "#a", "selector", diffs.Max(d => d.Severity), diffs)];
         int Count(Severity s) => diffs.Count(d => d.Severity == s);
-        return new FidelityReport(route, "http://x/", "d", nodes, [],
+        List<UnmatchedNode> unmatched =
+            [.. Enumerable.Range(0, designNodes - matched).Select(i => new UnmatchedNode($"unmatched {i}", $"9:{i}", "no-anchor"))];
+        return new FidelityReport(route, "http://x/", "d", nodes, unmatched,
             new ReportSummary(designNodes, matched, designNodes - matched, nodes.Count,
                 Count(Severity.Critical), Count(Severity.Serious), Count(Severity.Medium), Count(Severity.Minor),
                 nodes.Count == 0 ? Severity.None : nodes.Max(n => n.Severity)));
@@ -500,6 +592,9 @@ internal static class StatsProtocol
         ["fontFamily"] = 0,
     };
 
+    public static readonly string[] UnmatchedReasons =
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "other"];
+
     private static void ExactKeys(JsonElement e, params string[] keys)
     {
         Assert.Equal(JsonValueKind.Object, e.ValueKind);
@@ -526,7 +621,25 @@ internal static class StatsProtocol
         if (id.ValueKind != JsonValueKind.Null) Assert.Matches("^[A-Za-z0-9_-]{16,64}$", id.GetString());
 
         var d = root.GetProperty("data");
-        ExactKeys(d, "score", "gateFailed", "pages", "designSource", "designNodes", "matched", "severity", "props");
+        // Parity 每次都送 unmatchedBy;extras 只有開了 compare.extras 才有(收集站兩個都是選填,舊版工具不送)
+        string[] required = ["score", "gateFailed", "pages", "designSource", "designNodes", "matched", "severity", "props", "unmatchedBy"];
+        if (d.TryGetProperty("extras", out var extras))
+        {
+            Count(extras);
+            ExactKeys(d, [.. required, "extras"]);
+        }
+        else
+        {
+            ExactKeys(d, required);
+        }
+        var unmatchedBy = d.GetProperty("unmatchedBy").EnumerateObject().ToList();
+        foreach (var reason in unmatchedBy)
+        {
+            Assert.Contains(reason.Name, UnmatchedReasons);
+            Assert.True(Count(reason.Value) > 0, $"{reason.Name}:沒有節點的原因不送");
+        }
+        // 工具端的保證(收集站不驗):沒配對到的節點,每一個都算到一個原因
+        Assert.Equal(Count(d.GetProperty("designNodes")) - Count(d.GetProperty("matched")), unmatchedBy.Sum(r => Count(r.Value)));
         Count(d.GetProperty("score"), 100);
         Assert.True(d.GetProperty("gateFailed").ValueKind is JsonValueKind.True or JsonValueKind.False);
         Assert.InRange(Count(d.GetProperty("pages"), 10_000), 1, 10_000);
