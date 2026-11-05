@@ -43,6 +43,13 @@
   - `data.extras`:`compare.extras` 找到的多餘元素總數,只有開了才送。沒有這個欄位代表沒開,跟 `0`(開了、沒有)不一樣。
   *Anonymous statistics gain two counts: `data.unmatchedBy` (unmatched design nodes per reason) and `data.extras` (how many extra
   elements `compare.extras` found, only when it is on). Numbers only, never layer names or selectors.*
+- **文字配對放寬一層:只差空白或引號的文字配得上了**(量測語意,minor)。精確比對完全對不到時,才退回「忽略所有空白與看不見的格式字元、
+  彎引號當直引號」再比一次,一樣要唯一才配。設計稿手動斷行的中文(`歡迎使用\n我們的服務`,頁面上是連著的)、直引號對彎引號、
+  軟連字號原本都配不上,屬性一個都沒比到。
+  - **行為變化**:這些節點現在會配上、會比屬性,所以配對率上升,原本看不到的落差會出現,硬落差可能讓既有專案轉紅(`--baseline` 也算新增)。發版時要標「升級必做」。
+  - 跨元素斷開的文字(`歡迎使用<b>我們的</b>服務`)還是配不上:配對只看元素自己的文字。
+  *Text pairing now falls back to ignoring whitespace, invisible format characters and quote style when the exact text matches
+  nothing, still only when exactly one element fits. Nodes that were unmatched may now pair and report gaps.*
 
 ## 2.2.0 — 2026-11-04
 

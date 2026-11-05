@@ -89,11 +89,20 @@ public static class Matcher
             .GroupBy(r => NormalizeText(r.Text!), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
+        // 放寬的文字索引,只在精確比對完全對不到時才用:設計稿手動斷行的中文壓空白後中間多一個空格,頁面上是連著的,
+        // 精確比對永遠對不上,節點進未配對清單,屬性一個都沒比到。下面照樣要唯一才配,不會因為放寬就猜
+        var byFingerprint = candidates
+            .Where(r => !string.IsNullOrWhiteSpace(r.Text))
+            .GroupBy(r => TextFingerprint(r.Text!), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Key.Length > 0)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
         var stillRemaining = new List<DesignNode>();
         foreach (var d in remaining)
         {
             if (!string.IsNullOrWhiteSpace(d.Characters)
-                && byText.TryGetValue(NormalizeText(d.Characters!), out var hits))
+                && (byText.TryGetValue(NormalizeText(d.Characters!), out var hits)
+                    || byFingerprint.TryGetValue(TextFingerprint(d.Characters!), out hits)))
             {
                 var free = hits.Where(h => !taken.Contains(h)).ToList();
                 if (free.Count == 1) // 唯一才配
@@ -272,12 +281,12 @@ public static class Matcher
         => string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>
-    /// text-not-found 專用的比對鍵:拿掉所有空白與看不見的格式字元(軟連字號、零寬空白),彎引號當直引號。
-    /// 這個判斷開了 gate.failOnUnmatched 就會擋 PR,所以寧可少標,不能誤標,下面這些文字畫面上都看得到:
+    /// 放寬的文字比對鍵:拿掉所有空白與看不見的格式字元(軟連字號、零寬空白),彎引號當直引號。
+    /// text-not-found 開了 gate.failOnUnmatched 就會擋 PR,所以寧可少標,不能誤標,下面這些文字畫面上都看得到:
     /// 設計稿手動斷行的中文(<c>歡迎使用\n我們的服務</c> 壓空白後中間多一個空格,頁面上是連著的)、
     /// 靠 margin 隔開的行內元素(innerText 是 <c>Price:$10</c>)、設計工具和網頁各用一種引號。
     /// 文案差異不是元件不見。各段之間的 \u001f 是控制字元,不會被拿掉,子字串仍然不會橫跨兩段。
-    /// 配對(byText)刻意不用它:配對要對到單一元素,放寬會多配。
+    /// 配對只在精確比對完全對不到時才退回用它,而且一樣要唯一才配:配對要對到單一元素,一開始就放寬會多配。
     /// </summary>
     internal static string TextFingerprint(string s)
     {
