@@ -220,6 +220,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             Classes = Str(el, "classes"),
             AriaLabel = Str(el, "ariaLabel"),
             CornerRadius = Px(el, "cornerRadius"),
+            TextContent = Str(el, "textContent"),
         };
 
         static string? Str(JsonElement e, string prop)

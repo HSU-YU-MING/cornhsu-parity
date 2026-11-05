@@ -27,4 +27,20 @@ public sealed record EngineOptions(Tolerances Tolerances)
     /// 只是清單,開了也不影響 gate、分數與 summary(<see cref="Comparison.ExtrasFinder"/>)。
     /// </summary>
     public bool ListExtras { get; init; }
+
+    /// <summary>文字內容比對(compare.text)。預設 <see cref="TextComparison.Soft"/>:會列出、不扣分、不擋。</summary>
+    public TextComparison CompareText { get; init; } = TextComparison.Soft;
+}
+
+/// <summary>文字內容比對的三種模式。</summary>
+public enum TextComparison
+{
+    /// <summary>不比。</summary>
+    None,
+
+    /// <summary>軟落差:會列出、不扣分、不擋、<c>--baseline</c> 不算新增。快照基準(selector 身分配對)不比:動態內容每次都不同。</summary>
+    Soft,
+
+    /// <summary>硬落差(serious):會擋 PR。快照基準也比。</summary>
+    Gate,
 }

@@ -178,8 +178,8 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
         new("G2", "徽章不見", Group.Lab, Remove(Badge), 0, [], ["hero-badge (no-anchor)"]),
         // 要擋得用 minMatchRate,但那是「配對可信度」(exit 3:結果不可信),不是「做錯了」(exit 1)
         new("G2-minMatchRate", "徽章不見,gate.minMatchRate: 1", Group.StrictMatch, Remove(Badge), 3, [], ["hero-badge (no-anchor)"]),
-        // 標題文字寫錯:圖層名(class page-title)照樣配上,文字內容不比
-        new("G3", "文字寫錯", Group.Lab, Swap(">Parity Demo<", ">Totally Wrong Words<"), 0, [], []),
+        // 標題文字寫錯:圖層名(class page-title)照樣配上,文字內容的落差是軟的:會列出、不擋
+        new("G3", "文字寫錯", Group.Lab, Swap(">Parity Demo<", ">Totally Wrong Words<"), 0, ["page-title.text (soft)"], []),
         // 卡片 1、3 整個互換(含 id 與標題):各自照 id / 文字配回原圖層;自動排版的子元件不比相對位置
         new("G4", "順序對調", Group.Lab, Exchange(Card1, Card3), 0, [], []),
         // 設計稿沒有的大紅色區塊:配對以設計端為錨,多出來的元件沒有人看

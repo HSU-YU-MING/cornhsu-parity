@@ -161,6 +161,7 @@ public static class FixHint
         "color" => $"color: {d.Expected}",
         "background" => $"background: {d.Expected}",
         "fontFamily" => $"font-family should include {d.Expected}",
+        "text" => $"text should read: {d.Expected}",
         // 相對位置:沒有單一 CSS 可以給(取決於版面做法),給人話方向提示
         "offsetX" => $"horizontal offset from its sibling/parent should be {d.Expected}px",
         "offsetY" => $"vertical offset from its sibling/parent should be {d.Expected}px",
@@ -240,10 +241,11 @@ public static class MarkdownReport
             sb.AppendLine(multi ? "|---|---|---|---|---|---|" : "|---|---|---|---|---|");
             foreach (var (route, n, d) in rows)
             {
-                var arrow = $"`{Esc(d.Expected)}` → `{Esc(d.Actual)}`" +
+                // Code:期望與實際可能是設計稿或頁面的文字(compare.text),反引號不能讓它跳出程式碼區段
+                var arrow = $"{Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}" +
                     (d.Delta is { } dl ? $" (Δ{dl})" : "");
                 var sev = d.Soft ? $"{d.Severity.ToString().ToLowerInvariant()}(soft)" : d.Severity.ToString().ToLowerInvariant();
-                var fix = FixHint.For(d, tokens) is { } f ? $"`{Esc(f)}`" : "—";
+                var fix = FixHint.For(d, tokens) is { } f ? Code(f, MaxValueCell + 40) : "—";
                 var cells = multi
                     ? $"| {Esc(route)} | {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |"
                     : $"| {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |";
@@ -303,7 +305,7 @@ public static class MarkdownReport
         if (items.Count == 0) return;
         sb.AppendLine($"**{title}**");
         foreach (var d in items)
-            sb.AppendLine($"- `{Esc(d.DesignLayer)}` · {d.Prop} · `{Esc(d.Expected)}` → `{Esc(d.Actual)}`");
+            sb.AppendLine($"- `{Esc(d.DesignLayer)}` · {d.Prop} · {Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}");
         sb.AppendLine();
     }
 
@@ -312,6 +314,9 @@ public static class MarkdownReport
 
     /// <summary>表格裡的 selector 最多幾個字元(真實網站的結構路徑常有上百字元,表格會被撐爆)。</summary>
     internal const int MaxSelectorCell = 100;
+
+    /// <summary>表格裡的期望值與實際值最多幾個字元。比報告裡的文字上限(120)長一點:正常情況不會再被截一次。</summary>
+    internal const int MaxValueCell = 140;
 
     /// <summary>
     /// 來自頁面的字串放進表格的行內程式碼:控制字元(含換行)換成空白、太長的從中間截斷(頭尾都留:

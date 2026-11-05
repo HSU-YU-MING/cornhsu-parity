@@ -47,7 +47,7 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         var match = Matcher.Match(designTree, renderedTree);
 
         // 4. 數值 diff + 容差(含相對位置:非 auto-layout 父層的子節點才給參照)
-        var diffEngine = new DiffEngine(_opts.Tolerances);
+        var diffEngine = new DiffEngine(_opts.Tolerances, _opts.CompareText);
         var positionOf = _opts.ComparePosition
             ? BuildPositionContexts(designTree, renderedTree, match.Pairs)
             : new Dictionary<string, PositionContext>();

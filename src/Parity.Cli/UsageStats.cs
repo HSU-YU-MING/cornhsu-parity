@@ -120,6 +120,8 @@ internal static class UsageStats
     private static readonly double[] LengthEdges = [1, 2, 4, 8, 16, 32]; // px
     private static readonly double[] ColorEdges = [1, 2, 5, 10, 20];     // ΔE(CIEDE2000)
     private static readonly double[] WeightEdges = [100, 200, 300];       // 字重值
+    private static readonly double[] RatioEdges = [0.05, 0.1, 0.25, 0.5]; // 0–1 的差(透明度、圖片差異比例)
+    private static readonly double[] LineEdges = [2, 3, 5];               // 行數差(整數):1、2、3–4、5 以上
 
     /// <summary>
     /// 協定 §7.2 的**封閉集**:屬性 → 家族的分桶邊界(左閉右開);null = 無量值(fontFamily,buckets 是空陣列)。
@@ -131,10 +133,14 @@ internal static class UsageStats
         ("offsetX", LengthEdges), ("offsetY", LengthEdges), ("width", LengthEdges), ("height", LengthEdges),
         ("paddingTop", LengthEdges), ("paddingRight", LengthEdges), ("paddingBottom", LengthEdges), ("paddingLeft", LengthEdges),
         ("itemSpacing", LengthEdges), ("cornerRadius", LengthEdges), ("fontSize", LengthEdges), ("lineHeight", LengthEdges),
-        ("letterSpacing", LengthEdges),
-        ("color", ColorEdges), ("background", ColorEdges),
+        ("letterSpacing", LengthEdges), ("borderWidth", LengthEdges), ("shadow", LengthEdges),
+        ("mainAxisOffset", LengthEdges), ("crossAxisOffset", LengthEdges),
+        ("color", ColorEdges), ("background", ColorEdges), ("borderColor", ColorEdges), ("shadowColor", ColorEdges), ("gradient", ColorEdges),
         ("fontWeight", WeightEdges),
-        ("fontFamily", null),
+        ("opacity", RatioEdges), ("image", RatioEdges),
+        ("lineCount", LineEdges),
+        ("fontFamily", null), ("text", null), ("childOrder", null),
+        ("fontStyle", null), ("textDecoration", null), ("textTransform", null), ("textAlign", null),
     ];
 
     /// <summary>

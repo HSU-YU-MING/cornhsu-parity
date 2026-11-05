@@ -99,6 +99,14 @@ internal static class CaptureScript
 
           const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'META', 'LINK']);
 
+          // 連子孫一起的文字(文字內容比對用,見 RenderedNode.TextContent)。子元素太多的是版面容器,不是一段文字;
+          // 裡面有 script/style 的話 textContent 會把程式碼算進去,都不給。2000 與 DiffEngine.TextContentLimit 同值
+          const fullText = (el) => {
+            if (el.childElementCount === 0 || el.childElementCount > 50) return null;
+            if (el.querySelector('script,style,template,noscript')) return null;
+            return el.textContent.slice(0, 2000);
+          };
+
           // ctx = { ox, oy(座標平移), stop(路徑的 root), prefix, rootLabel }
           const walk = (el, ctx) => {
             if (SKIP.has(el.tagName) || ignored.has(el)) return null;
@@ -165,6 +173,7 @@ internal static class CaptureScript
               selector: selfPath,
               tag: el.tagName.toLowerCase(),
               text: ownText || null,
+              textContent: fullText(el),
               domId: el.id || null,
               classes: (typeof el.className === 'string' && el.className) ? el.className : null,
               ariaLabel: el.getAttribute('aria-label') || el.getAttribute('data-testid') || null,

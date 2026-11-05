@@ -37,6 +37,15 @@ public sealed record RenderedNode(
     [JsonIgnore]
     public string? PageText { get; init; }
 
+    /// <summary>
+    /// 有子元素的節點,連子孫一起的文字(<see cref="Text"/> 只有元素自己的:<c>&lt;h1&gt;&lt;span&gt;Title&lt;/span&gt;&lt;/h1&gt;</c> 是 null)。
+    /// 只給文字內容比對用。保留文件順序,所以 <c>Hello &lt;b&gt;world&lt;/b&gt; again</c> 不會亂掉;
+    /// 用 textContent 不用 innerText:innerText 會被 text-transform 改掉。沒有子元素、子元素太多或裡面有 script 時是 null。
+    /// 長度上限是 <see cref="Comparison.DiffEngine.TextContentLimit"/>,到上限代表被截斷。
+    /// </summary>
+    [JsonIgnore]
+    public string? TextContent { get; init; }
+
     public IEnumerable<RenderedNode> DescendantsAndSelf()
     {
         yield return this;

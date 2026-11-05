@@ -23,9 +23,22 @@ public sealed record PositionContext(
 ///     「比相對位置」)。參照優先用兄弟——一個元素壞掉才不會讓後面整排連環誤報。
 /// 不比絕對位置 x/y——彈性版面下本來就會不同,比了 = 狂誤報 = 失去信任。
 /// </summary>
-public sealed class DiffEngine(Tolerances tolerances)
+public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText = TextComparison.Soft)
 {
     private readonly Tolerances _tol = tolerances;
+    private readonly TextComparison _compareText = compareText;
+
+    /// <summary><see cref="RenderedNode.TextContent"/> 的長度上限(與 CaptureScript 同值):到上限代表被截斷,沒看完就不判。</summary>
+    internal const int TextContentLimit = 2000;
+
+    /// <summary>報告裡的文字最多幾個字元:report.json 會被推到伺服器、貼進 PR 留言,整段文字不用都帶。</summary>
+    internal const int MaxTextInReport = 120;
+
+    /// <summary>這些元素的文字不在子節點裡(值、替代文字、畫布),比了都是誤報。</summary>
+    private static readonly HashSet<string> NoTextTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "input", "textarea", "select", "img", "svg", "canvas", "video", "audio", "iframe", "object", "embed", "picture",
+    };
 
     public NodeResult Diff(NodePair pair, PositionContext? position = null)
     {
@@ -90,6 +103,8 @@ public sealed class DiffEngine(Tolerances tolerances)
             if (dt.FontFamily is { } ff && rt.FontFamily is { } rff)
                 CompareFontFamily(diffs, ff, rff); // 軟落差(Figma 名 ≠ CSS font stack)
         }
+
+        CompareTextContent(diffs, pair);
 
         // --- 顏色 ---
         if (d.Fill is { } fill && !fill.IsTransparent)
@@ -200,6 +215,52 @@ public sealed class DiffEngine(Tolerances tolerances)
             return;
         diffs.Add(new PropDiff("fontFamily", designFamily, cssStack, null,
             null, 0, Severity.Minor, Soft: true)); // 軟落差,不擋 gate
+    }
+
+    /// <summary>軟落差:會列出、不扣分、永遠不擋、--baseline 不算新增。新的比對項目都先做成這樣,真實網站測過誤報再改。</summary>
+    private static void SoftDiff(List<PropDiff> diffs, string prop, string expected, string actual,
+        string? unit = null, double? delta = null, double tolerance = 0, DiffStatus status = DiffStatus.Mismatch)
+        => diffs.Add(new PropDiff(prop, expected, actual, unit, delta, tolerance, Severity.Minor, status, Soft: true));
+
+    /// <summary>
+    /// 文字內容(設計稿的 TEXT 節點 ↔ 頁面上的文字)。文字配對配上的本來就一樣,這條抓的是靠圖層名配上、文字卻不一樣的。
+    /// 比法與 text-not-found 相同:忽略大小寫(text-transform)、所有空白與看不見的字元,彎引號當直引號。
+    /// 元素有子元素時,設計稿的文字在子孫文字裡就算對(圖層名可能配到外層容器,內容不只這一段)。
+    /// </summary>
+    private void CompareTextContent(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+        if (_compareText == TextComparison.None || d.Type != DesignNodeType.Text || string.IsNullOrWhiteSpace(d.Characters)) return;
+        // 手動對應:設計系統常用佔位文字,會手動對應通常就是因為這樣,比了全是誤報(README「設計系統」那段)
+        if (pair.MatchedBy == "explicit") return;
+        // 快照基準:動態內容每次都不同(野生實查 F4),預設不比;明說 gate 才比
+        if (pair.MatchedBy == "selector" && _compareText != TextComparison.Gate) return;
+        if (NoTextTags.Contains(r.Tag)) return;
+
+        var expected = Matcher.TextFingerprint(d.Characters!);
+        if (r.Text is { } own && Matcher.TextFingerprint(own).Equals(expected, StringComparison.OrdinalIgnoreCase)) return;
+        if (r.TextContent is { } full)
+        {
+            if (Matcher.TextFingerprint(full).Contains(expected, StringComparison.OrdinalIgnoreCase)) return;
+            if (full.Length >= TextContentLimit) return;
+        }
+
+        var actual = r.TextContent ?? r.Text;
+        var missing = string.IsNullOrWhiteSpace(actual);
+        var shownExpected = Excerpt(d.Characters!);
+        var shownActual = missing ? "(no text)" : Excerpt(actual!);
+        if (_compareText == TextComparison.Gate)
+            diffs.Add(new PropDiff("text", shownExpected, shownActual, null, null, 0, Severity.Serious,
+                missing ? DiffStatus.Missing : DiffStatus.Mismatch));
+        else
+            SoftDiff(diffs, "text", shownExpected, shownActual, status: missing ? DiffStatus.Missing : DiffStatus.Mismatch);
+    }
+
+    /// <summary>報告用的文字:壓空白、太長的截斷。</summary>
+    private static string Excerpt(string s)
+    {
+        var flat = Matcher.NormalizeText(s);
+        return flat.Length <= MaxTextInReport ? flat : flat[..(MaxTextInReport - 1)] + "…";
     }
 
     private void CompareColor(List<PropDiff> diffs, string prop, Rgba expected, Rgba actual)

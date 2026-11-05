@@ -45,6 +45,7 @@ public sealed class ScanSession : IAsyncDisposable
             {
                 ComparePosition = Config.ComparePosition,
                 ListExtras = extrasAllowed && Config.ListExtras,
+                CompareText = Config.CompareText,
             });
     }
 

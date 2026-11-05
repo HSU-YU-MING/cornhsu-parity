@@ -102,6 +102,9 @@ public class ReportingTests
         string[] notProps =
         [
             "px", // PropDiff 的 Unit 欄位
+            "explicit", "selector", // NodePair.MatchedBy 的值
+            // NoTextTags:這些元素的文字不在子節點裡
+            "input", "textarea", "select", "img", "svg", "canvas", "video", "audio", "iframe", "object", "embed", "picture",
         ];
         var code = string.Join('\n', File.ReadAllLines(Repo.PathOf("src", "Parity.Engine", "Comparison", "DiffEngine.cs"))
             .Select(l => l.IndexOf("//", StringComparison.Ordinal) is var i and >= 0 ? l[..i] : l));
