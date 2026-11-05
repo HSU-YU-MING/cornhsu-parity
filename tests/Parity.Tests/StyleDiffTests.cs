@@ -446,7 +446,92 @@ public class StyleDiffTests
         Assert.Equal(new GradientSpec(Red, Blue), card.Gradient);
         Assert.Null(card.LineCount);
         Assert.Equal(2, title.LineCount);
-        Assert.Empty(title.Shadows!); // 文字節點記 text-shadow
+        Assert.Null(title.Shadows); // 文字節點記 text-shadow,這裡沒有;box-shadow 不算
         Assert.Equal("italic", title.Text!.FontStyle);
+    }
+
+    private static async Task<DesignNode> RoundTrip(DesignNode frame, bool styleDefaultsOmitted)
+    {
+        using var dir = new TempDir();
+        var path = dir.Write("snapshot.json", Parity.Cli.ReportJson.SerializeSnapshotTree(frame, styleDefaultsOmitted: styleDefaultsOmitted));
+        return await new Parity.Engine.DesignSources.Json.JsonDesignSource().GetFrameAsync(new DesignRef(path, ""));
+    }
+
+    private static RenderedNode PlainPage() => Rendered("body", children:
+    [
+        Rendered("#card", classes: "card") with { Opacity = 1, BorderWidth = NoBorder, Shadows = [] },
+        Rendered("#title", "h1", text: "Title", typography: new Typography { FontStyle = "normal", TextDecoration = "none", TextTransform = "none" }) with { TextShadows = [] },
+    ]);
+
+    [Fact]
+    public void A_snapshot_only_stores_values_that_are_not_the_default()
+    {
+        // 全部都寫的話,快照會大 34～44%(非作者網站實測)
+        var frame = SnapshotBuilder.ToFrame(PlainPage(), "/");
+        var card = frame.Children[0];
+        var title = frame.Children[1];
+
+        Assert.Null(card.Opacity);
+        Assert.Null(card.BorderWidth);
+        Assert.Null(card.Shadows);
+        Assert.Null(title.Text!.FontStyle);
+        Assert.Null(title.Text.TextDecoration);
+        Assert.Null(title.Text.TextTransform);
+    }
+
+    [Fact]
+    public async Task Reading_it_back_restores_the_defaults_so_a_new_shadow_is_still_a_diff()
+    {
+        var back = await RoundTrip(SnapshotBuilder.ToFrame(PlainPage(), "/"), styleDefaultsOmitted: true);
+        var card = back.Children[0];
+        var title = back.Children[1];
+
+        Assert.Equal(1, card.Opacity);
+        Assert.Equal(NoBorder, card.BorderWidth);
+        Assert.Empty(card.Shadows!);
+        Assert.Equal("normal", title.Text!.FontStyle);
+        Assert.Equal("none", title.Text.TextDecoration);
+        Assert.Equal("none", title.Text.TextTransform);
+        Assert.Null(title.Text.TextAlign); // null 代表對齊沒有視覺意義,不是預設值
+
+        Assert.Equal("shadow", Assert.Single(Diffs(card, Rendered("div") with { Shadows = [Shadow(0, 30)] }, "selector")).Prop);
+    }
+
+    [Fact]
+    public async Task A_snapshot_without_the_marker_stays_unknown_so_upgrading_adds_no_diffs()
+    {
+        // 舊版拍的快照沒有這些欄位:沒寫是「不知道」,不能當成預設值去比
+        var back = await RoundTrip(SnapshotBuilder.ToFrame(PlainPage(), "/"), styleDefaultsOmitted: false);
+        var card = back.Children[0];
+
+        Assert.Null(card.Opacity);
+        Assert.Null(card.Shadows);
+        Assert.Empty(Diffs(card, Rendered("div") with { Opacity = 0.2, BorderWidth = new Insets(4, 4, 4, 4), Shadows = [Shadow(0, 30)] }, "selector"));
+    }
+
+    [Fact]
+    public async Task Non_default_values_survive_the_round_trip()
+    {
+        var shadow = Shadow(4, 8);
+        var page = Rendered("body", children:
+        [
+            Rendered("#card", classes: "card") with { Opacity = 0.5, BorderWidth = new Insets(1, 2, 3, 4), BorderColor = Red, Shadows = [shadow], Gradient = new GradientSpec(Red, Blue) },
+            Rendered("#title", "h1", text: "Title", typography: new Typography { FontStyle = "italic", TextDecoration = "underline", TextTransform = "uppercase", TextAlign = "center" }) with { LineCount = 2 },
+        ]);
+
+        var back = await RoundTrip(SnapshotBuilder.ToFrame(page, "/"), styleDefaultsOmitted: true);
+        var card = back.Children[0];
+        var title = back.Children[1];
+
+        Assert.Equal(0.5, card.Opacity);
+        Assert.Equal(new Insets(1, 2, 3, 4), card.BorderWidth);
+        Assert.Equal(Red, card.BorderColor);
+        Assert.Equal(shadow, Assert.Single(card.Shadows!));
+        Assert.Equal(new GradientSpec(Red, Blue), card.Gradient);
+        Assert.Equal(2, title.LineCount);
+        Assert.Equal("italic", title.Text!.FontStyle);
+        Assert.Equal("underline", title.Text.TextDecoration);
+        Assert.Equal("uppercase", title.Text.TextTransform);
+        Assert.Equal("center", title.Text.TextAlign);
     }
 }

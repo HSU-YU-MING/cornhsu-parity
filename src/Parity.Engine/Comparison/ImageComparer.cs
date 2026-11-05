@@ -57,9 +57,8 @@ public static class ImageComparer
         var nodes = result.Report.Nodes.Select(n =>
         {
             if (!imageNodes.TryGetValue(n.Selector, out var r)) return n;
-            var diff = r.ImageBroken
-                ? new PropDiff("image", "(an image)", "(image not loaded)", null, null, Tolerance, Severity.Minor, DiffStatus.Missing, Soft: true)
-                : Compare(reference, Shift(n.DesignBox, result.DesignOrigin), current, Shift(n.RenderedBox, result.RenderedOrigin));
+            // 先看畫面有沒有不一樣,載入失敗只決定怎麼標:基準拍下來時就沒載入的圖,兩邊一樣,不是落差(野生實查:gov.tw 30 條)
+            var diff = Compare(reference, Shift(n.DesignBox, result.DesignOrigin), current, Shift(n.RenderedBox, result.RenderedOrigin), r.ImageBroken);
             if (diff is null) return n;
             changed = true;
             var diffs = n.Diffs.Append(diff).ToList();
@@ -73,9 +72,11 @@ public static class ImageComparer
         };
     }
 
-    private static PropDiff? Compare(Image<Rgba32> reference, Box referenceBox, Image<Rgba32> current, Box currentBox)
+    private static PropDiff? Compare(Image<Rgba32> reference, Box referenceBox, Image<Rgba32> current, Box currentBox, bool broken)
     {
         if (Difference(reference, referenceBox, current, currentBox) is not { } difference || difference <= Tolerance) return null;
+        if (broken)
+            return new PropDiff("image", "same as the reference image", "(image not loaded)", null, null, Tolerance, Severity.Minor, DiffStatus.Missing, Soft: true);
         var percent = Math.Round(difference * 100);
         return new PropDiff("image", "same as the reference image", $"{percent:0}% different", null,
             Math.Round(difference, 2), Tolerance, Severity.Minor, Soft: true);

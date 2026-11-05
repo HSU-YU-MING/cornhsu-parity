@@ -187,7 +187,7 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
         new("G5", "多餘元件", Group.Lab,
             Swap("<body>", "<body><div style=\"position:absolute;top:0;left:0;width:800px;height:200px;background:#FF0000\"></div>"),
             0, [], []),
-        // 圖片換成另一張同尺寸的:圖片內容不比
+        // 圖片換成另一張同尺寸的:圖片內容預設不比,這張設計稿也沒有參考圖。開了 compare.images 的情況見 ImageComparisonTests
         new("G6", "圖片換錯", Group.Lab, Swap(BlueSvg, RedSvg), 0, [], []),
         // 透明度、邊框、陰影、漸層:軟落差(設計稿要有寫才比,LabDesign 補上了)
         new("G7", "樣式", Group.Lab, Css("button.cta-button{opacity:.2;border:4px solid #000;box-shadow:0 0 30px #000}"), 0,

@@ -177,10 +177,11 @@ public class ImageComparisonTests
         """;
 
     /// <summary>藍色的圖拍快照,再對 <paramref name="page"/> 跑 check。瀏覽器沒裝回 null。</summary>
-    private static async Task<(int Exit, FidelityReport Report, string Err)?> SnapshotThenCheck(string page, string images = "soft", params string[] checkArgs)
+    private static async Task<(int Exit, FidelityReport Report, string Err)?> SnapshotThenCheck(
+        string page, string images = "soft", string? baseline = null, params string[] checkArgs)
     {
         using var dir = new TempDir();
-        dir.Write("index.html", Page(SvgDataUri("#2563EB")));
+        dir.Write("index.html", baseline ?? Page(SvgDataUri("#2563EB")));
         var config = dir.Write("parity.config.json", Config(images));
         var snapshot = await Cli.RunAsync("snapshot", "--config", config);
         if (Cli.BrowserMissing(snapshot)) return null;
@@ -243,6 +244,28 @@ public class ImageComparisonTests
     }
 
     [Fact]
+    public async Task A_style_added_after_the_snapshot_is_a_soft_diff_because_the_snapshot_knows_it_had_none()
+    {
+        // 走真的快照檔:只記非預設值,讀回來要知道「沒寫 = 沒有」,不是「不知道」
+        var page = Page(SvgDataUri("#2563EB")).Replace("</style>", ".bg { box-shadow: 0 0 10px #000; border: 1px solid #000; opacity: .5 }\n</style>");
+        if (await SnapshotThenCheck(page, images: "none") is not { } run) { Console.WriteLine(Skipped); return; }
+
+        var banner = run.Report.Nodes.Single(n => n.DesignLayer == "banner");
+        Assert.Equal(["borderWidth", "opacity", "shadow"], banner.Diffs.Select(d => d.Prop).Order());
+        Assert.All(banner.Diffs, d => Assert.True(d.Soft));
+    }
+
+    [Fact]
+    public async Task An_image_that_was_already_broken_in_the_baseline_is_not_a_diff()
+    {
+        // 野生實查:gov.tw 有 30 張基準拍下來時就沒載入的圖。兩邊畫面一樣,不是落差
+        var broken = Page("data:image/png;base64,AAAA");
+        if (await SnapshotThenCheck(broken, baseline: broken) is not { } run) { Console.WriteLine(Skipped); return; }
+
+        Assert.Empty(ImageDiffs(run.Report));
+    }
+
+    [Fact]
     public async Task Off_by_default()
     {
         if (await SnapshotThenCheck(Page(SvgDataUri("#FF0000")), images: "none") is not { } run) { Console.WriteLine(Skipped); return; }
@@ -253,7 +276,7 @@ public class ImageComparisonTests
     [Fact]
     public async Task Check_reverse_does_not_compare_images()
     {
-        if (await SnapshotThenCheck(Page(SvgDataUri("#FF0000")), "soft", "--reverse") is not { } run) { Console.WriteLine(Skipped); return; }
+        if (await SnapshotThenCheck(Page(SvgDataUri("#FF0000")), checkArgs: "--reverse") is not { } run) { Console.WriteLine(Skipped); return; }
 
         Assert.Empty(ImageDiffs(run.Report));
     }

@@ -618,7 +618,7 @@ internal static class SnapshotCommand
         // 白名單只在真的測到隨機 id 時才存(anyRandomIds):沒有隨機 id 的站,快照與 1.0 逐位元同形
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(
-            root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null));
+            root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null, styleDefaultsOmitted: true));
 
         Console.WriteLine($"\nwritten: {outPath}");
         foreach (var s in shotPaths) Console.WriteLine($"reference screenshot: {s}");
