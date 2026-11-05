@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1198 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1371 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -104,7 +104,7 @@ dotnet tool install -g Cornhsu.Parity
 - **送什麼 —— 只有計數與區間**:工具版本、作業系統、是不是在 CI、還原度分數、gate 有沒有失敗、頁數、設計來源的種類、
   設計節點與配對節點的總數、各嚴重度的落差數、每個量測屬性有幾筆落差、差多少(分區間)、沒配對到的設計節點依原因的計數,
   以及開了 `compare.extras` 時找到幾個多餘元素。沒有 ID,除非使用者自己在設定檔加一個。
-- **一律不送**:網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、色碼、設計稿內容、token、
+- **一律不送**:網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、色碼、設計稿內容、頁面文字、圖片內容、token、
   repo 名稱、使用者名稱、機器名稱。請求不帶 User-Agent 或 cookie,收集站不存 IP。
 - **送到哪裡、做什麼用**:`stats.cornhsu.com`,學術研究「真實實作離設計稿有多遠」;
   只公開彙總後的結果,每一筆最多保存 3 年([說明](https://stats.cornhsu.com/))。
@@ -160,8 +160,11 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   ],
   "compare": {
     "position": "relative",                  // relative = 比相對位置(預設);none = 不比位置
-    "extras": "none"                         // 選配:"list" = 另外列出設計稿沒有的頁面元素;
+    "extras": "none",                        // 選配:"list" = 另外列出設計稿沒有的頁面元素;
                                              //   只列出、永遠不擋(見下方「設計稿沒有的元素」)
+    "text": "soft",                          // 選配:文字內容。soft = 會列出、不擋(預設);
+                                             //   gate = serious 落差;none = 不比
+    "images": "none"                         // 選配:"soft" = 拿參考圖比圖片內容(只有快照基準與 designImage 有參考圖)
   },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
@@ -267,6 +270,17 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
 
 - **刻意不比絕對位置 x/y**:彈性版面下本來就會不同,比了 = 誤報 = 失去信任
+
+下面這些跟 font-family 一樣都是**軟落差**:會列在報告裡,但不扣分、永遠不擋、`--baseline` 不算新增。刻意先做成軟的,等真實網站測出各自有多吵再說。
+
+- **文字內容**(`text`):靠圖層名配上、文字卻不一樣的。忽略大小寫、空白、看不見的字元與引號樣式;元素有子元素時,設計稿的文字出現在裡面就算對。手動對應的圖層不比(設計系統常用佔位文字),快照基準不比(動態內容每次都不同)。`compare.text: "gate"` 會變成 serious 落差,快照基準也比;`"none"` 關掉。**兩邊的文字會寫進 `report.json` 與 Markdown 報告,每段最多 120 字元**,報告送到哪裡,這些文字就到哪裡
+- **子元件順序**(`childOrder`):自動排版容器的子元件沿主軸的先後不同。用實際的框比,CSS 的 `order`、`row-reverse` 自然算對。會換行的容器、絕對定位的子元件不比
+- **容器對齊**(`mainAxisOffset`、`crossAxisOffset`):子元件到自動排版父層邊的距離。只比距離應該固定的情況:兩邊尺寸都明確是 FIXED、不是文字節點、也沒有 padding 或尺寸落差能解釋這個位移。主軸只比第一個子元件,而且只在 `MIN`、`CENTER`、`MAX` 時比。順序與對齊都跟著 `compare.position`;target 的視窗寬度與設計稿不同時不比,版面可能合法重排
+- **換行數**(`lineCount`):文字佔幾行,量實際的行框。副標換行、下面全被推開時,這就是根因。設計稿那邊用框高除以行高,固定高度的文字框不比
+- **樣式**:`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`opacity`、`borderWidth`、`borderColor`、`shadow`、`shadowColor`、`gradient`。設計稿有寫才比:Figma 節點都有,手寫的設計 JSON 寫了什麼比什麼(`text.fontStyle`、`opacity`、`borderWidth`、`shadows`、`gradient` 等)。看不見的陰影不算,畫面上沒差別的大小寫轉換也不算。透明度比元素自己的,不累積祖先。漸層目前只比頭尾色,不比方向
+- **圖片內容**(`image`,預設關閉):`"compare": { "images": "soft" }` 會從整頁截圖裁出每個 `img`、`svg`、`picture` 與背景圖片,跟參考圖的同一個位置比。參考圖是 `parity snapshot` 基準旁邊的截圖,或 `designImage`。換壓縮格式或縮放不算落差。每頁要多拍一張截圖;Figma 來源還不支援(匯出節點圖會用掉 API 配額),設了會是設定錯誤
+
+舊版拍的快照沒有這些樣式值,重新跑一次 `parity snapshot` 之前不會多出任何落差。
 
 > 設計來源是 Figma 時,報告(`check --md` 寫出或 `parity report` 重生的 Markdown,以及本機 UI)裡的圖層名會**連回 Figma 的那個節點**——設計師點一下直接跳到圖層,不用自己翻。有設 `designFile` 時它優先於 `figmaFileKey`,snapshot/JSON 來源的報告不會有 Figma 連結。
 
@@ -545,11 +559,11 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 | `data.designSource` | `figma`、`snapshot`(`parity snapshot` 寫出的檔)、`file`(其他設計 JSON)或 `image` |
 | `data.designNodes`、`data.matched` | 設計節點數與配對到的節點數,所有頁加總 |
 | `data.severity` | 各嚴重度的落差條數:`critical`、`serious`、`medium`、`minor` |
-| `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`fontFamily` 沒有區間,只有條數 |
+| `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`borderWidth`、`shadow`、`mainAxisOffset`、`crossAxisOffset` 與長度同區間;`borderColor`、`shadowColor`、`gradient` 與顏色同區間;`opacity`、`image` 以 0–1 的差分 <0.05、0.05–0.1、0.1–0.25、0.25–0.5、≥0.5;`lineCount` 以行數差分 1、2、3–4、5 以上。`fontFamily`、`text`、`childOrder`、`fontStyle`、`textDecoration`、`textTransform`、`textAlign` 沒有區間,只有條數,不送文字、圖層名稱或值 |
 | `data.unmatchedBy` | 沒配對到的設計節點,依原因計數:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`,這一版沒列出的原因算 `other`。只列至少有一個節點的原因,全部都配對到是 `{}`。不送圖層名稱 |
 | `data.extras` | `compare.extras` 找到幾個多餘的頁面元素,所有頁加總(截斷前的總數,不受每頁 20 筆的上限影響)。只有開了才有這個欄位。不送 selector、標籤名或框 |
 
-**一律不送:** 網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、顏色值、設計稿內容、token、repo 名稱或 ID、
+**一律不送:** 網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、顏色值、設計稿內容、頁面或設計稿上的文字、圖片內容或圖片雜湊、token、repo 名稱或 ID、
 使用者名稱、機器名稱。請求不帶 User-Agent、不帶 cookie。收集站不存 IP,也不存收到的時間(只記日期);
 收集站架在 Cloudflare 上,Cloudflare 跟任何網路服務商一樣,在邊緣看得到連線位址。
 
