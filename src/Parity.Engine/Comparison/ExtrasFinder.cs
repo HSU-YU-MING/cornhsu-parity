@@ -18,7 +18,7 @@ namespace Parity.Engine.Comparison;
 /// 巢狀時只報最外層一個:一個元素入選後不再往下找,同一塊不會報成一長串。
 /// 不判斷的:擷取端沒有回傳邊框、陰影、opacity、被祖先 overflow 裁掉或被別的元素蓋住——
 /// 只有邊框的元素不會被列出,opacity: 0 的元素可能被列出(README 寫明)。
-/// 結果只是清單:不進 gate、分數、summary、baseline 與匿名統計。
+/// 結果只是清單:不進 gate、分數、summary、baseline。匿名統計只送總數,不送清單內容。
 /// </summary>
 public static class ExtrasFinder
 {

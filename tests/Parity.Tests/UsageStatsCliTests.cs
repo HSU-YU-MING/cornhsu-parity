@@ -98,6 +98,14 @@ public class UsageStatsCliTests
         foreach (var s in new[] { "critical", "serious", "medium", "minor" })
             Assert.Equal(Sum(s), data.GetProperty("severity").GetProperty(s).GetInt32());
 
+        var unmatched = reports.SelectMany(r => r.GetProperty("unmatched").EnumerateArray())
+            .CountBy(u => u.GetProperty("reason").GetString()!)
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal);
+        Assert.Equal(unmatched, data.GetProperty("unmatchedBy").EnumerateObject()
+            .Select(p => KeyValuePair.Create(p.Name, p.Value.GetInt32()))
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal));
+        Assert.False(data.TryGetProperty("extras", out _), "demo 沒開 compare.extras,不該有 extras");
+
         var expected = new Dictionary<string, (int Count, int Missing, int[] Buckets)>(StringComparer.Ordinal);
         foreach (var diff in reports.SelectMany(r => r.GetProperty("nodes").EnumerateArray())
                      .SelectMany(n => n.GetProperty("diffs").EnumerateArray()))
