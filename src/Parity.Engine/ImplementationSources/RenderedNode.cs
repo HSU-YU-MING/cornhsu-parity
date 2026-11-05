@@ -49,6 +49,12 @@ public sealed record RenderedNode(
     /// <summary>元素自己的文字佔幾行(量實際的行框);沒有文字或裡面有區塊子元素時是 null。</summary>
     public int? LineCount { get; init; }
 
+    /// <summary>背景是圖片(background-image: url(…))。</summary>
+    public bool HasBackgroundImage { get; init; }
+
+    /// <summary><c>img</c> 載入失敗(已經完成載入、卻沒有像素)。</summary>
+    public bool ImageBroken { get; init; }
+
     /// <summary>
     /// 整頁文字(只有根節點有;擷取端沒提供 = null,例如假來源與舊測試)。**只給配對用**:
     /// Matcher 拿它判斷設計稿的文字是不是整頁都找不到(<c>text-not-found</c>)。

@@ -170,6 +170,15 @@ public sealed class ParityConfig
             throw new InvalidOperationException(
                 $"config {path}: compare.text is {(Compare.Text is null ? "null" : $"\"{ConsoleText.Safe(Compare.Text)}\"")}, " +
                 "which is not valid (use: soft, gate, none).");
+        if (Compare.Images?.ToLowerInvariant() is not ("none" or "soft"))
+            throw new InvalidOperationException(
+                $"config {path}: compare.images is {(Compare.Images is null ? "null" : $"\"{ConsoleText.Safe(Compare.Images)}\"")}, " +
+                "which is not valid (use: none, soft).");
+        // Figma 要多打一次匯出節點圖的 API,會用掉配額,第一版不做。開了要講清楚,不能安靜地沒有效果
+        if (CompareImages && DesignImage is null && DesignFile is null)
+            throw new InvalidOperationException(
+                $"config {path}: compare.images needs a reference image, which only a parity snapshot baseline or designImage has. " +
+                "Comparing images against Figma is not supported yet: remove compare.images, or use designFile/designImage.");
         if (DesignImage is not null && DesignFile is null)
             throw new InvalidOperationException(
                 $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
@@ -238,6 +247,9 @@ public sealed class ParityConfig
 
     /// <summary>compare.extras:"none"(預設)/ "list"(列出實作端多出來的元件,永遠不擋)。</summary>
     public bool ListExtras => string.Equals(Compare.Extras, "list", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>compare.images:"none"(預設)/ "soft"(比圖片內容,會列出、不擋)。載入時已驗過只有這兩種。</summary>
+    public bool CompareImages => string.Equals(Compare.Images, "soft", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>compare.text:"soft"(預設)/ "gate"(會擋)/ "none"(不比)。載入時已驗過只有這三種。</summary>
     public TextComparison CompareText => Compare.Text.ToLowerInvariant() switch
@@ -377,6 +389,12 @@ public sealed class CompareConfig
     /// "gate":硬落差(serious),會擋,快照基準也比。"none":不比。不分大小寫;其他值載入即報錯。
     /// </summary>
     public string Text { get; set; } = "soft";
+
+    /// <summary>
+    /// 圖片內容比對。"none"(預設):不比,每頁也不必多拍一張整頁截圖。"soft":拿參考圖(快照的參考截圖、designImage)
+    /// 與這次的截圖比,會列出、不扣分、不擋。不分大小寫;其他值載入即報錯。Figma 來源不支援。
+    /// </summary>
+    public string Images { get; set; } = "none";
 }
 
 public sealed class ToleranceConfig

@@ -245,6 +245,8 @@ internal static class CaptureScript
               boxShadow: s.boxShadow,
               textShadow: hasText ? s.textShadow : null,
               backgroundImage: s.backgroundImage.includes('gradient(') ? s.backgroundImage : null,
+              hasBackgroundImage: s.backgroundImage.includes('url('),
+              imageBroken: el.tagName === 'IMG' && el.complete && el.naturalWidth === 0,
               domId: el.id || null,
               classes: (typeof el.className === 'string' && el.className) ? el.className : null,
               ariaLabel: el.getAttribute('aria-label') || el.getAttribute('data-testid') || null,

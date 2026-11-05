@@ -228,6 +228,8 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             CornerRadius = Px(el, "cornerRadius"),
             TextContent = Str(el, "textContent"),
             OutOfFlow = el.TryGetProperty("outOfFlow", out var outOfFlow) && outOfFlow.ValueKind == JsonValueKind.True,
+            HasBackgroundImage = el.TryGetProperty("hasBackgroundImage", out var hasBackgroundImage) && hasBackgroundImage.ValueKind == JsonValueKind.True,
+            ImageBroken = el.TryGetProperty("imageBroken", out var imageBroken) && imageBroken.ValueKind == JsonValueKind.True,
             Opacity = Px(el, "opacity"),
             BorderWidth = Px(el, "borderTopWidth") is { } borderTop
                 ? new Insets(borderTop, Px(el, "borderRightWidth") ?? 0, Px(el, "borderBottomWidth") ?? 0, Px(el, "borderLeftWidth") ?? 0)

@@ -76,7 +76,8 @@ internal static class CheckCommand
             configPath,
             refreshCache: opts.ContainsKey("--refresh"),
             headless: !opts.ContainsKey("--headed"),
-            extrasAllowed: !reverse); // reverse 報告一律不帶多餘元件清單(extras 是 null)
+            extrasAllowed: !reverse, // reverse 報告一律不帶多餘元件清單(extras 是 null)
+            imagesAllowed: !reverse);
 
         Console.WriteLine($"\x1b[1mParity\x1b[0m — property-level design fidelity check\nconfig: {configPath}\n");
 
