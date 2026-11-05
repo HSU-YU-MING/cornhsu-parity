@@ -51,8 +51,19 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         var positionOf = _opts.ComparePosition
             ? BuildPositionContexts(designTree, renderedTree, match.Pairs)
             : new Dictionary<string, PositionContext>();
+        // 子元件順序與容器對齊:compare.position = "none" 不比;視窗寬度與設計稿不同時版面可能合法重排,也不比
+        var reflowed = Math.Abs(implRef.ViewportWidth!.Value - Math.Ceiling(designTree.Box.W)) > 1;
+        var structuralOf = _opts.ComparePosition && !reflowed
+            ? diffEngine.StructuralDiffs(designTree, renderedTree, match.Pairs)
+            : [];
         var nodes = match.Pairs
-            .Select(p => diffEngine.Diff(p, positionOf.GetValueOrDefault(p.Design.Id)))
+            .Select(p =>
+            {
+                var node = diffEngine.Diff(p, positionOf.GetValueOrDefault(p.Design.Id));
+                if (!structuralOf.TryGetValue(p.Design.Id, out var extra)) return node;
+                var diffs = node.Diffs.Concat(extra).ToList();
+                return node with { Diffs = diffs, Severity = diffs.Max(d => d.Severity) };
+            })
             .ToList();
 
         // 5. 彙總

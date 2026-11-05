@@ -26,6 +26,9 @@ public sealed record RenderedNode(
     public string? AriaLabel { get; init; }
     public double? CornerRadius { get; init; }
 
+    /// <summary>position: absolute 或 fixed:不參與版面流,子元件順序與容器對齊都不算它。</summary>
+    public bool OutOfFlow { get; init; }
+
     /// <summary>
     /// 整頁文字(只有根節點有;擷取端沒提供 = null,例如假來源與舊測試)。**只給配對用**:
     /// Matcher 拿它判斷設計稿的文字是不是整頁都找不到(<c>text-not-found</c>)。

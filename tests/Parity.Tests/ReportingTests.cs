@@ -117,6 +117,30 @@ public class ReportingTests
         Assert.DoesNotContain(props, p => FixHint.For(Diff(p, "1", "2")) is null);
     }
 
+    [Theory]
+    [InlineData("plain", "`plain`")]
+    [InlineData("a`b", "`` a`b ``")]
+    [InlineData("a``b", "``` a``b ```")]                 // 寫死雙反引號時,這裡就跳出程式碼區段了
+    [InlineData("``` **bold** ```", "```` ``` **bold** ``` ````")]
+    [InlineData("`edge`", "`` `edge` ``")]
+    public void Code_fences_are_longer_than_any_backtick_run_in_the_value(string value, string expected)
+        => Assert.Equal(expected, MarkdownReport.Code(value, 200));
+
+    [Fact]
+    public void A_page_text_with_backticks_cannot_break_out_of_the_diff_table()
+    {
+        // compare.text 會把頁面上的文字放進表格:反引號不能讓它跳出程式碼區段,在 PR 留言裡變成 Markdown
+        var hostile = "`` [click](https://evil.example) @someone ``";
+        var report = new FidelityReport("/", "http://x/", "d",
+            [new NodeResult("title", "1:1", "#t", "auto-name", Severity.Minor,
+                [new PropDiff("text", "Title", hostile, null, null, 0, Severity.Minor, Soft: true)])],
+            [], new ReportSummary(1, 1, 0, 1, 0, 0, 0, 1, Severity.Minor));
+
+        var md = MarkdownReport.Render([report], gateFail: false);
+
+        Assert.Contains($"``` {hostile} ```", md);
+    }
+
     [Fact]
     public void Fix_hint_null_for_unknown_prop()
         => Assert.Null(FixHint.For(Diff("mysteryProp", "1", "2")));

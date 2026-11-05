@@ -140,8 +140,16 @@ public static class FigmaNodeParser
             LayoutMode = node["layoutMode"]?.GetValue<string>(),
             LayoutSizingHorizontal = node["layoutSizingHorizontal"]?.GetValue<string>(),
             LayoutSizingVertical = node["layoutSizingVertical"]?.GetValue<string>(),
+            LayoutWrap = node["layoutWrap"]?.GetValue<string>(),
+            LayoutPositioning = node["layoutPositioning"]?.GetValue<string>(),
+            // Figma 在預設值 MIN 時會省略這兩個欄位:auto-layout 的節點沒寫就是 MIN,不是「不知道」
+            PrimaryAxisAlignItems = node["primaryAxisAlignItems"]?.GetValue<string>() ?? AutoLayoutDefault(node),
+            CounterAxisAlignItems = node["counterAxisAlignItems"]?.GetValue<string>() ?? AutoLayoutDefault(node),
         };
     }
+
+    private static string? AutoLayoutDefault(JsonNode node)
+        => node["layoutMode"]?.GetValue<string>() is "HORIZONTAL" or "VERTICAL" ? "MIN" : null;
 
     private static DesignNodeType MapType(string? figmaType) => figmaType switch
     {

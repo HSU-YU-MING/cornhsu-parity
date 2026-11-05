@@ -127,6 +127,158 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
     }
 
     /// <summary>
+    /// 要看父層與兄弟才算得出來的落差,依設計節點 Id 分組:自動排版容器裡的子元件順序(childOrder)與對齊(mainAxisOffset、crossAxisOffset)。
+    /// 自動排版的子元件不比相對位置(那會把 padding、gap 的同一個根因報兩次),所以順序對調、對齊跑掉原本完全看不到。
+    /// 都是軟落差。呼叫端在視窗寬度與設計稿不同時不要呼叫:版面可能合法重排。
+    /// </summary>
+    public Dictionary<string, List<PropDiff>> StructuralDiffs(
+        DesignNode designRoot, RenderedNode renderedRoot, IReadOnlyList<NodePair> pairs)
+    {
+        var renderedBy = new Dictionary<string, RenderedNode>();
+        foreach (var p in pairs) renderedBy.TryAdd(p.Design.Id, p.Rendered);
+
+        var result = new Dictionary<string, List<PropDiff>>();
+        List<PropDiff> DiffsOf(string id) => result.TryGetValue(id, out var list) ? list : result[id] = [];
+
+        void Walk(DesignNode parent, RenderedNode? rendered)
+        {
+            if (rendered is not null && (IsAutoLayout(parent) || parent.Padding is not null))
+            {
+                // 不參與版面流的子節點不算;順序照設計稿的位置排
+                var kids = parent.Children
+                    .Where(c => !string.Equals(c.LayoutPositioning, "ABSOLUTE", StringComparison.OrdinalIgnoreCase))
+                    .Where(c => !renderedBy.TryGetValue(c.Id, out var r) || !r.OutOfFlow)
+                    .ToList();
+                var matched = kids.Where(c => renderedBy.ContainsKey(c.Id)).Select(c => (Design: c, Rendered: renderedBy[c.Id])).ToList();
+                var horizontal = IsAutoLayout(parent)
+                    ? string.Equals(parent.LayoutMode, "HORIZONTAL", StringComparison.OrdinalIgnoreCase)
+                    : matched.Count > 1
+                        && Variance(matched.Select(m => m.Design.Box.X)) > Variance(matched.Select(m => m.Design.Box.Y));
+
+                var order = ChildOrderDiff(parent, matched, horizontal);
+                if (order is not null)
+                {
+                    // root 沒有 NodeResult(隱含配對),掛在第一個子元件上
+                    var owner = ReferenceEquals(parent, designRoot) ? matched[0].Design.Id : parent.Id;
+                    DiffsOf(owner).Add(order);
+                }
+                if (IsAutoLayout(parent))
+                    CompareAlignment(parent, rendered, kids, matched, horizontal, skipMainAxis: order is not null, DiffsOf);
+            }
+            foreach (var c in parent.Children) Walk(c, renderedBy.GetValueOrDefault(c.Id));
+        }
+        Walk(designRoot, renderedRoot);
+        return result;
+    }
+
+    private static bool IsAutoLayout(DesignNode n)
+        => string.Equals(n.LayoutMode, "HORIZONTAL", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(n.LayoutMode, "VERTICAL", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>明確寫了 FIXED。對齊只比這種:未知的尺寸(手寫 JSON)比下去,隨內容變動的距離就全是誤報。</summary>
+    private static bool ExplicitlyFixed(string? sizing) => string.Equals(sizing, "FIXED", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 子元件順序:沿主軸比設計稿與頁面上的先後,用實際的框比,所以 CSS 的 order、row-reverse 自然算對。
+    /// 這些情況不比:會換行的容器(第一版)、頁面上換了行(子元件在交叉軸上不重疊,先後沒有意義)、配到的子元件不到兩個。
+    /// 差 1px 以內不算先後,疊在一起的元素不會互換。
+    /// </summary>
+    private static PropDiff? ChildOrderDiff(DesignNode parent, List<(DesignNode Design, RenderedNode Rendered)> kids, bool horizontal)
+    {
+        if (kids.Count < 2 || string.Equals(parent.LayoutWrap, "WRAP", StringComparison.OrdinalIgnoreCase)) return null;
+
+        double Start(Box b) => horizontal ? b.X : b.Y;
+        var (firstStart, firstEnd) = CrossSpan(kids[0].Rendered.Box);
+        (double Start, double End) CrossSpan(Box b) => horizontal ? (b.Y, b.Y + b.H) : (b.X, b.X + b.W);
+        foreach (var (_, r) in kids.Skip(1))
+        {
+            var (s, e) = CrossSpan(r.Box);
+            if (s >= firstEnd || e <= firstStart) return null;
+        }
+
+        var inverted = false;
+        for (var i = 0; i < kids.Count && !inverted; i++)
+            for (var j = i + 1; j < kids.Count; j++)
+            {
+                var designDelta = Start(kids[j].Design.Box) - Start(kids[i].Design.Box);
+                var renderedDelta = Start(kids[j].Rendered.Box) - Start(kids[i].Rendered.Box);
+                if ((designDelta > 1 && renderedDelta < -1) || (designDelta < -1 && renderedDelta > 1))
+                {
+                    inverted = true;
+                    break;
+                }
+            }
+        if (!inverted) return null;
+
+        // 同名的子元件加上設計稿裡的序號,否則期望和實際看起來一模一樣
+        var byDesign = kids.OrderBy(k => Start(k.Design.Box)).ToList();
+        var duplicated = byDesign.GroupBy(k => k.Design.Name).Any(g => g.Count() > 1);
+        string Label((DesignNode Design, RenderedNode Rendered) k)
+            => duplicated ? $"{k.Design.Name} #{byDesign.IndexOf(k) + 1}" : k.Design.Name;
+        return new PropDiff("childOrder",
+            Excerpt(string.Join(", ", byDesign.Select(Label))),
+            Excerpt(string.Join(", ", kids.OrderBy(k => Start(k.Rendered.Box)).Select(Label))),
+            null, null, 0, Severity.Minor, Soft: true);
+    }
+
+    /// <summary>
+    /// 容器對齊:比子元件到父層邊的距離。只比「距離應該固定」的情況,其他原因造成的位移已經有別條落差,不重複報:
+    /// 父層尺寸或 padding 不一樣就整個跳過;交叉軸要父層與子元件都明確是 FIXED,而且子元件尺寸沒差;
+    /// 主軸只比第一個子元件、只比 MIN/CENTER/MAX,CENTER/MAX 還要所有子元件都配到、都是固定尺寸,總長度也沒差。
+    /// 文字節點不比:文字框跟瀏覽器量的本來就不同。
+    /// </summary>
+    private void CompareAlignment(
+        DesignNode parent, RenderedNode rendered, List<DesignNode> kids,
+        List<(DesignNode Design, RenderedNode Rendered)> matched, bool horizontal, bool skipMainAxis,
+        Func<string, List<PropDiff>> diffsOf)
+    {
+        if (parent.Padding is { } pad
+            && (Math.Abs(pad.Top - rendered.Padding.Top) > _tol.SpacingPx || Math.Abs(pad.Right - rendered.Padding.Right) > _tol.SpacingPx
+                || Math.Abs(pad.Bottom - rendered.Padding.Bottom) > _tol.SpacingPx || Math.Abs(pad.Left - rendered.Padding.Left) > _tol.SpacingPx))
+            return;
+
+        double Pos(Box b, bool mainAxis) => horizontal == mainAxis ? b.X : b.Y;
+        double Size(Box b, bool mainAxis) => horizontal == mainAxis ? b.W : b.H;
+        string? Sizing(DesignNode n, bool mainAxis) => horizontal == mainAxis ? n.LayoutSizingHorizontal : n.LayoutSizingVertical;
+        bool SameSize(Box a, Box b, bool mainAxis) => Math.Abs(Size(a, mainAxis) - Size(b, mainAxis)) <= _tol.SizePx;
+        void Offset(DesignNode child, Box actualBox, bool mainAxis)
+        {
+            var expected = Pos(child.Box, mainAxis) - Pos(parent.Box, mainAxis);
+            var actual = Pos(actualBox, mainAxis) - Pos(rendered.Box, mainAxis);
+            var delta = Math.Abs(expected - actual);
+            if (delta > _tol.PositionPx)
+                diffsOf(child.Id).Add(new PropDiff(mainAxis ? "mainAxisOffset" : "crossAxisOffset",
+                    Fmt(expected), Fmt(actual), "px", Math.Round(delta, 2), _tol.PositionPx, Severity.Minor, Soft: true));
+        }
+
+        // 交叉軸:每個子元件各比一次
+        if (ExplicitlyFixed(Sizing(parent, false)) && SameSize(parent.Box, rendered.Box, false)
+            && !string.Equals(parent.CounterAxisAlignItems, "BASELINE", StringComparison.OrdinalIgnoreCase))
+            foreach (var (d, r) in matched)
+                if (d.Type != DesignNodeType.Text && ExplicitlyFixed(Sizing(d, false)) && SameSize(d.Box, r.Box, false))
+                    Offset(d, r.Box, false);
+
+        // 主軸:第一個子元件。順序對調時已經報了 childOrder,這裡的距離沒有意義
+        if (skipMainAxis || matched.Count == 0
+            || parent.PrimaryAxisAlignItems?.ToUpperInvariant() is not ("MIN" or "CENTER" or "MAX")
+            || !ExplicitlyFixed(Sizing(parent, true)) || !SameSize(parent.Box, rendered.Box, true))
+            return;
+        var byDesign = matched.OrderBy(m => Pos(m.Design.Box, true)).ToList();
+        var (first, firstRendered) = byDesign[0];
+        if (first.Type == DesignNodeType.Text) return;
+        if (!parent.PrimaryAxisAlignItems.Equals("MIN", StringComparison.OrdinalIgnoreCase))
+        {
+            // 置中、靠尾:第一個子元件的位置取決於所有子元件的總長度,長度不一樣時位移是別的原因
+            if (matched.Count != kids.Count || byDesign.Any(m => m.Design.Type == DesignNodeType.Text || !ExplicitlyFixed(Sizing(m.Design, true)))) return;
+            var (last, lastRendered) = byDesign[^1];
+            var designSpan = Pos(last.Box, true) + Size(last.Box, true) - Pos(first.Box, true);
+            var renderedSpan = Pos(lastRendered.Box, true) + Size(lastRendered.Box, true) - Pos(firstRendered.Box, true);
+            if (Math.Abs(designSpan - renderedSpan) > _tol.SizePx) return;
+        }
+        Offset(first, firstRendered.Box, true);
+    }
+
+    /// <summary>
     /// 水平參照:「同排(垂直重疊)、右緣可靠、最靠近的左方兄弟」的右緣(取 gap),
     /// 沒有就父層左緣(取 offset)。三個條件各擋一種誤報:
     ///   - 同一個兄弟兩邊都用 → 量同一段距離;中間元素偏掉時,鄰距沒變的不會被連坐
@@ -296,12 +448,13 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
 
         static double VarianceX(List<RenderedNode> ns) => Variance(ns.Select(n => n.Box.X));
         static double VarianceY(List<RenderedNode> ns) => Variance(ns.Select(n => n.Box.Y));
-        static double Variance(IEnumerable<double> xs)
-        {
-            var list = xs.ToList();
-            var mean = list.Average();
-            return list.Sum(v => (v - mean) * (v - mean)) / list.Count;
-        }
+    }
+
+    private static double Variance(IEnumerable<double> xs)
+    {
+        var list = xs.ToList();
+        var mean = list.Average();
+        return list.Sum(v => (v - mean) * (v - mean)) / list.Count;
     }
 
     /// <summary>嚴重度 = 超出容差的倍率:≤3x medium、≤6x serious、>6x critical。</summary>

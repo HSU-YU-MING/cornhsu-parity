@@ -186,6 +186,7 @@ internal static class CaptureScript
               paddingTop: s.paddingTop, paddingRight: s.paddingRight,
               paddingBottom: s.paddingBottom, paddingLeft: s.paddingLeft,
               cornerRadius: s.borderTopLeftRadius,
+              outOfFlow: s.position === 'absolute' || s.position === 'fixed',
               explicitMatch: el.getAttribute('data-parity') || mapped.get(el) || null,
               children
             };

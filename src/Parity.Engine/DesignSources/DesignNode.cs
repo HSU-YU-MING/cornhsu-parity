@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Parity.Engine.Model;
 
 namespace Parity.Engine.DesignSources;
@@ -32,6 +33,24 @@ public sealed record DesignNode(
 
     /// <summary>auto-layout 垂直尺寸模式;語意同水平,決定要不要比高度。</summary>
     public string? LayoutSizingVertical { get; init; }
+
+    // 下面這些是 2.x 的選填加法:沒有值就不寫出來,既有的快照才會逐位元相同(凍結面 6;SnapshotWireTests)
+
+    /// <summary>auto-layout 會不會換行:"WRAP" / "NO_WRAP"。會換行的容器,子元件順序不比(第一版)。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LayoutWrap { get; init; }
+
+    /// <summary>"ABSOLUTE" = 這個子節點不參與父層的 auto-layout,順序與對齊都不算它。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LayoutPositioning { get; init; }
+
+    /// <summary>auto-layout 主軸對齊:"MIN" / "CENTER" / "MAX" / "SPACE_BETWEEN"。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PrimaryAxisAlignItems { get; init; }
+
+    /// <summary>auto-layout 交叉軸對齊:"MIN" / "CENTER" / "MAX" / "BASELINE"。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CounterAxisAlignItems { get; init; }
 
     /// <summary>走訪自己與所有子孫。</summary>
     public IEnumerable<DesignNode> DescendantsAndSelf()

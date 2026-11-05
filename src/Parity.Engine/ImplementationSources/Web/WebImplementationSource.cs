@@ -221,6 +221,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             AriaLabel = Str(el, "ariaLabel"),
             CornerRadius = Px(el, "cornerRadius"),
             TextContent = Str(el, "textContent"),
+            OutOfFlow = el.TryGetProperty("outOfFlow", out var outOfFlow) && outOfFlow.ValueKind == JsonValueKind.True,
         };
 
         static string? Str(JsonElement e, string prop)
