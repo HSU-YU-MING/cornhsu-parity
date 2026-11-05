@@ -48,6 +48,12 @@ public static class SnapshotBuilder
             Children: r.Children.Select(Convert).ToList())
         {
             Characters = isText ? r.Text : null,
+            Opacity = r.Opacity,
+            BorderWidth = r.BorderWidth,
+            BorderColor = r.BorderColor,
+            Shadows = isText ? r.TextShadows : r.Shadows,
+            Gradient = r.Gradient,
+            LineCount = isText ? r.LineCount : null,
         };
     }
 

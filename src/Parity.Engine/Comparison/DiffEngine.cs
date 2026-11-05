@@ -102,9 +102,12 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
                 CompareNum(diffs, "letterSpacing", ls, rls, _tol.FontSizePx);
             if (dt.FontFamily is { } ff && rt.FontFamily is { } rff)
                 CompareFontFamily(diffs, ff, rff); // 軟落差(Figma 名 ≠ CSS font stack)
+            CompareTextStyle(diffs, d, r, dt, rt);
         }
 
         CompareTextContent(diffs, pair);
+        CompareLineCount(diffs, pair);
+        CompareBoxStyle(diffs, pair);
 
         // --- 顏色 ---
         if (d.Fill is { } fill && !fill.IsTransparent)
@@ -406,6 +409,177 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
                 missing ? DiffStatus.Missing : DiffStatus.Mismatch));
         else
             SoftDiff(diffs, "text", shownExpected, shownActual, status: missing ? DiffStatus.Missing : DiffStatus.Mismatch);
+    }
+
+    /// <summary>斜體、底線與刪除線、大小寫、文字對齊。任一邊沒有這項資訊就不比。</summary>
+    private static void CompareTextStyle(List<PropDiff> diffs, DesignNode d, RenderedNode r, Typography dt, Typography rt)
+    {
+        if (dt.FontStyle is { } style && rt.FontStyle is { } actualStyle && !Same(style, actualStyle))
+            SoftDiff(diffs, "fontStyle", style, actualStyle);
+        if (dt.TextDecoration is { } decoration && rt.TextDecoration is { } actualDecoration
+            && !SameWords(decoration, actualDecoration))
+            SoftDiff(diffs, "textDecoration", decoration, actualDecoration);
+        if (dt.TextTransform is { } transform && rt.TextTransform is { } actualTransform && !Same(transform, actualTransform)
+            && !LooksTheSame(d.Characters, r.Text, transform, actualTransform))
+            SoftDiff(diffs, "textTransform", transform, actualTransform);
+        if (dt.TextAlign is { } align && rt.TextAlign is { } actualAlign && !Same(align, actualAlign))
+            SoftDiff(diffs, "textAlign", align, actualAlign);
+
+        static bool Same(string a, string b) => a.Equals(b, StringComparison.OrdinalIgnoreCase);
+        static bool SameWords(string a, string b)
+            => a.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                .SetEquals(b.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// 設計稿直接打大寫字母、頁面用 text-transform: uppercase(或反過來)時,畫面上是一樣的,不算落差。
+    /// 只有轉換真的會改變那段文字才算;中文沒有大小寫,任何轉換都不會改變。
+    /// </summary>
+    private static bool LooksTheSame(string? designText, string? pageText, string designTransform, string pageTransform)
+    {
+        if (designText is { } dt && CssEffects.ApplyTextTransform(pageTransform, dt) == CssEffects.ApplyTextTransform(designTransform, dt)) return true;
+        return pageText is { } pt && CssEffects.ApplyTextTransform(pageTransform, pt) == CssEffects.ApplyTextTransform(designTransform, pt);
+    }
+
+    /// <summary>
+    /// 文字行數:抓「副標換行,下面全被推開」的根因。不比絕對座標,比行數。
+    /// 期望值:快照有量到的就用它;其他用「框高 ÷ 行高」,文字框固定高度時框高跟行數無關,不比。舊快照的框含 padding,算不準,不比。
+    /// </summary>
+    private static void CompareLineCount(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+        if (d.Type != DesignNodeType.Text || r.LineCount is not { } actual) return;
+        var expected = d.LineCount;
+        if (expected is null && pair.MatchedBy != "selector" && d.Text?.LineHeight is > 0
+            && d.TextAutoResize?.ToUpperInvariant() is not ("NONE" or "TRUNCATE"))
+            expected = Math.Max(1, (int)Math.Round(d.Box.H / d.Text.LineHeight!.Value));
+        if (expected is { } e && e != actual)
+            SoftDiff(diffs, "lineCount", e.ToString(CultureInfo.InvariantCulture), actual.ToString(CultureInfo.InvariantCulture), delta: Math.Abs(e - actual));
+    }
+
+    /// <summary>邊框粗細的容差比一般尺寸嚴:1px 的邊框有或沒有,一眼就看得出來。</summary>
+    private const double BorderTolerance = 0.5;
+
+    /// <summary>透明度的容差:0–1 的差。</summary>
+    private const double OpacityTolerance = 0.01;
+
+    /// <summary>陰影位移、模糊、擴散的容差(px)。</summary>
+    private const double ShadowTolerance = 1;
+
+    /// <summary>透明度、邊框、陰影、漸層。任一邊沒有這項資訊就不比,所以舊快照重跑不會多出落差。</summary>
+    private void CompareBoxStyle(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+
+        if (d.Opacity is { } opacity && r.Opacity is { } actualOpacity && Math.Abs(opacity - actualOpacity) > OpacityTolerance)
+            SoftDiff(diffs, "opacity", Fmt(opacity), Fmt(actualOpacity), delta: Math.Round(Math.Abs(opacity - actualOpacity), 2), tolerance: OpacityTolerance);
+
+        if (d.BorderWidth is { } width && r.BorderWidth is { } actualWidth)
+        {
+            var delta = new[]
+            {
+                Math.Abs(width.Top - actualWidth.Top), Math.Abs(width.Right - actualWidth.Right),
+                Math.Abs(width.Bottom - actualWidth.Bottom), Math.Abs(width.Left - actualWidth.Left),
+            }.Max();
+            if (delta > BorderTolerance)
+                SoftDiff(diffs, "borderWidth", Describe(width), Describe(actualWidth), "px", Math.Round(delta, 2), BorderTolerance);
+            else if (d.BorderColor is { } color && r.BorderColor is { } actualColor)
+                CompareColorSoft(diffs, "borderColor", color, actualColor);
+        }
+
+        CompareShadows(diffs, d.Shadows, d.Type == DesignNodeType.Text ? r.TextShadows : r.Shadows);
+        CompareGradient(diffs, pair);
+    }
+
+    /// <summary>
+    /// 陰影。兩邊的順序不一定一樣(Figma 由下往上、CSS 由上往下),所以照「外陰影優先、模糊大的優先」排好再一對一比,
+    /// 位移、模糊、擴散的差取最大。只有一邊有陰影算 missing。多出來的那幾層不比。
+    /// </summary>
+    private void CompareShadows(List<PropDiff> diffs, IReadOnlyList<ShadowSpec>? design, IReadOnlyList<ShadowSpec>? actual)
+    {
+        if (design is null || actual is null || (design.Count == 0 && actual.Count == 0)) return;
+        if (design.Count == 0 || actual.Count == 0)
+        {
+            SoftDiff(diffs, "shadow", Describe(design), Describe(actual), status: DiffStatus.Missing);
+            return;
+        }
+
+        var ds = Sorted(design);
+        var rs = Sorted(actual);
+        var delta = 0.0;
+        var colorDelta = 0.0;
+        (Rgba Expected, Rgba Actual)? worstColor = null;
+        for (var i = 0; i < Math.Min(ds.Count, rs.Count); i++)
+        {
+            if (ds[i].Inset != rs[i].Inset)
+            {
+                SoftDiff(diffs, "shadow", Describe(design), Describe(actual), status: DiffStatus.Missing);
+                return;
+            }
+            delta = Math.Max(delta, new[]
+            {
+                Math.Abs(ds[i].X - rs[i].X), Math.Abs(ds[i].Y - rs[i].Y),
+                Math.Abs(ds[i].Blur - rs[i].Blur), Math.Abs(ds[i].Spread - rs[i].Spread),
+            }.Max());
+            var de = ColorDelta.Ciede2000(ds[i].Color, rs[i].Color);
+            if (de > colorDelta) (colorDelta, worstColor) = (de, (ds[i].Color, rs[i].Color));
+        }
+        if (delta > ShadowTolerance)
+            SoftDiff(diffs, "shadow", Describe(design), Describe(actual), delta: Math.Round(delta, 2), tolerance: ShadowTolerance);
+        if (worstColor is { } w) CompareColorSoft(diffs, "shadowColor", w.Expected, w.Actual);
+
+        static List<ShadowSpec> Sorted(IReadOnlyList<ShadowSpec> list)
+            => [.. list.OrderBy(s => s.Inset).ThenByDescending(s => s.Blur).ThenBy(s => s.X).ThenBy(s => s.Y)];
+    }
+
+    /// <summary>
+    /// 漸層:只有一邊有算 missing;兩邊都有就比頭尾色,方向第一版不比,所以頭尾對調也算一樣(取兩種配法裡差比較小的)。
+    /// 「設計稿是純色、頁面是漸層」只有設計稿明確是純色才算;舊快照沒記漸層,不能當作「沒有」。
+    /// </summary>
+    private void CompareGradient(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+        if (d.Gradient is { } gradient)
+        {
+            if (r.Gradient is not { } actual)
+            {
+                SoftDiff(diffs, "gradient", Describe(gradient), NoGradient, status: DiffStatus.Missing);
+                return;
+            }
+            if (gradient is { Start: { } a, End: { } b } && actual is { Start: { } c, End: { } e })
+            {
+                var straight = Math.Max(ColorDelta.Ciede2000(a, c), ColorDelta.Ciede2000(b, e));
+                var flipped = Math.Max(ColorDelta.Ciede2000(a, e), ColorDelta.Ciede2000(b, c));
+                var delta = Math.Min(straight, flipped);
+                if (delta > _tol.ColorDeltaE)
+                    SoftDiff(diffs, "gradient", Describe(gradient), Describe(actual), delta: Math.Round(delta, 2), tolerance: _tol.ColorDeltaE);
+            }
+        }
+        else if (r.Gradient is { } only && d.Type != DesignNodeType.Text && pair.MatchedBy != "selector" && d.Fill is { IsTransparent: false })
+        {
+            SoftDiff(diffs, "gradient", NoGradient, Describe(only), status: DiffStatus.Missing);
+        }
+    }
+
+    private const string NoGradient = "(no gradient)";
+
+    private static string Describe(Insets w)
+        => w.Top == w.Right && w.Right == w.Bottom && w.Bottom == w.Left
+            ? Fmt(w.Top)
+            : $"{Fmt(w.Top)} {Fmt(w.Right)} {Fmt(w.Bottom)} {Fmt(w.Left)}";
+
+    private static string Describe(IReadOnlyList<ShadowSpec> shadows)
+        => shadows.Count == 0 ? "none" : string.Join(", ", shadows.Select(s =>
+            $"{(s.Inset ? "inset " : "")}{Fmt(s.X)}px {Fmt(s.Y)}px {Fmt(s.Blur)}px {Fmt(s.Spread)}px"));
+
+    private static string Describe(GradientSpec g)
+        => g is { Start: { } a, End: { } b } ? $"{a.ToHex()} → {b.ToHex()}" : "(gradient)";
+
+    private void CompareColorSoft(List<PropDiff> diffs, string prop, Rgba expected, Rgba actual)
+    {
+        var deltaE = ColorDelta.Ciede2000(expected, actual);
+        if (deltaE > _tol.ColorDeltaE)
+            SoftDiff(diffs, prop, expected.ToHex(), actual.ToHex(), delta: Math.Round(deltaE, 2), tolerance: _tol.ColorDeltaE);
     }
 
     /// <summary>報告用的文字:壓空白、太長的截斷。</summary>

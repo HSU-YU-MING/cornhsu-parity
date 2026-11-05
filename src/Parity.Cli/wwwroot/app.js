@@ -151,7 +151,7 @@ function nodeItem(n, open) {
     const table = document.createElement('table');
     table.className = 'diff-table';
     for (const diff of n.diffs) {
-      const isColor = diff.prop === 'color' || diff.prop === 'background';
+      const isColor = ['color', 'background', 'borderColor', 'shadowColor'].includes(diff.prop);
       const row = table.insertRow();
       row.insertCell().textContent = diff.prop + (diff.soft ? ' ⁽soft⁾' : '');
       const exp = row.insertCell(); exp.className = 'exp';

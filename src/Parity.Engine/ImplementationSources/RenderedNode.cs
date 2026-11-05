@@ -29,6 +29,26 @@ public sealed record RenderedNode(
     /// <summary>position: absolute 或 fixed:不參與版面流,子元件順序與容器對齊都不算它。</summary>
     public bool OutOfFlow { get; init; }
 
+    /// <summary>元素自己的 opacity(不累積祖先)。</summary>
+    public double? Opacity { get; init; }
+
+    public Insets? BorderWidth { get; init; }
+
+    /// <summary>第一條有粗細的邊的顏色;沒有邊框是 null。</summary>
+    public Rgba? BorderColor { get; init; }
+
+    /// <summary>box-shadow。看不見的陰影不算(<see cref="CssEffects.ParseShadows"/>)。</summary>
+    public IReadOnlyList<ShadowSpec>? Shadows { get; init; }
+
+    /// <summary>text-shadow;元素沒有文字時是 null。</summary>
+    public IReadOnlyList<ShadowSpec>? TextShadows { get; init; }
+
+    /// <summary>background-image 的第一個漸層;沒有漸層是 null。</summary>
+    public GradientSpec? Gradient { get; init; }
+
+    /// <summary>元素自己的文字佔幾行(量實際的行框);沒有文字或裡面有區塊子元素時是 null。</summary>
+    public int? LineCount { get; init; }
+
     /// <summary>
     /// 整頁文字(只有根節點有;擷取端沒提供 = null,例如假來源與舊測試)。**只給配對用**:
     /// Matcher 拿它判斷設計稿的文字是不是整頁都找不到(<c>text-not-found</c>)。

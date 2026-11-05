@@ -208,7 +208,13 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                 FontSize: Px(el, "fontSize"),
                 FontWeight: Px(el, "fontWeight"),
                 LineHeight: Px(el, "lineHeight"),
-                LetterSpacing: Px(el, "letterSpacing")),
+                LetterSpacing: Px(el, "letterSpacing"))
+            {
+                FontStyle = Str(el, "fontStyle"),
+                TextDecoration = Str(el, "textDecoration"),
+                TextTransform = Str(el, "textTransform"),
+                TextAlign = Str(el, "textAlign"),
+            },
             Padding: new Insets(
                 Px(el, "paddingTop") ?? 0, Px(el, "paddingRight") ?? 0,
                 Px(el, "paddingBottom") ?? 0, Px(el, "paddingLeft") ?? 0),
@@ -222,6 +228,15 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             CornerRadius = Px(el, "cornerRadius"),
             TextContent = Str(el, "textContent"),
             OutOfFlow = el.TryGetProperty("outOfFlow", out var outOfFlow) && outOfFlow.ValueKind == JsonValueKind.True,
+            Opacity = Px(el, "opacity"),
+            BorderWidth = Px(el, "borderTopWidth") is { } borderTop
+                ? new Insets(borderTop, Px(el, "borderRightWidth") ?? 0, Px(el, "borderBottomWidth") ?? 0, Px(el, "borderLeftWidth") ?? 0)
+                : null,
+            BorderColor = Color(el, "borderColor"),
+            Shadows = CssEffects.ParseShadows(Str(el, "boxShadow")),
+            TextShadows = CssEffects.ParseShadows(Str(el, "textShadow")),
+            Gradient = CssEffects.ParseGradient(Str(el, "backgroundImage")),
+            LineCount = el.TryGetProperty("lineCount", out var lineCount) && lineCount.ValueKind == JsonValueKind.Number ? lineCount.GetInt32() : null,
         };
 
         static string? Str(JsonElement e, string prop)

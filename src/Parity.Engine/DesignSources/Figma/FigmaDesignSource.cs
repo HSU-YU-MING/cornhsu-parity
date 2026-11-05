@@ -145,8 +145,78 @@ public static class FigmaNodeParser
             // Figma 在預設值 MIN 時會省略這兩個欄位:auto-layout 的節點沒寫就是 MIN,不是「不知道」
             PrimaryAxisAlignItems = node["primaryAxisAlignItems"]?.GetValue<string>() ?? AutoLayoutDefault(node),
             CounterAxisAlignItems = node["counterAxisAlignItems"]?.GetValue<string>() ?? AutoLayoutDefault(node),
+            Opacity = GetDouble(node, "opacity") ?? 1.0, // Figma 在 1 時會省略
+            BorderWidth = ParseBorderWidth(node),
+            BorderColor = ParseBorderColor(node),
+            Shadows = ParseShadows(node["effects"] as JsonArray),
+            Gradient = ParseGradient(node["fills"] as JsonArray),
+            TextAutoResize = type == DesignNodeType.Text
+                ? node["style"]?["textAutoResize"]?.GetValue<string>() ?? "NONE" // Figma 在預設值 NONE 時會省略
+                : null,
         };
     }
+
+    /// <summary>
+    /// 邊框只看畫成方框的節點:文字的 stroke 是文字描邊,LINE/VECTOR 的 stroke 就是圖形本身,都不是 CSS 的 border。
+    /// 沒有可見的 stroke 就是四邊 0。粗細每邊不同時 Figma 給 individualStrokeWeights。
+    /// </summary>
+    private static Insets? ParseBorderWidth(JsonNode node)
+    {
+        if (node["type"]?.GetValue<string>() is not ("FRAME" or "RECTANGLE" or "ELLIPSE" or "COMPONENT" or "COMPONENT_SET" or "INSTANCE"))
+            return null;
+        var visible = (node["strokes"] as JsonArray)?.Any(s => s is not null && s["visible"]?.GetValue<bool>() != false) == true;
+        if (!visible) return new Insets(0, 0, 0, 0);
+        if (node["individualStrokeWeights"] is { } each)
+            return new Insets(GetDouble(each, "top") ?? 0, GetDouble(each, "right") ?? 0, GetDouble(each, "bottom") ?? 0, GetDouble(each, "left") ?? 0);
+        var weight = GetDouble(node, "strokeWeight") ?? 0;
+        return new Insets(weight, weight, weight, weight);
+    }
+
+    private static Rgba? ParseBorderColor(JsonNode node)
+        => ParseBorderWidth(node) is { } width && (width.Top > 0 || width.Right > 0 || width.Bottom > 0 || width.Left > 0)
+            ? ParseSolidFill(node["strokes"] as JsonArray, 1.0)
+            : null;
+
+    /// <summary>可見的 DROP_SHADOW / INNER_SHADOW。Figma 的 radius 就是 CSS 的模糊半徑(它自己的 Inspect 面板也這樣換)。</summary>
+    private static List<ShadowSpec> ParseShadows(JsonArray? effects)
+    {
+        var result = new List<ShadowSpec>();
+        foreach (var e in effects ?? [])
+        {
+            if (e is null || e["visible"]?.GetValue<bool>() == false) continue;
+            var kind = e["type"]?.GetValue<string>();
+            if (kind is not ("DROP_SHADOW" or "INNER_SHADOW")) continue;
+            result.Add(new ShadowSpec(
+                GetDouble(e["offset"], "x") ?? 0, GetDouble(e["offset"], "y") ?? 0,
+                GetDouble(e, "radius") ?? 0, GetDouble(e, "spread") ?? 0,
+                ToRgba(e["color"], 1.0), kind == "INNER_SHADOW"));
+        }
+        return result;
+    }
+
+    /// <summary>第一個可見的漸層填色,頭尾色照色標位置排。</summary>
+    private static GradientSpec? ParseGradient(JsonArray? fills)
+    {
+        foreach (var fill in fills ?? [])
+        {
+            if (fill is null || fill["visible"]?.GetValue<bool>() == false) continue;
+            if (fill["type"]?.GetValue<string>()?.StartsWith("GRADIENT_", StringComparison.Ordinal) != true) continue;
+            var stops = (fill["gradientStops"] as JsonArray)?.Where(s => s is not null)
+                .OrderBy(s => GetDouble(s, "position") ?? 0).ToList();
+            var opacity = GetDouble(fill, "opacity") ?? 1.0;
+            return stops is { Count: >= 2 }
+                ? new GradientSpec(ToRgba(stops[0]!["color"], opacity), ToRgba(stops[^1]!["color"], opacity))
+                : new GradientSpec();
+        }
+        return null;
+    }
+
+    /// <summary>Figma 色值 0–1 → 0–255。</summary>
+    private static Rgba ToRgba(JsonNode? c, double opacity) => new(
+        To255(GetDouble(c, "r")), To255(GetDouble(c, "g")), To255(GetDouble(c, "b")),
+        Math.Clamp((GetDouble(c, "a") ?? 1.0) * opacity, 0, 1));
+
+    private static byte To255(double? v) => (byte)Math.Clamp(Math.Round((v ?? 0) * 255), 0, 255);
 
     private static string? AutoLayoutDefault(JsonNode node)
         => node["layoutMode"]?.GetValue<string>() is "HORIZONTAL" or "VERTICAL" ? "MIN" : null;
@@ -180,14 +250,9 @@ public static class FigmaNodeParser
             if (fill["type"]?.GetValue<string>() != "SOLID") continue;
             var c = fill["color"];
             if (c is null) continue;
-            var opacity = (GetDouble(fill, "opacity") ?? 1.0) * nodeOpacity;
-            return new Rgba(
-                To255(GetDouble(c, "r")), To255(GetDouble(c, "g")), To255(GetDouble(c, "b")),
-                Math.Clamp((GetDouble(c, "a") ?? 1.0) * opacity, 0, 1));
+            return ToRgba(c, (GetDouble(fill, "opacity") ?? 1.0) * nodeOpacity);
         }
         return null;
-
-        static byte To255(double? v) => (byte)Math.Clamp(Math.Round((v ?? 0) * 255), 0, 255);
     }
 
     /// <summary>style.fontSize/fontWeight/letterSpacing/lineHeightPx 直接對應 CSS。</summary>
@@ -199,7 +264,35 @@ public static class FigmaNodeParser
             FontSize: GetDouble(style, "fontSize"),
             FontWeight: GetDouble(style, "fontWeight"),
             LineHeight: GetDouble(style, "lineHeightPx"),
-            LetterSpacing: GetDouble(style, "letterSpacing"));
+            LetterSpacing: GetDouble(style, "letterSpacing"))
+        {
+            // Figma 在預設值時會省略這些欄位:節點是 Figma 來的,沒寫就是預設值,不是「不知道」。都換成 CSS 的字彙
+            FontStyle = style["italic"]?.GetValue<bool>() == true ? "italic" : "normal",
+            TextDecoration = style["textDecoration"]?.GetValue<string>() switch
+            {
+                "UNDERLINE" => "underline",
+                "STRIKETHROUGH" => "line-through",
+                _ => "none",
+            },
+            TextTransform = style["textCase"]?.GetValue<string>() switch
+            {
+                "UPPER" => "uppercase",
+                "LOWER" => "lowercase",
+                "TITLE" => "capitalize",
+                "SMALL_CAPS" or "SMALL_CAPS_FORCED" => "small-caps",
+                _ => "none",
+            },
+            // 文字框隨內容縮放時,框就是文字的大小,對齊沒有視覺意義
+            TextAlign = style["textAutoResize"]?.GetValue<string>() == "WIDTH_AND_HEIGHT" ? null
+                : style["textAlignHorizontal"]?.GetValue<string>() switch
+                {
+                    "LEFT" => "left",
+                    "CENTER" => "center",
+                    "RIGHT" => "right",
+                    "JUSTIFIED" => "justify",
+                    _ => null,
+                },
+        };
     }
 
     /// <summary>auto-layout 的 padding 四邊;沒有 auto-layout 的節點回 null(就不比)。</summary>

@@ -268,7 +268,7 @@ internal static class CheckCommand
                 $"[{node.Severity.ToString().ToLowerInvariant()}] ({ConsoleText.Safe(node.MatchedBy)})");
             foreach (var diff in node.Diffs)
             {
-                var isColor = diff.Prop is "color" or "background";
+                var isColor = diff.Prop is "color" or "background" or "borderColor" or "shadowColor" or "gradient";
                 var expected = isColor ? diff.Expected : $"{diff.Expected}{diff.Unit}";
                 var actual = isColor
                     ? $"{diff.Actual}{(diff.Delta is { } de ? $" (ΔE {de})" : "")}"

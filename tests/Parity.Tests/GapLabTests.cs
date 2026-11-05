@@ -189,15 +189,21 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
             0, [], []),
         // 圖片換成另一張同尺寸的:圖片內容不比
         new("G6", "圖片換錯", Group.Lab, Swap(BlueSvg, RedSvg), 0, [], []),
-        // 透明度、邊框、陰影都不比
-        new("G7", "樣式", Group.Lab, Css("button.cta-button{opacity:.2;border:4px solid #000;box-shadow:0 0 30px #000}"), 0, [], []),
-        // 斜體、底線、大小寫轉換都不比
-        new("G8", "文字樣式", Group.Lab, Css("h1.page-title{font-style:italic;text-decoration:underline;text-transform:uppercase}"), 0, [], []),
-        // 文字對齊不比
-        new("G9", "文字對齊", Group.Lab, Css("button.cta-button{text-align:left}"), 0, [], []),
+        // 透明度、邊框、陰影、漸層:軟落差(設計稿要有寫才比,LabDesign 補上了)
+        new("G7", "樣式", Group.Lab, Css("button.cta-button{opacity:.2;border:4px solid #000;box-shadow:0 0 30px #000}"), 0,
+            ["cta-button.borderWidth (soft)", "cta-button.opacity (soft)", "cta-button.shadow (soft)"], []),
+        new("G7-gradient", "漸層", Group.Lab, Css("button.cta-button{background-image:linear-gradient(#ff0000,#0000ff)}"), 0,
+            ["cta-button.gradient (soft)"], []),
+        // Tailwind 的元素預設就帶這種看不見的陰影:不算有陰影
+        new("G7-invisible", "看不見的陰影", Group.Lab, Css("button.cta-button{box-shadow:0 0 #0000,0 0 #0000}"), 0, [], []),
+        // 斜體、底線、大小寫轉換:軟落差
+        new("G8", "文字樣式", Group.Lab, Css("h1.page-title{font-style:italic;text-decoration:underline;text-transform:uppercase}"), 0,
+            ["page-title.fontStyle (soft)", "page-title.textDecoration (soft)", "page-title.textTransform (soft)"], []),
+        // 文字對齊:軟落差
+        new("G9", "文字對齊", Group.Lab, Css("button.cta-button{text-align:left}"), 0, ["cta-label.textAlign (soft)"], []),
         // 副標題擠成五行、下方全部推開 96px(G10_… 那條驗這件事真的發生了):文字節點既不比尺寸、也不當位置目標,
-        // 其他元件的相對位置是對最近的已配對兄弟算的,跟著一起移就沒有偏移
-        new("G10", "換行", Group.Lab, Css("p.subtitle{width:60px}"), 0, [], []),
+        // 其他元件的相對位置是對最近的已配對兄弟算的,跟著一起移就沒有偏移。根因另外比:行數,軟落差
+        new("G10", "換行", Group.Lab, Css("p.subtitle{width:60px}"), 0, ["subtitle.lineCount (soft)"], []),
         // 設計稿垂直置中、頁面靠上,差 40px:自動排版的子元件不比相對位置,對齊另外比,是軟落差
         new("G11", "容器對齊", Group.Align, Same, 0, ["align-chip.crossAxisOffset (soft)"], [], Frame: "3:1"),
         // 主軸也一樣:設計稿靠左(MIN),頁面置中
@@ -321,6 +327,22 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
                 { "id": "1:14", "name": "hero-image", "type": "Shape",
                   "box": { "x": 40, "y": 400, "width": 120, "height": 64 }, "children": [] }
                 """));
+
+            // 樣式屬性要設計稿有寫才比:Figma 來的節點都有,手寫的 demo 沒有,這裡補上(值與基準頁相同,列 00 才會零落差)
+            IEnumerable<JsonNode> Walk(JsonNode n) =>
+                new[] { n }.Concat((n["children"]?.AsArray() ?? []).SelectMany(c => Walk(c!)));
+            var byName = Walk(root).ToDictionary(n => (string)n["name"]!);
+
+            var title = byName["page-title"]["text"]!;
+            title["fontStyle"] = "normal";
+            title["textDecoration"] = "none";
+            title["textTransform"] = "none";
+            byName["subtitle"]["text"]!["lineHeight"] = 24;
+            byName["cta-label"]["text"]!["textAlign"] = "center";
+            var button = byName["cta-button"];
+            button["opacity"] = 1;
+            button["borderWidth"] = JsonNode.Parse("""{ "top": 0, "right": 0, "bottom": 0, "left": 0 }""");
+            button["shadows"] = new JsonArray();
             return root.ToJsonString();
         }
 

@@ -52,6 +52,36 @@ public sealed record DesignNode(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? CounterAxisAlignItems { get; init; }
 
+    /// <summary>節點自己的透明度(0–1)。祖先的不累積:祖先差了,報在祖先身上一次就好。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Opacity { get; init; }
+
+    /// <summary>邊框四邊的粗細。null = 不知道(不比);沒有邊框是四邊都 0。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Insets? BorderWidth { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Rgba? BorderColor { get; init; }
+
+    /// <summary>陰影。null = 不知道(不比);空清單 = 設計上沒有陰影。文字節點是 text-shadow,其他是 box-shadow。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ShadowSpec>? Shadows { get; init; }
+
+    /// <summary>漸層填色。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GradientSpec? Gradient { get; init; }
+
+    /// <summary>文字行數(快照量到的)。Figma 與手寫 JSON 沒有這欄,用「框高 ÷ 行高」算。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LineCount { get; init; }
+
+    /// <summary>
+    /// Figma 文字框的縮放方式:"NONE"(固定高度)/ "HEIGHT" / "WIDTH_AND_HEIGHT" / "TRUNCATE"。
+    /// 固定高度時框高跟行數無關,不能拿來算行數。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TextAutoResize { get; init; }
+
     /// <summary>走訪自己與所有子孫。</summary>
     public IEnumerable<DesignNode> DescendantsAndSelf()
     {

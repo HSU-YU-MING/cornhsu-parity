@@ -103,6 +103,7 @@ public class ReportingTests
         [
             "px", // PropDiff 的 Unit 欄位
             "explicit", "selector", // NodePair.MatchedBy 的值
+            "none", // 沒有陰影時報告上顯示的值
             // NoTextTags:這些元素的文字不在子節點裡
             "input", "textarea", "select", "img", "svg", "canvas", "video", "audio", "iframe", "object", "embed", "picture",
         ];
