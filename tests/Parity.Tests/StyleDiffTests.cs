@@ -245,8 +245,116 @@ public class StyleDiffTests
     public void An_old_snapshot_is_not_assumed_to_have_no_gradient()
         => Assert.Empty(Diffs(Design("1", "hero", fill: Blue), Rendered("div", background: Blue) with { Gradient = new GradientSpec(Red, Blue) }, "selector"));
 
+    [Theory]
+    [InlineData(0, 0.5, 1, 0.5, 90)]      // 左 → 右
+    [InlineData(0.5, 0, 0.5, 1, 180)]     // 上 → 下
+    [InlineData(1, 0.5, 0, 0.5, 270)]     // 右 → 左
+    [InlineData(0.5, 1, 0.5, 0, 0)]       // 下 → 上
+    public void Figma_gradient_handles_become_a_css_angle(double x0, double y0, double x1, double y1, double angle)
+    {
+        var node = Figma($$"""
+            { "id": "1", "name": "f", "type": "FRAME", "absoluteBoundingBox": { "x": 0, "y": 0, "width": 200, "height": 100 },
+              "fills": [{ "type": "GRADIENT_LINEAR",
+                "gradientHandlePositions": [{ "x": {{x0}}, "y": {{y0}} }, { "x": {{x1}}, "y": {{y1}} }, { "x": 0, "y": 0 }],
+                "gradientStops": [{ "position": 0, "color": { "r": 1, "g": 0, "b": 0, "a": 1 } }, { "position": 1, "color": { "r": 0, "g": 0, "b": 1, "a": 1 } }] }] }
+            """);
+
+        Assert.Equal(angle, node.Gradient!.Angle!.Value, 3);
+    }
+
     [Fact]
-    public void Gradient_end_colors_are_compared_but_not_their_direction()
+    public void Figma_gradient_handles_use_the_real_box_proportions()
+    {
+        // 對角線:正規化座標是 45 度,但框是 300×100,畫面上的方向要乘上寬高
+        var node = Figma("""
+            { "id": "1", "name": "f", "type": "FRAME", "absoluteBoundingBox": { "x": 0, "y": 0, "width": 300, "height": 100 },
+              "fills": [{ "type": "GRADIENT_LINEAR",
+                "gradientHandlePositions": [{ "x": 0, "y": 1 }, { "x": 1, "y": 0 }, { "x": 0, "y": 0 }],
+                "gradientStops": [{ "position": 0, "color": { "r": 1, "g": 0, "b": 0, "a": 1 } }, { "position": 1, "color": { "r": 0, "g": 0, "b": 1, "a": 1 } }] }] }
+            """);
+
+        Assert.Equal(Math.Atan2(300, 100) * 180 / Math.PI, node.Gradient!.Angle!.Value, 3);
+    }
+
+    [Theory]
+    [InlineData("GRADIENT_RADIAL", "radial")]
+    [InlineData("GRADIENT_ANGULAR", "conic")]
+    [InlineData("GRADIENT_DIAMOND", null)]
+    public void Figma_gradient_kinds_map_to_css(string figma, string? css)
+    {
+        var node = Figma($$"""{ "id": "1", "name": "f", "type": "FRAME", "fills": [{ "type": "{{figma}}" }] }""");
+
+        Assert.Equal(css, node.Gradient!.Kind);
+        Assert.Null(node.Gradient.Angle);
+    }
+
+    [Theory]
+    [InlineData("linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 180.0)]  // 沒寫方向預設往下
+    [InlineData("linear-gradient(90deg, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 90.0)]
+    [InlineData("linear-gradient(-90deg, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 270.0)]
+    [InlineData("linear-gradient(0.25turn, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 90.0)]
+    [InlineData("linear-gradient(to right, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 90.0)]
+    [InlineData("linear-gradient(to left, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 270.0)]
+    [InlineData("linear-gradient(to top right, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", null)] // 要看框的比例
+    [InlineData("repeating-linear-gradient(45deg, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 45.0)]
+    [InlineData("radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))", "radial", null)]
+    [InlineData("conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))", "conic", null)]
+    public void Css_gradient_kind_and_direction_are_parsed(string css, string kind, double? angle)
+    {
+        var g = CssEffects.ParseGradient(css)!;
+
+        Assert.Equal(kind, g.Kind);
+        Assert.Equal(angle, g.Angle);
+        Assert.Equal(new Rgba(255, 0, 0), g.Start);
+        Assert.Equal(new Rgba(0, 0, 255), g.End);
+    }
+
+    [Fact]
+    public void A_gradient_pointing_another_way_is_a_diff_without_a_color_difference()
+    {
+        var diff = Assert.Single(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Kind = "linear", Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) { Kind = "linear", Angle = 180 } }));
+
+        AssertSoft(diff, "gradient", "#FF0000 → #0000FF, 90deg", "#FF0000 → #0000FF, 180deg");
+        Assert.Null(diff.Delta); // 統計上 gradient 的區間是色差,方向不一樣只算條數
+    }
+
+    [Theory]
+    [InlineData(92)]   // 容差內
+    [InlineData(450)]  // 繞一圈
+    public void Gradient_angles_within_tolerance_are_the_same(double actual)
+        => Assert.Empty(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) { Angle = actual } }));
+
+    [Fact]
+    public void Swapped_colors_turned_around_are_the_same_gradient()
+        => Assert.Empty(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Blue, Red) { Angle = 270 } }));
+
+    [Fact]
+    public void Swapped_colors_pointing_the_same_way_are_a_diff()
+        => Assert.Equal("gradient", Assert.Single(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Blue, Red) { Angle = 90 } })).Prop);
+
+    [Fact]
+    public void A_different_gradient_kind_is_a_diff()
+        => AssertSoft(Assert.Single(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Kind = "linear" } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) { Kind = "radial" } })),
+            "gradient", "#FF0000 → #0000FF", "radial #FF0000 → #0000FF");
+
+    [Fact]
+    public void An_unknown_direction_is_not_compared()
+        => Assert.Empty(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) })); // to top right
+
+    [Fact]
+    public void Gradient_end_colors_are_compared_when_no_direction_is_known()
     {
         var design = Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) };
 
@@ -413,7 +521,10 @@ public class StyleDiffTests
               { "position": 0, "color": { "r": 1, "g": 0, "b": 0, "a": 1 } } ] }] }
             """);
 
-        Assert.Equal(new GradientSpec(new Rgba(255, 0, 0), new Rgba(0, 0, 255)), node.Gradient);
+        Assert.Equal(new Rgba(255, 0, 0), node.Gradient!.Start);
+        Assert.Equal(new Rgba(0, 0, 255), node.Gradient.End);
+        Assert.Equal("linear", node.Gradient.Kind);
+        Assert.Null(node.Gradient.Angle); // 沒有 gradientHandlePositions
         Assert.Null(Figma("""{ "id": "1", "name": "f", "type": "FRAME", "fills": [{ "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1 } }] }""").Gradient);
     }
 

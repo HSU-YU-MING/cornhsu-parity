@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace Parity.Engine.Model;
@@ -5,8 +7,17 @@ namespace Parity.Engine.Model;
 /// <summary>一個陰影(box-shadow、text-shadow、Figma 的 DROP_SHADOW / INNER_SHADOW)。長度單位是 px。</summary>
 public sealed record ShadowSpec(double X, double Y, double Blur, double Spread, Rgba Color, bool Inset = false);
 
-/// <summary>漸層的端點色。第一版不比方向與中間的色標;解析不出來的色彩空間是 null(只知道「有漸層」)。</summary>
-public sealed record GradientSpec(Rgba? Start = null, Rgba? End = null);
+/// <summary>漸層的端點色、種類與方向。不比中間的色標;解析不出來的色彩空間是 null(只知道「有漸層」)。</summary>
+public sealed record GradientSpec(Rgba? Start = null, Rgba? End = null)
+{
+    /// <summary>"linear" / "radial" / "conic"。null = 不知道(Figma 的 DIAMOND 在 CSS 沒有對應)。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Kind { get; init; }
+
+    /// <summary>線性漸層的方向,用 CSS 的角度:0 = 往上、90 = 往右。null = 不是線性,或是要看框的比例才知道的(to top right)。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Angle { get; init; }
+}
 
 /// <summary>把 getComputedStyle 的字串解析成可以比較的值。純函式。</summary>
 public static partial class CssEffects
@@ -39,14 +50,15 @@ public static partial class CssEffects
         return result;
     }
 
-    /// <summary>解析 background-image 的計算值:第一個漸層的頭尾色。沒有漸層(none、url())回 null。</summary>
+    /// <summary>解析 background-image 的計算值:第一個漸層的種類、方向與頭尾色。沒有漸層(none、url())回 null。</summary>
     public static GradientSpec? ParseGradient(string? css)
     {
         if (string.IsNullOrEmpty(css)) return null;
-        var at = css.IndexOf("gradient(", StringComparison.OrdinalIgnoreCase);
-        if (at < 0) return null;
+        var head = GradientHead().Match(css);
+        if (!head.Success) return null;
 
-        var start = at + "gradient(".Length;
+        var kind = head.Groups[1].Value.ToLowerInvariant();
+        var start = head.Index + head.Length;
         var depth = 1;
         var end = start;
         while (end < css.Length && depth > 0)
@@ -55,10 +67,48 @@ public static partial class CssEffects
             else if (css[end] == ')') depth--;
             end++;
         }
+        var body = css[start..Math.Max(start, end - 1)];
         var colors = new List<Rgba>();
-        foreach (Match m in ColorToken().Matches(css[start..end]))
+        foreach (Match m in ColorToken().Matches(body))
             if (Rgba.TryParseCss(m.Value, out var c)) colors.Add(c);
-        return colors.Count >= 2 ? new GradientSpec(colors[0], colors[^1]) : new GradientSpec();
+        var angle = kind == "linear" ? LinearAngle(body) : null;
+        return (colors.Count >= 2 ? new GradientSpec(colors[0], colors[^1]) : new GradientSpec()) with { Kind = kind, Angle = angle };
+    }
+
+    /// <summary>線性漸層的方向:第一個參數是角度或 to 關鍵字;直接就是顏色的話預設往下(180)。對角的 to 要看框的比例,回 null。</summary>
+    private static double? LinearAngle(string body)
+    {
+        var comma = 0;
+        var depth = 0;
+        while (comma < body.Length && (body[comma] != ',' || depth > 0))
+        {
+            if (body[comma] == '(') depth++;
+            else if (body[comma] == ')') depth--;
+            comma++;
+        }
+        var first = body[..comma].Trim().ToLowerInvariant();
+
+        var number = AngleToken().Match(first);
+        if (number.Success && double.TryParse(number.Groups[1].Value, CultureInfo.InvariantCulture, out var value))
+        {
+            var degrees = number.Groups[2].Value switch
+            {
+                "turn" => value * 360,
+                "rad" => value * 180 / Math.PI,
+                "grad" => value * 0.9,
+                _ => value,
+            };
+            return (degrees % 360 + 360) % 360;
+        }
+        return first switch
+        {
+            "to top" => 0,
+            "to right" => 90,
+            "to bottom" => 180,
+            "to left" => 270,
+            _ when first.StartsWith("to ", StringComparison.Ordinal) => null,
+            _ => 180,
+        };
     }
 
     /// <summary>套用 text-transform,判斷某種轉換對這段文字有沒有視覺上的差別。認不得的值原樣回傳。</summary>
@@ -116,6 +166,12 @@ public static partial class CssEffects
             }
         }
     }
+
+    [GeneratedRegex(@"(?:repeating-)?(linear|radial|conic)-gradient\(", RegexOptions.IgnoreCase)]
+    private static partial Regex GradientHead();
+
+    [GeneratedRegex(@"^(-?[0-9.]+)(deg|turn|rad|grad)$")]
+    private static partial Regex AngleToken();
 
     [GeneratedRegex(@"(?:rgba?|oklch|color)\([^()]*\)|#[0-9a-fA-F]{3,8}\b", RegexOptions.IgnoreCase)]
     private static partial Regex ColorToken();

@@ -215,8 +215,11 @@ public static class MarkdownReport
         var sb = new StringBuilder();
         sb.AppendLine("## Parity — design fidelity report");
         sb.AppendLine();
+        // 未配對的節點沒有比到任何屬性,分數看起來高也可能只是沒比到,所以放在最前面。清單在下面
+        var unmatchedCount = reports.Sum(r => r.Summary.Unmatched);
         sb.AppendLine($"**Fidelity {score}/100**{trend} · {(gateFail ? "❌ **GATE FAIL**" : "✅ PASS")} · " +
-            $"{clean}/{total} design nodes implemented faithfully");
+            $"{clean}/{total} design nodes implemented faithfully" +
+            (unmatchedCount > 0 ? $" · {unmatchedCount} unmatched, not compared" : ""));
         sb.AppendLine();
 
         // 配對可信度警示(如 0 配對):放最前面——這種情況下面的表是空的,分數也不可信

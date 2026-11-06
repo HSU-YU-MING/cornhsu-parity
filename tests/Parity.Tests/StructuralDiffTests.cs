@@ -64,14 +64,56 @@ public class StructuralDiffTests
         Assert.Equal("Card #3, Card #2, Card #1", diff.Actual);
     }
 
-    [Fact]
-    public void A_wrapping_container_is_skipped()
-        => Assert.Empty(Row([200, 100, 0], row => row with { LayoutWrap = "WRAP" }));
+    /// <summary>四張卡片,設計稿與頁面的框各自給。</summary>
+    private static Dictionary<string, List<PropDiff>> Wrapped(Box[] design, Box[] rendered)
+    {
+        var names = new[] { "a", "b", "c", "d" };
+        var kids = design.Select((b, i) => Design(names[i], names[i], box: b)).ToArray();
+        var grid = Design("grid", "grid", box: new Box(0, 0, 400, 200), layoutMode: "HORIZONTAL", children: kids) with { LayoutWrap = "WRAP" };
+        var renderedKids = rendered.Select((b, i) => Rendered("#" + names[i], box: b)).ToArray();
+        var renderedGrid = Rendered("#grid", box: new Box(0, 0, 400, 200), children: renderedKids);
+        var pairs = new List<NodePair> { new(grid, renderedGrid, "auto-name") };
+        pairs.AddRange(kids.Zip(renderedKids, (d, r) => new NodePair(d, r, "auto-name")));
+        return Engine.StructuralDiffs(Design("root", "root", children: grid), Rendered("body", children: renderedGrid), pairs);
+    }
+
+    private static Box Cell(int column, int row) => new(100 * column, 60 * row, 80, 40);
 
     [Fact]
-    public void Children_that_wrapped_onto_another_line_on_the_page_are_skipped()
+    public void A_wrapping_container_breaking_at_a_different_place_is_not_a_diff()
     {
-        // 頁面上換行了(交叉軸不重疊):先後沒有意義
+        // 設計稿一排四張,頁面一排兩張:先後一樣就對
+        Box[] design = [Cell(0, 0), Cell(1, 0), Cell(2, 0), Cell(3, 0)];
+        Box[] page = [Cell(0, 0), Cell(1, 0), Cell(0, 1), Cell(1, 1)];
+
+        Assert.Empty(Wrapped(design, page));
+    }
+
+    [Fact]
+    public void Swapped_children_across_rows_of_a_wrapping_container_are_a_diff()
+    {
+        Box[] design = [Cell(0, 0), Cell(1, 0), Cell(0, 1), Cell(1, 1)];
+        Box[] page = [Cell(0, 1), Cell(1, 0), Cell(0, 0), Cell(1, 1)]; // a 和 c 對調
+
+        var diff = Assert.Single(Wrapped(design, page)["grid"]);
+
+        Assert.Equal("a, b, c, d", diff.Expected);
+        Assert.Equal("c, b, a, d", diff.Actual);
+    }
+
+    [Fact]
+    public void Swapped_children_within_a_row_of_a_wrapping_container_are_a_diff()
+    {
+        Box[] design = [Cell(0, 0), Cell(1, 0), Cell(0, 1), Cell(1, 1)];
+        Box[] page = [Cell(1, 0), Cell(0, 0), Cell(0, 1), Cell(1, 1)];
+
+        Assert.Equal("b, a, c, d", Assert.Single(Wrapped(design, page)["grid"]).Actual);
+    }
+
+    [Fact]
+    public void Children_that_wrapped_onto_another_line_on_the_page_keep_their_reading_order()
+    {
+        // 頁面上換行了,b 跑到下一排:閱讀順序還是 a、b,不是落差
         var a = Design("a", "a", box: new Box(0, 0, 80, 40));
         var b = Design("b", "b", box: new Box(100, 0, 80, 40));
         var row = Design("row", "row", box: new Box(0, 0, 400, 40), layoutMode: "HORIZONTAL", children: [a, b]);

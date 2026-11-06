@@ -67,6 +67,58 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         { } d => $" — the API says retry in about {Math.Max(1, d.TotalMinutes):0} minute(s)",
     };
 
+    /// <summary>匯出的圖片大小上限:正常的 frame 用不到,防的是回應異常時把硬碟塞滿。</summary>
+    private const long MaxExportBytes = 64 * 1024 * 1024;
+
+    /// <summary>
+    /// 把 frame 匯出成 1x 的 PNG(圖片內容比對的參考圖),回傳本機路徑。<c>use_absolute_bounds</c> 讓圖片剛好是 frame 的框,
+    /// 不會因為陰影往外長,所以座標就是「節點的框減掉 frame 的原點」。
+    /// 兩段請求:先向 Figma 要圖片網址(帶 token),再下載(網址是別的網域的簽章連結,**不帶 token**)。
+    /// 匯出會用掉 API 額度,所以落本機快取:抓過的 frame 不再打 API,<c>--refresh</c> 才重抓。
+    /// </summary>
+    public async Task<string> GetFrameImagePathAsync(DesignRef reference, CancellationToken ct = default)
+    {
+        var cacheFile = CacheFilePath(reference, ".png")
+            ?? throw new InvalidOperationException("exporting a Figma frame needs a cache directory.");
+        if (!_options.RefreshCache && File.Exists(cacheFile)) return cacheFile;
+
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"v1/images/{Uri.EscapeDataString(reference.Source)}?ids={Uri.EscapeDataString(reference.NodeId)}&format=png&scale=1&use_absolute_bounds=true");
+        request.Headers.Add("X-Figma-Token", _options.Token);
+        using var response = await _http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException(
+                $"Figma API returned {(int)response.StatusCode} {response.StatusCode} exporting node {reference.NodeId} " +
+                $"(file {reference.Source}). {DescribeFailureHint(response.StatusCode, response.Headers.RetryAfter?.Delta)}");
+
+        var json = JsonNode.Parse(await response.Content.ReadAsStringAsync(ct));
+        var url = json?["images"]?[reference.NodeId]?.GetValue<string>()
+            ?? throw new InvalidOperationException($"Figma could not render node {reference.NodeId} (file {reference.Source}).");
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var imageUri) || imageUri.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException($"Figma returned an unexpected image address for node {reference.NodeId}.");
+
+        using var download = await _http.GetAsync(imageUri, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!download.IsSuccessStatusCode)
+            throw new HttpRequestException($"downloading the exported image of node {reference.NodeId} failed: {(int)download.StatusCode} {download.StatusCode}.");
+        if (download.Content.Headers.ContentLength > MaxExportBytes)
+            throw new InvalidOperationException($"the exported image of node {reference.NodeId} is larger than {MaxExportBytes / (1024 * 1024)} MB.");
+
+        await using var source = await download.Content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await source.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > MaxExportBytes)
+                throw new InvalidOperationException($"the exported image of node {reference.NodeId} is larger than {MaxExportBytes / (1024 * 1024)} MB.");
+            buffer.Write(chunk, 0, read);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
+        await File.WriteAllBytesAsync(cacheFile, buffer.ToArray(), ct);
+        return cacheFile;
+    }
+
     private async Task<JsonNode> GetRawNodeJsonAsync(DesignRef reference, CancellationToken ct)
     {
         var cacheFile = CacheFilePath(reference);
@@ -101,11 +153,11 @@ public sealed class FigmaDesignSource : IDesignSource, IDisposable
         return node;
     }
 
-    private string? CacheFilePath(DesignRef reference)
+    private string? CacheFilePath(DesignRef reference, string extension = ".json")
     {
         if (_options.CacheDirectory is null) return null;
         var safe = $"{reference.Source}_{reference.NodeId}".Replace(':', '-').Replace('/', '-');
-        return Path.Combine(_options.CacheDirectory, $"figma_{safe}.json");
+        return Path.Combine(_options.CacheDirectory, $"figma_{safe}{extension}");
     }
 
     public void Dispose() => _http.Dispose();
@@ -149,7 +201,7 @@ public static class FigmaNodeParser
             BorderWidth = ParseBorderWidth(node),
             BorderColor = ParseBorderColor(node),
             Shadows = ParseShadows(node["effects"] as JsonArray),
-            Gradient = ParseGradient(node["fills"] as JsonArray),
+            Gradient = ParseGradient(node["fills"] as JsonArray, box),
             TextAutoResize = type == DesignNodeType.Text
                 ? node["style"]?["textAutoResize"]?.GetValue<string>() ?? "NONE" // Figma 在預設值 NONE 時會省略
                 : null,
@@ -194,8 +246,11 @@ public static class FigmaNodeParser
         return result;
     }
 
-    /// <summary>第一個可見的漸層填色,頭尾色照色標位置排。</summary>
-    private static GradientSpec? ParseGradient(JsonArray? fills)
+    /// <summary>
+    /// 第一個可見的漸層填色,頭尾色照色標位置排。方向來自 gradientHandlePositions:前兩個點是漸層的起點與終點,
+    /// 座標是「節點左上 (0,0)、右下 (1,1)」,所以要乘上框的寬高才是畫面上的方向。換成 CSS 的角度:0 = 往上、90 = 往右。
+    /// </summary>
+    private static GradientSpec? ParseGradient(JsonArray? fills, Box box)
     {
         foreach (var fill in fills ?? [])
         {
@@ -204,9 +259,24 @@ public static class FigmaNodeParser
             var stops = (fill["gradientStops"] as JsonArray)?.Where(s => s is not null)
                 .OrderBy(s => GetDouble(s, "position") ?? 0).ToList();
             var opacity = GetDouble(fill, "opacity") ?? 1.0;
-            return stops is { Count: >= 2 }
+            var kind = fill["type"]!.GetValue<string>() switch
+            {
+                "GRADIENT_LINEAR" => "linear",
+                "GRADIENT_RADIAL" => "radial",
+                "GRADIENT_ANGULAR" => "conic",
+                _ => null, // GRADIENT_DIAMOND 在 CSS 沒有對應
+            };
+            double? angle = null;
+            if (kind == "linear" && fill["gradientHandlePositions"] is JsonArray { Count: >= 2 } handles)
+            {
+                var dx = ((GetDouble(handles[1], "x") ?? 0) - (GetDouble(handles[0], "x") ?? 0)) * box.W;
+                var dy = ((GetDouble(handles[1], "y") ?? 0) - (GetDouble(handles[0], "y") ?? 0)) * box.H;
+                if (dx != 0 || dy != 0) angle = (Math.Atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+            }
+            return (stops is { Count: >= 2 }
                 ? new GradientSpec(ToRgba(stops[0]!["color"], opacity), ToRgba(stops[^1]!["color"], opacity))
-                : new GradientSpec();
+                : new GradientSpec()) with
+            { Kind = kind, Angle = angle };
         }
         return null;
     }

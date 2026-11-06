@@ -104,22 +104,28 @@ public sealed class ScanSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// 比圖片內容。這是軟落差,比不了不該讓 check 失敗:沒有參考圖、參考圖壞了,都只在 stderr 說一聲。
+    /// 比圖片內容。這是軟落差,比不了不該讓 check 失敗:沒有參考圖、參考圖壞了、Figma 匯出失敗(例如被限流),都只在 stderr 說一聲。
     /// </summary>
     private async Task<ScanResult> CompareImagesAsync(ScanResult result, TargetConfig target, byte[] screenshot, CancellationToken ct)
     {
-        var reference = await ReferenceImagePathAsync(target, ct);
-        if (reference is null)
-        {
-            Console.Error.WriteLine($"note: compare.images: no reference image for target {ConsoleText.Safe(target.Route)}, so images were not compared " +
-                "(a parity snapshot baseline writes one next to the JSON; designImage is its own reference).");
-            return result;
-        }
         try
         {
-            return await Parity.Engine.Comparison.ImageComparer.CompareAsync(result, reference, screenshot, ct);
+            // Figma 匯出的圖就是 frame 本身,左上角就是 frame 的原點
+            if (_designSource is FigmaDesignSource figma)
+                return await Parity.Engine.Comparison.ImageComparer.CompareAsync(result,
+                    await figma.GetFrameImagePathAsync(new DesignRef(Config.FigmaFileKey!, target.Frame), ct), screenshot, default(Parity.Engine.Model.Box), ct);
+
+            var reference = await ReferenceImagePathAsync(target, ct);
+            if (reference is null)
+            {
+                Console.Error.WriteLine($"note: compare.images: no reference image for target {ConsoleText.Safe(target.Route)}, so images were not compared " +
+                    "(a parity snapshot baseline writes one next to the JSON; designImage is its own reference).");
+                return result;
+            }
+            return await Parity.Engine.Comparison.ImageComparer.CompareAsync(result, reference, screenshot, ct: ct);
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException
+            || (ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
             Console.Error.WriteLine($"note: images were not compared for target {ConsoleText.Safe(target.Route)}: {ConsoleText.Safe(ex.Message)}");
             return result;
@@ -127,7 +133,7 @@ public sealed class ScanSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// 這個 target 的參考圖。designImage 就是它自己;快照的參考截圖在 JSON 旁邊:單頁 <c>x.png</c>,
+    /// 這個 target 的參考圖(Figma 以外)。designImage 就是它自己;快照的參考截圖在 JSON 旁邊:單頁 <c>x.png</c>,
     /// 多頁 <c>x.{第幾個 frame}.png</c>(parity snapshot 寫的,順序與快照裡的 frame 相同)。找不到是 null。
     /// </summary>
     private async Task<string?> ReferenceImagePathAsync(TargetConfig target, CancellationToken ct)

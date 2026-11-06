@@ -36,7 +36,7 @@ public sealed record DesignNode(
 
     // 下面這些是 2.x 的選填加法:沒有值就不寫出來,既有的快照才會逐位元相同(凍結面 6;SnapshotWireTests)
 
-    /// <summary>auto-layout 會不會換行:"WRAP" / "NO_WRAP"。會換行的容器,子元件順序不比(第一版)。</summary>
+    /// <summary>auto-layout 會不會換行:"WRAP" / "NO_WRAP"。目前沒有比對在用:順序照閱讀順序比,換行的容器也比得了。留著記錄設計稿的值。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LayoutWrap { get; init; }
 

@@ -104,6 +104,7 @@ public class ReportingTests
             "px", // PropDiff 的 Unit 欄位
             "explicit", "selector", // NodePair.MatchedBy 的值
             "none", // 沒有陰影時報告上顯示的值
+            "linear", // GradientSpec.Kind 的值:線性是預設,報告上不顯示
             // NoTextTags:這些元素的文字不在子節點裡
             "input", "textarea", "select", "img", "svg", "canvas", "video", "audio", "iframe", "object", "embed", "picture",
         ];
@@ -140,6 +141,27 @@ public class ReportingTests
         var md = MarkdownReport.Render([report], gateFail: false);
 
         Assert.Contains($"``` {hostile} ```", md);
+    }
+
+    [Fact]
+    public void Unmatched_nodes_are_called_out_at_the_top_because_they_were_not_compared()
+    {
+        // 分數看起來高,也可能只是沒比到:PR 留言第一行就要看得到
+        var report = new FidelityReport("/", "http://x/", "d", [],
+            [new UnmatchedNode("hero-badge", "1:2", "no-anchor")],
+            new ReportSummary(1, 0, 1, 0, 0, 0, 0, 0, Severity.None));
+
+        var firstLines = string.Join('\n', MarkdownReport.Render([report], gateFail: false).Split('\n').Take(4));
+
+        Assert.Contains("1 unmatched, not compared", firstLines);
+    }
+
+    [Fact]
+    public void Nothing_extra_is_shown_when_everything_matched()
+    {
+        var report = new FidelityReport("/", "http://x/", "d", [], [], new ReportSummary(0, 0, 0, 0, 0, 0, 0, 0, Severity.None));
+
+        Assert.DoesNotContain("unmatched", MarkdownReport.Render([report], gateFail: false), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
