@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1371 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1428 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -164,7 +164,7 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
                                              //   只列出、永遠不擋(見下方「設計稿沒有的元素」)
     "text": "soft",                          // 選配:文字內容。soft = 會列出、不擋(預設);
                                              //   gate = serious 落差;none = 不比
-    "images": "none"                         // 選配:"soft" = 拿參考圖比圖片內容(只有快照基準與 designImage 有參考圖)
+    "images": "none"                         // 選配:"soft" = 拿參考圖比圖片內容(快照基準、designImage 或 Figma 匯出的 frame)
   },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
@@ -274,11 +274,11 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 下面這些跟 font-family 一樣都是**軟落差**:會列在報告裡,但不扣分、永遠不擋、`--baseline` 不算新增。刻意先做成軟的,等真實網站測出各自有多吵再說。
 
 - **文字內容**(`text`):靠圖層名配上、文字卻不一樣的。忽略大小寫、空白、看不見的字元與引號樣式;元素有子元素時,設計稿的文字出現在裡面就算對。手動對應的圖層不比(設計系統常用佔位文字),快照基準不比(動態內容每次都不同)。`compare.text: "gate"` 會變成 serious 落差,快照基準也比;`"none"` 關掉。**兩邊的文字會寫進 `report.json` 與 Markdown 報告,每段最多 120 字元**,報告送到哪裡,這些文字就到哪裡
-- **子元件順序**(`childOrder`):自動排版容器的子元件沿主軸的先後不同。用實際的框比,CSS 的 `order`、`row-reverse` 自然算對。會換行的容器、絕對定位的子元件不比
+- **子元件順序**(`childOrder`):自動排版容器的子元件沿主軸的先後不同。用實際的框比,CSS 的 `order`、`row-reverse` 自然算對。會換行的容器比閱讀順序,在哪裡換行不一樣不算落差。絕對定位的子元件不比
 - **容器對齊**(`mainAxisOffset`、`crossAxisOffset`):子元件到自動排版父層邊的距離。只比距離應該固定的情況:兩邊尺寸都明確是 FIXED、不是文字節點、也沒有 padding 或尺寸落差能解釋這個位移。主軸只比第一個子元件,而且只在 `MIN`、`CENTER`、`MAX` 時比。順序與對齊都跟著 `compare.position`;target 的視窗寬度與設計稿不同時不比,版面可能合法重排
 - **換行數**(`lineCount`):文字佔幾行,量實際的行框。副標換行、下面全被推開時,這就是根因。設計稿那邊用框高除以行高,固定高度的文字框不比
-- **樣式**:`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`opacity`、`borderWidth`、`borderColor`、`shadow`、`shadowColor`、`gradient`。設計稿有寫才比:Figma 節點都有,手寫的設計 JSON 寫了什麼比什麼(`text.fontStyle`、`opacity`、`borderWidth`、`shadows`、`gradient` 等)。看不見的陰影不算,畫面上沒差別的大小寫轉換也不算。透明度比元素自己的,不累積祖先。漸層目前只比頭尾色,不比方向
-- **圖片內容**(`image`,預設關閉):`"compare": { "images": "soft" }` 會從整頁截圖裁出每個 `img`、`svg`、`picture` 與背景圖片,跟參考圖的同一個位置比。參考圖是 `parity snapshot` 基準旁邊的截圖,或 `designImage`。換壓縮格式或縮放不算落差。每頁要多拍一張截圖;Figma 來源還不支援(匯出節點圖會用掉 API 配額),設了會是設定錯誤
+- **樣式**:`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`opacity`、`borderWidth`、`borderColor`、`shadow`、`shadowColor`、`gradient`。設計稿有寫才比:Figma 節點都有,手寫的設計 JSON 寫了什麼比什麼(`text.fontStyle`、`opacity`、`borderWidth`、`shadows`、`gradient` 等)。看不見的陰影不算,畫面上沒差別的大小寫轉換也不算。透明度比元素自己的,不累積祖先。漸層比種類、方向與頭尾色,不比中間的色標;`to top right` 這種要看框的比例才知道的方向不比
+- **圖片內容**(`image`,預設關閉):`"compare": { "images": "soft" }` 會從整頁截圖裁出每個 `img`、`svg`、`picture` 與背景圖片,跟參考圖的同一個位置比。參考圖是 `parity snapshot` 基準旁邊的截圖、`designImage`,或從 Figma 匯出的 frame。換壓縮格式或縮放不算落差。每頁要多拍一張截圖;Figma 來源另外會用掉 API 配額,每個 frame 匯出一次,存在 `.parity/cache`,`--refresh` 才重抓。沒有參考圖或匯出失敗時,只在 stderr 說一聲,check 照常
 
 舊版拍的快照沒有這些樣式值,重新跑一次 `parity snapshot` 之前不會多出任何落差。
 

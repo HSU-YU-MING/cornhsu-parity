@@ -47,28 +47,29 @@
   彎引號當直引號」再比一次,一樣要唯一才配。設計稿手動斷行的中文(`歡迎使用\n我們的服務`,頁面上是連著的)、直引號對彎引號、
   軟連字號原本都配不上,屬性一個都沒比到。
   - **行為變化**:這些節點現在會配上、會比屬性,所以配對率上升,原本看不到的落差會出現,硬落差可能讓既有專案轉紅(`--baseline` 也算新增)。發版時要標「升級必做」。
-  - 跨元素斷開的文字(`歡迎使用<b>我們的</b>服務`)還是配不上:配對只看元素自己的文字。
+  - 同一段文字被行內元素拆開的(`歡迎使用<b>我們的</b>服務`、`請先<b>登入</b><br>帳號`)也配得上了,配到包住整段文字的最裡面那個元素。區塊容器不算:它的字體是別的元素的,配上去會比出假落差。
   *Text pairing now falls back to ignoring whitespace, invisible format characters and quote style when the exact text matches
   nothing, still only when exactly one element fits. Nodes that were unmatched may now pair and report gaps.*
 - **新增:16 個比對項目,全部先做成軟落差**(minor)。會列出、不扣分、不擋、`--baseline` 不算新增;真實網站測過誤報之後,才逐項決定要不要改成硬落差。
   - **文字內容 `text`**:靠圖層名配上、文字卻不一樣的。忽略大小寫、空白、看不見的字元與引號樣式。手動對應的節點不比(設計系統常用佔位文字),
     快照基準不比(動態內容每次都不同)。新設定 `compare.text`:`soft`(預設)、`gate`(serious,會擋,快照基準也比)、`none`。
     **兩邊的文字會寫進 `report.json` 與 Markdown 報告,每段最多 120 字元**:報告送到哪裡,這些文字就到哪裡。不想要就設 `none`。
-  - **子元件順序 `childOrder`、容器對齊 `mainAxisOffset`、`crossAxisOffset`**:自動排版容器原本完全看不到這些。受 `compare.position` 控制;視窗寬度與設計稿不同時不比。
+  - **子元件順序 `childOrder`、容器對齊 `mainAxisOffset`、`crossAxisOffset`**:自動排版容器原本完全看不到這些。順序比閱讀順序,會換行的容器在哪裡換行不一樣不算落差。受 `compare.position` 控制;視窗寬度與設計稿不同時不比。
     別的原因造成的位移不重複報(padding 或尺寸不一樣就跳過)。
   - **換行數 `lineCount`**:副標換行、下面全被推開時的根因。頁面量實際的行框。
   - **樣式**:`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`opacity`、`borderWidth`、`borderColor`、`shadow`、`shadowColor`、`gradient`。
-    設計稿有寫才比:Figma 節點都有,手寫 JSON 寫了什麼比什麼。看不見的陰影(Tailwind 的元素預設就有)、畫面上沒差別的大小寫轉換都不算。
+    設計稿有寫才比:Figma 節點都有,手寫 JSON 寫了什麼比什麼。看不見的陰影(Tailwind 的元素預設就有)、畫面上沒差別的大小寫轉換都不算。漸層比種類、方向與頭尾色,`to top right` 這種要看框的比例才知道的方向不比。
   - **圖片內容 `image`**:新設定 `compare.images`,預設 `none`,`soft` 才比,每頁多拍一張整頁截圖。拿快照的參考截圖或 `designImage` 比,換壓縮格式或縮放不算落差。
-    **Figma 來源還不支援**(匯出節點圖會用掉配額),開了會在載入設定時報錯。
+    Figma 來源會匯出 frame 當參考圖:每個 frame 多打一次 API,存在 `.parity/cache`,`--refresh` 才重抓。沒有參考圖或匯出失敗只在 stderr 說一聲,不影響 check。
   - **面 4 `report.json`**:`diffs[].prop` 多這些值;`severity` 計數與 `nodesWithDiffs` 會變多(軟落差算 `minor`),分數與 gate 不變。
   - **面 6 快照**:新拍的快照多記這些樣式值,只記非預設值,信封多一個 `styleDefaultsOmitted`;實測大 5～18%。舊快照沒寫的是「不知道」,不比,不必重拍,要比就重拍一次。
   - **實測**:12 個非作者網站、18,540 個節點,頁面沒改時這些屬性幾乎不吵,`image` 例外,所以預設關閉。設計稿對實作的誤報率還沒量過(`docs/野生實查-2026-11-05-新比對項目.md`)。
   - **統計**:新屬性都在協定的封閉集裡,收集站 2026-11-05 已先上線。只送條數與區間,文字、圖層名、圖片雜湊一律不送。
   - Markdown 報告的期望值與實際值改用不會被反引號跳出的寫法:這裡的內容現在可能來自頁面,不能讓它在 PR 留言裡變成 Markdown。
+  - Markdown 報告的開頭多一句未配對的數量:沒配對到的節點沒有比到任何屬性,分數看起來高也可能只是沒比到。
   *New soft gaps (reported, never gated, no score impact): `text` (`compare.text`), `childOrder`, `mainAxisOffset`, `crossAxisOffset`, `lineCount`,
   `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `opacity`, `borderWidth`, `borderColor`, `shadow`, `shadowColor`, `gradient`, and
-  `image` (`compare.images`, off by default; snapshot baselines and `designImage` only). Text gaps put up to 120 characters of both texts into
+  `image` (`compare.images`, off by default; with Figma it exports the frame once and caches it). Text gaps put up to 120 characters of both texts into
   `report.json` and the Markdown report. New snapshots store the non-default values (5–18% larger in testing); old ones simply do not compare them.*
 
 ## 2.2.0 — 2026-11-04
