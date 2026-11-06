@@ -2,7 +2,30 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.3.0 — 2026-11-06
+
+> **多比 16 個項目,元件不見也能擋 PR。** 文字內容、子元件順序、容器對齊、換行數、邊框、陰影、漸層、透明度、文字樣式都會比了,
+> 圖片內容可以選擇打開(`compare.images`)。這些全部先做成軟落差:會列出、不扣分、不擋。頁面少了一個元件現在有自己的未配對原因
+> `text-not-found`,可以用 `gate.failOnUnmatched` 擋;`compare.extras` 則列出設計稿沒有的頁面元素。設定檔不用改。
+> *Parity now compares 16 more things: text content, child order, container alignment, line count, borders, shadows, gradients, opacity
+> and text styles, plus image content if you turn it on (`compare.images`). All are soft gaps: reported, never gated, no score impact.
+> A missing component now has its own unmatched reason, `text-not-found`, which `gate.failOnUnmatched` can turn into a failure, and
+> `compare.extras` lists page elements the design does not have. No config changes needed.*
+
+**升級必做 (upgrade required):升級後先跑一次 `parity check`,看結果再合併。** 文字配對放寬了:設計稿手動斷行的中文、直引號對彎引號、
+被行內元素拆開的文字,原本配不上,現在配得上,也開始比屬性。配對率會上升,原本看不到的硬落差會出現,可能讓既有專案轉紅
+(`--baseline` 也算新增)。落差是真的就修;要接受現況就重存基準。Chromium 沒有換版,不用重跑 `install-browser`。
+*After upgrading, run `parity check` once and review the result. Text pairing is more forgiving: hand-wrapped text, straight versus curly
+quotes and text split by inline elements now pair, and paired nodes get compared, so new hard gaps can appear and turn a project red (with
+`--baseline` too). Fix real gaps, or re-save the baseline to accept them. Chromium did not change, so `install-browser` is not needed.*
+
+另外兩件事不一定要動,但要知道:
+
+- **文字不一樣時,兩邊的文字會寫進 `report.json` 與 Markdown 報告**(每段最多 120 字元):報告送到哪裡,這些文字就到哪裡。
+  不想要就設 `"compare": { "text": "none" }`。*When text differs, up to 120 characters of both texts go into `report.json` and the Markdown report; set `"compare": { "text": "none" }` to opt out.*
+- **舊快照沒有新屬性的值,那些項目不比**,不必重拍,要比就重拍一次。*Old snapshots do not have the new values, so those comparisons are skipped until you re-capture.*
+
+**這一版的變動 (what changed):**
 
 - **新增:元件不見可以選擇性地擋 PR——未配對原因 `text-not-found` 與設定 `gate.failOnUnmatched`**(面 1、2、4 都是加法,minor)。
   頁面少了一個元件時,原本 `check` 是 exit 0、只列在未配對清單;唯一擋得住的 `gate.minMatchRate: 1` 連單純配不到的也一起擋,
@@ -46,7 +69,7 @@
 - **文字配對放寬一層:只差空白或引號的文字配得上了**(量測語意,minor)。精確比對完全對不到時,才退回「忽略所有空白與看不見的格式字元、
   彎引號當直引號」再比一次,一樣要唯一才配。設計稿手動斷行的中文(`歡迎使用\n我們的服務`,頁面上是連著的)、直引號對彎引號、
   軟連字號原本都配不上,屬性一個都沒比到。
-  - **行為變化**:這些節點現在會配上、會比屬性,所以配對率上升,原本看不到的落差會出現,硬落差可能讓既有專案轉紅(`--baseline` 也算新增)。發版時要標「升級必做」。
+  - **行為變化**:這些節點現在會配上、會比屬性,所以配對率上升,原本看不到的落差會出現,硬落差可能讓既有專案轉紅(`--baseline` 也算新增)。
   - 同一段文字被行內元素拆開的(`歡迎使用<b>我們的</b>服務`、`請先<b>登入</b><br>帳號`)也配得上了,配到包住整段文字的最裡面那個元素。區塊容器不算:它的字體是別的元素的,配上去會比出假落差。
   *Text pairing now falls back to ignoring whitespace, invisible format characters and quote style when the exact text matches
   nothing, still only when exactly one element fits. Nodes that were unmatched may now pair and report gaps.*

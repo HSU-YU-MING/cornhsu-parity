@@ -9,7 +9,7 @@
 **[作品介紹與開發故事](https://cornhsu.com/parity) · [GitHub Marketplace](https://github.com/marketplace/actions/parity-design-fidelity-check) · [npm](https://www.npmjs.com/package/cornhsu-parity) · [NuGet](https://www.nuget.org/packages/Cornhsu.Parity) · [English](README.md) · MIT**
 
 > **note** 工具本身的輸出(CLI、報告 UI、貼到 PR 的 Markdown 報告)自 0.12.0 起一律為英文
-> (npm 啟動腳本的錯誤訊息自下一版起也是);
+> (npm 啟動腳本的錯誤訊息自 2.0.0 起也是);
 > 作業系統回報的錯誤(連線被拒、檔案存取之類)則照系統語言原樣帶出。
 > 這份中文說明維持與英文版同步。
 
@@ -59,7 +59,7 @@
 
 | | |
 |---|---|
-| 發佈 | NuGet 共 30 版(v0.1.0 → v2.2.0),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
+| 發佈 | NuGet 共 31 版(v0.1.0 → v2.3.0),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
