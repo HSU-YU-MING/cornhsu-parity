@@ -58,7 +58,7 @@
     別的原因造成的位移不重複報(padding 或尺寸不一樣就跳過)。
   - **換行數 `lineCount`**:副標換行、下面全被推開時的根因。頁面量實際的行框。
   - **樣式**:`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`opacity`、`borderWidth`、`borderColor`、`shadow`、`shadowColor`、`gradient`。
-    設計稿有寫才比:Figma 節點都有,手寫 JSON 寫了什麼比什麼。看不見的陰影(Tailwind 的元素預設就有)、畫面上沒差別的大小寫轉換都不算。漸層比種類、方向與頭尾色,`to top right` 這種要看框的比例才知道的方向不比。
+    設計稿有寫才比:Figma 節點都有,手寫 JSON 寫了什麼比什麼。看不見的就不算:隱形的陰影(Tailwind 的元素預設就有)、透明的邊框(Carbon 的按鈕)、跟底色同色的邊框(Ant Design 的設計稿)、畫面上沒差別的大小寫轉換。漸層比種類、方向與頭尾色,`to top right` 這種要看框的比例才知道的方向不比。
   - **圖片內容 `image`**:新設定 `compare.images`,預設 `none`,`soft` 才比,每頁多拍一張整頁截圖。拿快照的參考截圖或 `designImage` 比,換壓縮格式或縮放不算落差。
     Figma 來源會匯出 frame 當參考圖:每個 frame 多打一次 API,存在 `.parity/cache`,`--refresh` 才重抓。沒有參考圖或匯出失敗只在 stderr 說一聲,不影響 check。
   - **面 4 `report.json`**:`diffs[].prop` 多這些值;`severity` 計數與 `nodesWithDiffs` 會變多(軟落差算 `minor`),分數與 gate 不變。

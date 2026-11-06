@@ -184,7 +184,8 @@ NuGet 通路是一個指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parit
 - **`DesignNode`、`Typography` 新欄位的 `JsonIgnore(WhenWritingNull)` 不能拿掉**:沒有值就不寫,既有快照才會逐位元相同(`SnapshotWireTests`)。舊快照讀到 null 就不比。
 - **`ImageComparer` 不把 ImageSharp 的型別露給外面**:授權金鑰只對 `Parity.Engine` 有效,CLI 不能直接碰 Six Labors 的套件。
 - **報告裡的文字來自頁面**:Markdown 一律走 `MarkdownReport.Code`(圍欄比最長的連續反引號多一個),主控台走 `ConsoleText.Safe`。
-- **Figma 欄位對應與匯出 frame 沒有拿真實回應驗過**(2026-11-06 本機沒有快取,打 API 會耗配額):`StyleDiffTests`、`FigmaImageExportTests` 用的是照官方文件寫的回應。
+- **Figma 欄位對應驗過一部分**(2026-11-06,真實回應的節錄在 `StyleDiffTests`):文字預設值、邊框、陰影、auto-layout 欄位、匯出 frame 都對。漸層方向、斜體與底線與大小寫的非預設值、每邊不同的邊框粗細還是照官方文件做的。真實回應存在本機 `.parity/figma-samples/`(gitignore),重驗不必再打 API。
+- **看不見的不算**:隱形的陰影、透明的邊框、跟底色同色的邊框。這三個都是真實樣本才抓到的,自己寫的測試頁長不出來。
 - **文字配對有三層,順序不能換**:元素自己的文字精確比對 → 放寬(空白、引號)→ 被行內元素拆開的整段文字(`TextIsInline`)。後兩層都要唯一才配,只在前一層完全對不到時才用。
 - **匯出 frame 的圖片網址是別的網域**:token 只能送給 Figma 的 API,下載圖片不能帶(`FigmaImageExportTests` 守著)。
 

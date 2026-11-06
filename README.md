@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1428**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1443**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -342,8 +342,8 @@ how noisy each one is.
 - **Style**: `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `opacity`, `borderWidth`,
   `borderColor`, `shadow`, `shadowColor`, `gradient`. Only what the design states is compared: Figma nodes
   always state it, and a hand-written design JSON states what it sets (`text.fontStyle`, `opacity`,
-  `borderWidth`, `shadows`, `gradient` and so on). Invisible shadows do not count, and neither does a
-  text transform that changes nothing on screen. Opacity is the element's own, not accumulated from its
+  `borderWidth`, `shadows`, `gradient` and so on). What cannot be seen does not count: invisible shadows, transparent borders, a border the same color as the
+  fill, and a text transform that changes nothing on screen. Opacity is the element's own, not accumulated from its
   ancestors. Gradients compare their kind, direction and end colors, not the stops in between; a direction
   that depends on the box, like `to top right`, is not compared.
 - **Image content** (`image`, off by default): `"compare": { "images": "soft" }` crops each `img`, `svg`,
