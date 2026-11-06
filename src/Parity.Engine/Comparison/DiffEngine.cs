@@ -491,8 +491,12 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
         if (d.Opacity is { } opacity && r.Opacity is { } actualOpacity && Math.Abs(opacity - actualOpacity) > OpacityTolerance)
             SoftDiff(diffs, "opacity", Fmt(opacity), Fmt(actualOpacity), delta: Math.Round(Math.Abs(opacity - actualOpacity), 2), tolerance: OpacityTolerance);
 
-        if (d.BorderWidth is { } width && r.BorderWidth is { } actualWidth)
+        if (d.BorderWidth is { } designedWidth && r.BorderWidth is { } renderedWidth)
         {
+            // 跟自己底色同色的邊框看不出來,算沒有邊框。對真實 Figma 實測抓到的:Ant Design 的設計稿邊框與底色同色,
+            // 頁面是透明邊框,兩邊看起來一模一樣。文字節點的 Fill 是字色,不是底色,不算
+            var width = d.Type != DesignNodeType.Text && BlendsIn(d.BorderColor, d.Fill) ? NoBorder : designedWidth;
+            var actualWidth = BlendsIn(r.BorderColor, r.Background) ? NoBorder : renderedWidth;
             var delta = new[]
             {
                 Math.Abs(width.Top - actualWidth.Top), Math.Abs(width.Right - actualWidth.Right),
@@ -500,13 +504,18 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
             }.Max();
             if (delta > BorderTolerance)
                 SoftDiff(diffs, "borderWidth", Describe(width), Describe(actualWidth), "px", Math.Round(delta, 2), BorderTolerance);
-            else if (d.BorderColor is { } color && r.BorderColor is { } actualColor)
+            else if (width != NoBorder && d.BorderColor is { } color && r.BorderColor is { } actualColor)
                 CompareColorSoft(diffs, "borderColor", color, actualColor);
         }
 
         CompareShadows(diffs, d.Shadows, d.Type == DesignNodeType.Text ? r.TextShadows : r.Shadows);
         CompareGradient(diffs, pair);
     }
+
+    private static readonly Insets NoBorder = new(0, 0, 0, 0);
+
+    private bool BlendsIn(Rgba? border, Rgba? fill)
+        => border is { } b && fill is { IsTransparent: false } f && ColorDelta.Ciede2000(b, f) <= _tol.ColorDeltaE;
 
     /// <summary>
     /// 陰影。兩邊的順序不一定一樣(Figma 由下往上、CSS 由上往下),所以照「外陰影優先、模糊大的優先」排好再一對一比,

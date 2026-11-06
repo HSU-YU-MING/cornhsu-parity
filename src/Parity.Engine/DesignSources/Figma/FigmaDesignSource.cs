@@ -337,7 +337,11 @@ public static class FigmaNodeParser
             LetterSpacing: GetDouble(style, "letterSpacing"))
         {
             // Figma 在預設值時會省略這些欄位:節點是 Figma 來的,沒寫就是預設值,不是「不知道」。都換成 CSS 的字彙
-            FontStyle = style["italic"]?.GetValue<bool>() == true ? "italic" : "normal",
+            // style.fontStyle 是字型樣式的名字("Regular"、"Bold Italic"),斜體時 italic 也會是 true;兩個都看,字型名稱漏標 italic 時才不會比錯
+            FontStyle = style["italic"]?.GetValue<bool>() == true
+                || style["fontStyle"]?.GetValue<string>() is { } styleName
+                    && (styleName.Contains("italic", StringComparison.OrdinalIgnoreCase) || styleName.Contains("oblique", StringComparison.OrdinalIgnoreCase))
+                ? "italic" : "normal",
             TextDecoration = style["textDecoration"]?.GetValue<string>() switch
             {
                 "UNDERLINE" => "underline",

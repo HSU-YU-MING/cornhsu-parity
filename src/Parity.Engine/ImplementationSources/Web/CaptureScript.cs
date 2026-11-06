@@ -159,10 +159,16 @@ internal static class CaptureScript
             return found.size ? [...found].sort().join(' ') : 'none';
           };
 
-          // 邊框顏色:第一條有粗細的邊;沒有邊框不給
+          // 透明的邊框看不見,算沒有邊框:border: 1px solid transparent 很常見,留位置給 hover 或 focus 用
+          // (Carbon 的按鈕就是,對真實 Figma 實測抓到的:設計稿沒有邊框,被報成 0 → 1)
+          // 只認真的帶 alpha 的寫法:rgba(…, 0) 或 … / 0)。rgb(255, 0, 0) 的結尾也是「, 0)」,那是紅色,不是透明
+          const isTransparent = (c) => !c || c === 'transparent' || /^rgba\(.*,\s*0(\.0+)?\s*\)$/.test(c) || /\/\s*0(\.0+)?%?\s*\)$/.test(c);
+          const borderWidthOf = (s, side) => isTransparent(s['border' + side + 'Color']) ? '0px' : s['border' + side + 'Width'];
+
+          // 邊框顏色:第一條看得見的邊;沒有邊框不給
           const borderColorOf = (s) => {
             for (const side of ['Top', 'Right', 'Bottom', 'Left'])
-              if (parseFloat(s['border' + side + 'Width']) > 0) return s['border' + side + 'Color'];
+              if (parseFloat(borderWidthOf(s, side)) > 0) return s['border' + side + 'Color'];
             return null;
           };
 
@@ -244,8 +250,8 @@ internal static class CaptureScript
               textTransform: hasText ? (s.fontVariantCaps.includes('small-caps') ? 'small-caps' : s.textTransform) : null,
               textAlign: ownText ? textAlignOf(el, s, win, measured) : null,
               opacity: s.opacity,
-              borderTopWidth: s.borderTopWidth, borderRightWidth: s.borderRightWidth,
-              borderBottomWidth: s.borderBottomWidth, borderLeftWidth: s.borderLeftWidth,
+              borderTopWidth: borderWidthOf(s, 'Top'), borderRightWidth: borderWidthOf(s, 'Right'),
+              borderBottomWidth: borderWidthOf(s, 'Bottom'), borderLeftWidth: borderWidthOf(s, 'Left'),
               borderColor: borderColorOf(s),
               boxShadow: s.boxShadow,
               textShadow: hasText ? s.textShadow : null,

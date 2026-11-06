@@ -167,6 +167,40 @@ public class StyleDiffTests
             Rendered("div") with { BorderWidth = one, BorderColor = Red })).Prop);
     }
 
+    [Fact]
+    public void A_border_the_same_color_as_the_fill_cannot_be_seen()
+    {
+        // 真實案例:Ant Design 的設計稿邊框與底色同色(1px),頁面是透明邊框,兩邊看起來一模一樣
+        var one = new Insets(1, 1, 1, 1);
+        var blue = new Rgba(24, 144, 255);
+
+        Assert.Empty(Diffs(Design("1", "btn", fill: blue) with { BorderWidth = one, BorderColor = blue }, Rendered("button", background: blue) with { BorderWidth = NoBorder }));
+
+        // 反過來:頁面的邊框跟自己的底色同色,設計稿沒有邊框
+        Assert.Empty(Diffs(Design("1", "btn") with { BorderWidth = NoBorder }, Rendered("button", background: blue) with { BorderWidth = one, BorderColor = blue }));
+    }
+
+    [Fact]
+    public void A_border_of_another_color_is_still_a_border()
+    {
+        var one = new Insets(1, 1, 1, 1);
+        var blue = new Rgba(24, 144, 255);
+
+        Assert.Equal("borderWidth", Assert.Single(Diffs(Design("1", "btn", fill: blue) with { BorderWidth = one, BorderColor = Black }, Rendered("button", background: blue) with { BorderWidth = NoBorder })).Prop);
+        Assert.Equal("borderWidth", Assert.Single(Diffs(Design("1", "btn") with { BorderWidth = NoBorder }, Rendered("button", background: blue) with { BorderWidth = one, BorderColor = Black })).Prop);
+    }
+
+    [Fact]
+    public void A_text_nodes_fill_is_its_text_color_so_a_matching_border_still_counts()
+    {
+        // 快照的文字節點:Fill 是字色。border: 1px solid currentColor 看得見,不能當成跟底色同色
+        var one = new Insets(1, 1, 1, 1);
+
+        Assert.Equal("borderWidth", Assert.Single(Diffs(
+            Design("1", "t", DesignNodeType.Text, fill: Black, characters: "Hello") with { BorderWidth = one, BorderColor = Black },
+            Rendered("p", "p", text: "Hello") with { BorderWidth = NoBorder })).Prop);
+    }
+
     // ---------- 陰影 ----------
 
     private static ShadowSpec Shadow(double y, double blur, Rgba? color = null, bool inset = false) => new(0, y, blur, 0, color ?? Black, inset);
@@ -444,6 +478,66 @@ public class StyleDiffTests
         Assert.Null(t.Text.TextAlign);
         Assert.Equal("NONE", t.TextAutoResize);
         Assert.Equal(1, t.Opacity);
+    }
+
+    [Theory]
+    [InlineData("""{ "fontStyle": "Regular" }""", "normal")]     // 真實回應:沒有 italic 欄位
+    [InlineData("""{ "fontStyle": "Bold" }""", "normal")]
+    [InlineData("""{ "fontStyle": "Bold Italic", "italic": true }""", "italic")]
+    [InlineData("""{ "italic": true }""", "italic")]
+    [InlineData("""{ "fontStyle": "Italic" }""", "italic")]      // 字型名稱有寫、italic 欄位漏掉
+    [InlineData("""{ "fontStyle": "Light Oblique" }""", "italic")]
+    public void Figma_italic_is_read_from_either_field(string style, string expected)
+        => Assert.Equal(expected, Figma($$"""{ "id": "1", "name": "t", "type": "TEXT", "style": {{style}} }""").Text!.FontStyle);
+
+    [Fact]
+    public void A_real_figma_text_node_parses_as_expected()
+    {
+        // 2026-11-06 真實回應的節錄(Carbon 的 Button 文字):預設值都被省略,textAutoResize 在 style 裡
+        var node = Figma("""
+            { "id": "1854:1779", "name": "Button", "type": "TEXT", "characters": "Button", "strokeWeight": 1, "strokeAlign": "OUTSIDE", "strokes": [], "effects": [],
+              "layoutSizingHorizontal": "HUG", "layoutSizingVertical": "HUG", "layoutAlign": "INHERIT", "layoutGrow": 0,
+              "absoluteBoundingBox": { "x": 0, "y": 0, "width": 44, "height": 18 },
+              "fills": [{ "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+              "style": { "fontFamily": "IBM Plex Sans", "fontPostScriptName": "IBMPlexSans", "fontStyle": "Regular", "fontWeight": 400, "textAutoResize": "WIDTH_AND_HEIGHT",
+                "fontSize": 14, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0.16, "lineHeightPx": 18, "lineHeightUnit": "PIXELS" } }
+            """);
+
+        Assert.Equal("normal", node.Text!.FontStyle);
+        Assert.Equal("none", node.Text.TextDecoration);
+        Assert.Equal("none", node.Text.TextTransform);
+        Assert.Null(node.Text.TextAlign); // 文字框隨內容縮放:對齊沒有視覺意義
+        Assert.Equal("WIDTH_AND_HEIGHT", node.TextAutoResize);
+        Assert.Null(node.BorderWidth);    // 文字的 stroke 不是 CSS 的 border,strokeWeight 1 也不算
+        Assert.Empty(node.Shadows!);
+        Assert.Equal(1, node.Opacity);
+    }
+
+    [Fact]
+    public void A_real_figma_button_with_a_border_parses_as_expected()
+    {
+        // 2026-11-06 真實回應的節錄(Codex 的按鈕)
+        var node = Figma("""
+            { "id": "10019:92457", "name": "Button", "type": "COMPONENT", "strokeWeight": 1, "strokeAlign": "INSIDE", "effects": [],
+              "strokes": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 0.4470588, "g": 0.4666667, "b": 0.4901961, "a": 1 } }],
+              "layoutMode": "HORIZONTAL", "primaryAxisAlignItems": "CENTER", "counterAxisAlignItems": "CENTER",
+              "layoutSizingHorizontal": "HUG", "layoutSizingVertical": "FIXED", "cornerRadius": 2 }
+            """);
+
+        Assert.Equal(new Insets(1, 1, 1, 1), node.BorderWidth);
+        Assert.Equal("#72777D", node.BorderColor!.Value.ToHex());
+        Assert.Equal("CENTER", node.PrimaryAxisAlignItems);
+    }
+
+    [Fact]
+    public void A_real_figma_frame_without_strokes_has_no_border_even_with_a_stroke_weight()
+    {
+        // 2026-11-06 真實回應:沒有 strokes 時 strokeWeight 仍然是 1
+        var node = Figma("""{ "id": "1", "name": "f", "type": "FRAME", "strokeWeight": 1, "strokeAlign": "INSIDE", "strokes": [], "effects": [], "layoutMode": "VERTICAL", "layoutWrap": "NO_WRAP" }""");
+
+        Assert.Equal(new Insets(0, 0, 0, 0), node.BorderWidth);
+        Assert.Null(node.BorderColor);
+        Assert.Equal("MIN", node.PrimaryAxisAlignItems); // 預設值被省略
     }
 
     [Theory]
