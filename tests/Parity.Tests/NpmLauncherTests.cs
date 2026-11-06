@@ -10,9 +10,9 @@ namespace Parity.Tests;
 /// </summary>
 public class NpmLauncherTests
 {
-    private static (int ExitCode, string Err) RunLauncherAs(string platform, string arch)
+    private static (int ExitCode, string Err) RunLauncherAs(string platform, string arch, string? launcherPath = null)
     {
-        var launcher = Repo.PathOf("npm", "cornhsu-parity", "bin", "parity.js");
+        var launcher = launcherPath ?? Repo.PathOf("npm", "cornhsu-parity", "bin", "parity.js");
         var psi = new ProcessStartInfo("node")
         {
             RedirectStandardOutput = true,
@@ -56,6 +56,26 @@ public class NpmLauncherTests
         Assert.Equal(2, exit);
         Assert.Contains("@cornhsu/parity-linux-arm64", err);
         Assert.Contains("npm install cornhsu-parity", err);
+        Assert.Contains("still reaching the npm registry", err); // 發版的同步空窗,不是使用者裝錯
+        Assert.DoesNotMatch(@"\p{IsCJKUnifiedIdeographs}", err);
+    }
+
+    [Fact]
+    public void Under_npx_the_message_names_the_cached_folder_because_reinstalling_cannot_fix_it()
+    {
+        // npx 把沒有子套件的半成品留在 npm-cache/_npx/<hash>/,之後每次都重用(2.3.1 實測):npm install 修不到,要刪這個資料夾
+        using var dir = new TempDir();
+        var launcher = dir.Write(
+            Path.Combine("_npx", "cb34571e8a31f5e4", "node_modules", "cornhsu-parity", "bin", "parity.js"),
+            Repo.Read("npm", "cornhsu-parity", "bin", "parity.js"));
+
+        var (exit, err) = RunLauncherAs("linux", "arm64", launcher);
+
+        Assert.Equal(2, exit);
+        Assert.Contains("npx cached this incomplete install", err);
+        Assert.Contains(Path.Combine("_npx", "cb34571e8a31f5e4"), err);
+        Assert.DoesNotContain("node_modules", err); // 要刪的是整份,不是裡面的 cornhsu-parity
+        Assert.DoesNotContain("npm install cornhsu-parity", err);
         Assert.DoesNotMatch(@"\p{IsCJKUnifiedIdeographs}", err);
     }
 }

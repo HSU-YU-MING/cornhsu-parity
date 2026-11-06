@@ -172,6 +172,8 @@ NuGet 通路是一個指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parit
   裁剪:`check` 一讀設定檔就崩潰。自帶 runtime:每包多約 50 MB、.NET 的安全修補要等 Parity 重發、又會變成 `parity.cmd`。
 - **`release.yml` 的 pack 不能帶 `--no-build`、不能 `dotnet nuget push *.nupkg`。** 平台包要各自建置;指標包要最後推,
   中間要等 nuget.org 查得到(臨時金鑰只活 1 小時,所以推指標包前重新登入)。
+- **npm 的入口套件也要最後發,而且要等壓縮檔下載得到**(`scripts/publish-npm-packages.sh`)。子套件是選用相依,解析不到、下載不到 npm 都不報錯,裝完一執行才 exit 2,`npx` 還會把半成品留在快取。
+  套件清單與 `/<版本>` 回 200 都不算數:2.3.1 實測它們 200 之後壓縮檔還 404。
 - **平台清單可以加、不能減。** 拿掉一個,那個平台的使用者就裝不起來,而且 nuget.org 上的 ID 刪不掉。
   改清單要同步 `Parity.Cli.csproj` 與 `verify-tool-packages.py` 的 `EXPECTED_RIDS`(有瀏覽器的還有 `NODE_DIR`、ci.yml 的 `install-smoke`)。
 - **`any` 與 `linux-musl-*` 不帶 Playwright driver。** 這些平台本來就跑不了要開瀏覽器的指令;`WebImplementationSource.NoDriverMessage`

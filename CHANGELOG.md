@@ -2,6 +2,16 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 未發佈
+
+- **修正:npm 通路發版時不再有裝不起來的空窗**(none;六面都沒動)。入口套件 `cornhsu-parity` 原本在平台子套件發完就立刻發佈,
+  而子套件要同步一段時間才裝得起來:2.3.1 的 `win32-x64` 有一小時裝不起來,這段時間 `npm install` 不報錯,一執行才 exit 2,`npx` 還會把半成品留在快取。
+  - 現在等每個平台的壓縮檔都下載得到,才發佈入口套件(`scripts/publish-npm-packages.sh`)。**代價**:npm 通路會比 NuGet 晚上架,最多再等 3 小時;逾時的話入口套件不發,使用者還是裝到上一版。
+  - 這是從發版機器看出去的,npm 的 CDN 各地不一定同步,所以只能縮小空窗,不保證全世界同時到。
+  - 啟動腳本的錯誤訊息說明 npm 為什麼會跳過子套件。透過 `npx` 執行時改印要刪掉的快取資料夾,因為 `npm install` 修不到它。
+  *The npm entry package now waits until every platform tarball can be downloaded, so a release no longer has a window where `npm install` silently skips the
+  platform package. The npm channel can lag NuGet by up to 3 hours. When the platform package is missing under `npx`, the error names the cached folder to delete.*
+
 ## 2.3.1 — 2026-11-06
 
 > **安全修正:設計稿的圖層名不會再變成 PR 留言裡的連結、圖片或 @ 提及。** 把 Markdown 報告貼到 PR 的專案(Action 的 `comment`、`check --md`、`parity report`)建議升級。

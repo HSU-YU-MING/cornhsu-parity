@@ -221,28 +221,22 @@ jobs:
       # 注意:NODE_AUTH_TOKEN 連「設成空字串」都不行,npm 會拿空 token 去驗證
       # 而不改走 OIDC,所以這裡完全不設 env。
       # provenance 也不必再加旗標,信任發布會自動產生與簽署。
-      - name: Publish to npm (OIDC trusted publishing)
-        run: |
-          set -euo pipefail
-          # 冪等發布:已存在的版本跳過而不是報錯。
-          # 某一包失敗時(例如它的 trusted publisher 還沒設好),重跑不會被
-          # 「前面已經發成功的那幾包」擋住 —— 這是 v0.9.6 實際踩到的狀況:
-          # 四個平台包發成功、主套件因未設定而 ENEEDAUTH,當時無法直接重跑。
-          publish() {
-            local dir="$1" name version
-            name=$(node -p "require('./$dir/package.json').name")
-            version=$(node -p "require('./$dir/package.json').version")
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "↷ $name@$version 已存在,跳過"
-              return 0
-            fi
-            echo "::group::publish $name@$version"
-            npm publish "$dir" --access public
-            echo "::endgroup::"
-          }
-          # 平台包要先上架,主套件的 optionalDependencies 才解析得到
-          for dir in npm/dist/parity-*; do publish "$dir"; done
-          publish npm/dist/cornhsu-parity
+      #
+      # 順序是重點:使用者裝的是入口套件,平台子套件是它的選用相依。入口套件先上架、子套件還沒好的那段時間,
+      # npm 不報錯、默默跳過,裝完一執行才 exit 2,npx 還會把半成品留在快取(2.3.1 的 win32-x64 有一小時裝不起來)。
+      # 所以子套件先發 → 等到壓縮檔真的下載得到 → 入口套件最後發(細節見 scripts/publish-npm-packages.sh)。
+      # 逾時或失敗:入口套件還沒發,使用者照樣裝到上一版;晚一點重跑這個 job(已發佈的會跳過)。
+      - name: Publish the npm platform packages (OIDC trusted publishing)
+        run: bash scripts/publish-npm-packages.sh platform npm/dist
+
+      # 2.3.0、2.3.1 實測:發佈後 8 分鐘到超過 1.5 小時不等,每個平台不一樣。腳本自己 180 分鐘逾時,全部好了之後隔 5 分鐘再確認一次。
+      - name: Wait until npm serves every platform package
+        timeout-minutes: 190
+        run: bash scripts/publish-npm-packages.sh wait npm/dist
+
+      - name: Publish the npm entry package (what users install)
+        timeout-minutes: 190
+        run: bash scripts/publish-npm-packages.sh entry npm/dist
 
   # ── arm64 實機煙霧測試 ──
   # release/npm 的 arm64 執行檔是在 x64 runner 上交叉建置的:建得出來 ≠ 跑得動。

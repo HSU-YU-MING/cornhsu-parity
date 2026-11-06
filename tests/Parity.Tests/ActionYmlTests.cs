@@ -90,7 +90,7 @@ public class ActionYmlTests
     // ---------- 真的跑 check 步驟的 bash(regex 比字串殺不掉「拼錯路徑」這種 mutation)----------
 
     /// <summary>bash:Linux/macOS 用 PATH 上的;Windows 用 Git Bash(GitHub 的 Windows runner 與本機都有)。</summary>
-    private static string BashPath()
+    internal static string BashPath()
     {
         if (!OperatingSystem.IsWindows()) return "bash";
         return FindGitBash(Environment.GetEnvironmentVariable("PATH"),
