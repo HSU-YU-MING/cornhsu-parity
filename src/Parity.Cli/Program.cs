@@ -76,7 +76,8 @@ internal static class CheckCommand
             configPath,
             refreshCache: opts.ContainsKey("--refresh"),
             headless: !opts.ContainsKey("--headed"),
-            extrasAllowed: !reverse); // reverse 報告一律不帶多餘元件清單(extras 是 null)
+            extrasAllowed: !reverse, // reverse 報告一律不帶多餘元件清單(extras 是 null)
+            imagesAllowed: !reverse);
 
         Console.WriteLine($"\x1b[1mParity\x1b[0m — property-level design fidelity check\nconfig: {configPath}\n");
 
@@ -268,7 +269,7 @@ internal static class CheckCommand
                 $"[{node.Severity.ToString().ToLowerInvariant()}] ({ConsoleText.Safe(node.MatchedBy)})");
             foreach (var diff in node.Diffs)
             {
-                var isColor = diff.Prop is "color" or "background";
+                var isColor = diff.Prop is "color" or "background" or "borderColor" or "shadowColor" or "gradient";
                 var expected = isColor ? diff.Expected : $"{diff.Expected}{diff.Unit}";
                 var actual = isColor
                     ? $"{diff.Actual}{(diff.Delta is { } de ? $" (ΔE {de})" : "")}"
@@ -617,7 +618,7 @@ internal static class SnapshotCommand
         // 白名單只在真的測到隨機 id 時才存(anyRandomIds):沒有隨機 id 的站,快照與 1.0 逐位元同形
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(
-            root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null));
+            root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null, styleDefaultsOmitted: true));
 
         Console.WriteLine($"\nwritten: {outPath}");
         foreach (var s in shotPaths) Console.WriteLine($"reference screenshot: {s}");

@@ -22,6 +22,18 @@ public sealed record SnapshotDocument(int SchemaVersion, DesignNode Root)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? StableIdAnchors { get; init; }
 
-    public static SnapshotDocument Of(DesignNode root, IReadOnlyList<string>? stableIdAnchors = null)
-        => new(CurrentSchemaVersion, root) { StableIdAnchors = stableIdAnchors };
+    /// <summary>
+    /// true = 這份快照的樣式欄位只記非預設值,沒寫的就是預設值(透明度 1、沒有邊框、沒有陰影……,
+    /// 見 <see cref="SnapshotBuilder.ExpandStyleDefaults"/>)。全部都寫的話快照會大 34～44%(非作者網站實測),而快照是要 commit 的。
+    /// 沒有這個標記的舊快照,沒寫的樣式是「不知道」,不比。選填欄位,同 schemaVersion 1。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? StyleDefaultsOmitted { get; init; }
+
+    public static SnapshotDocument Of(DesignNode root, IReadOnlyList<string>? stableIdAnchors = null, bool styleDefaultsOmitted = false)
+        => new(CurrentSchemaVersion, root)
+        {
+            StableIdAnchors = stableIdAnchors,
+            StyleDefaultsOmitted = styleDefaultsOmitted ? true : null,
+        };
 }

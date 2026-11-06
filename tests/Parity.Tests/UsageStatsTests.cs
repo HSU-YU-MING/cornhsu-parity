@@ -249,9 +249,13 @@ public class UsageStatsTests
         { "offsetX", 7 }, { "offsetY", 7 }, { "width", 7 }, { "height", 7 },
         { "paddingTop", 7 }, { "paddingRight", 7 }, { "paddingBottom", 7 }, { "paddingLeft", 7 },
         { "itemSpacing", 7 }, { "cornerRadius", 7 }, { "fontSize", 7 }, { "lineHeight", 7 }, { "letterSpacing", 7 },
-        { "color", 6 }, { "background", 6 },
+        { "borderWidth", 7 }, { "shadow", 7 }, { "mainAxisOffset", 7 }, { "crossAxisOffset", 7 },
+        { "color", 6 }, { "background", 6 }, { "borderColor", 6 }, { "shadowColor", 6 }, { "gradient", 6 },
         { "fontWeight", 4 },
-        { "fontFamily", 0 },
+        { "opacity", 5 }, { "image", 5 },
+        { "lineCount", 4 },
+        { "fontFamily", 0 }, { "text", 0 }, { "childOrder", 0 },
+        { "fontStyle", 0 }, { "textDecoration", 0 }, { "textTransform", 0 }, { "textAlign", 0 },
     };
 
     [Theory]
@@ -274,15 +278,15 @@ public class UsageStatsTests
         // 屬性名來自 DiffEngine 的字面值:CompareNum/CompareColor 的呼叫點與直接 new PropDiff("…") 的地方。
         // 引擎多一種屬性而協定沒有,這裡紅——先改協定與收集站,不要在 UsageStats 替它發明家族
         var source = Repo.Read("src", "Parity.Engine", "Comparison", "DiffEngine.cs");
-        var emitted = Regex.Matches(source, @"(?:Compare(?:Num|Color)\(diffs, |new PropDiff\()""(?<p>[A-Za-z]+)""")
+        var emitted = Regex.Matches(source, @"(?:Compare(?:Num|Color)\(diffs, |SoftDiff\(diffs, |new PropDiff\()""(?<p>[A-Za-z]+)""")
             .Select(m => m.Groups["p"].Value)
             .ToHashSet();
         var closedSet = UsageStats.PropFamilies.Select(f => f.Prop).ToHashSet();
 
         Assert.True(emitted.Count >= 17, $"只從 DiffEngine 抓到 {emitted.Count} 個屬性名,解析可能壞了");
         Assert.Empty(emitted.Except(closedSet));
-        // 其餘產生 PropDiff 的地方只能是那兩個接 prop 參數的 helper——多一個動態的,上面的掃描就看不到它
-        Assert.Equal(2, Regex.Matches(source, @"new PropDiff\(prop,").Count);
+        // 其餘產生 PropDiff 的地方只能是那三個接 prop 參數的 helper——多一個動態的,上面的掃描就看不到它
+        Assert.Equal(3, Regex.Matches(source, @"new PropDiff\(prop,").Count);
     }
 
     [Fact]
@@ -308,7 +312,7 @@ public class UsageStatsTests
     [Fact]
     public void Only_properties_with_diffs_are_listed_in_protocol_order_and_unknown_ones_are_never_sent()
     {
-        var stats = UsageStats.Compute([Report([Diff("fontWeight", 100), Diff("opacity", 0.5), Diff("width", 2)])], 1, "figma");
+        var stats = UsageStats.Compute([Report([Diff("fontWeight", 100), Diff("someNewProperty", 0.5), Diff("width", 2)])], 1, "figma");
 
         Assert.Equal(["width", "fontWeight"], stats.Props.Select(p => p.Prop));
         Assert.Equal(3, stats.Severity.Serious); // 嚴重度取自報告的摘要,封閉集以外的屬性照樣算在裡面
@@ -586,10 +590,26 @@ internal static class StatsProtocol
         ["fontSize"] = 7,
         ["lineHeight"] = 7,
         ["letterSpacing"] = 7,
+        ["borderWidth"] = 7,
+        ["shadow"] = 7,
+        ["mainAxisOffset"] = 7,
+        ["crossAxisOffset"] = 7,
         ["color"] = 6,
         ["background"] = 6,
+        ["borderColor"] = 6,
+        ["shadowColor"] = 6,
+        ["gradient"] = 6,
         ["fontWeight"] = 4,
+        ["opacity"] = 5,
+        ["image"] = 5,
+        ["lineCount"] = 4,
         ["fontFamily"] = 0,
+        ["text"] = 0,
+        ["childOrder"] = 0,
+        ["fontStyle"] = 0,
+        ["textDecoration"] = 0,
+        ["textTransform"] = 0,
+        ["textAlign"] = 0,
     };
 
     public static readonly string[] UnmatchedReasons =

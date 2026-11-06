@@ -23,6 +23,7 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
     {
         // 1. 設計來源 → DesignNode 樹 → 正規化(相對 frame 原點)
         var designTree = await _design.GetFrameAsync(req.Design, ct);
+        var designOrigin = designTree.Box; // 正規化之前的原點:參考圖(快照截圖、designImage)用的是這個座標
         designTree = Normalizer.NormalizeDesign(designTree);
 
         // 2. 實作來源 → RenderedNode 樹;視窗大小 = frame 尺寸(規畫書:在 frame 設計寬度下渲染)
@@ -47,26 +48,27 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         var match = Matcher.Match(designTree, renderedTree);
 
         // 4. 數值 diff + 容差(含相對位置:非 auto-layout 父層的子節點才給參照)
-        var diffEngine = new DiffEngine(_opts.Tolerances);
+        var diffEngine = new DiffEngine(_opts.Tolerances, _opts.CompareText);
         var positionOf = _opts.ComparePosition
             ? BuildPositionContexts(designTree, renderedTree, match.Pairs)
             : new Dictionary<string, PositionContext>();
+        // 子元件順序與容器對齊:compare.position = "none" 不比;視窗寬度與設計稿不同時版面可能合法重排,也不比
+        var reflowed = Math.Abs(implRef.ViewportWidth!.Value - Math.Ceiling(designTree.Box.W)) > 1;
+        var structuralOf = _opts.ComparePosition && !reflowed
+            ? diffEngine.StructuralDiffs(designTree, renderedTree, match.Pairs)
+            : [];
         var nodes = match.Pairs
-            .Select(p => diffEngine.Diff(p, positionOf.GetValueOrDefault(p.Design.Id)))
+            .Select(p =>
+            {
+                var node = diffEngine.Diff(p, positionOf.GetValueOrDefault(p.Design.Id));
+                if (!structuralOf.TryGetValue(p.Design.Id, out var extra)) return node;
+                var diffs = node.Diffs.Concat(extra).ToList();
+                return node with { Diffs = diffs, Severity = diffs.Max(d => d.Severity) };
+            })
             .ToList();
 
         // 5. 彙總
-        var withDiffs = nodes.Where(n => n.Diffs.Count > 0).ToList();
-        var summary = new ReportSummary(
-            DesignNodes: match.Pairs.Count + match.Unmatched.Count,
-            Matched: match.Pairs.Count,
-            Unmatched: match.Unmatched.Count,
-            NodesWithDiffs: withDiffs.Count,
-            Critical: Count(Severity.Critical),
-            Serious: Count(Severity.Serious),
-            Medium: Count(Severity.Medium),
-            Minor: Count(Severity.Minor),
-            MaxSeverity: nodes.Count == 0 ? Severity.None : nodes.Max(n => n.Severity));
+        var summary = Summarize(nodes, match.Unmatched.Count);
 
         // 6. 實作端多出來的元件(選用,只列出):放在彙總之後,summary 與 gate 看不到它。
         // 視窗換到正規化後的座標系:擷取端的座標是「頁面座標 + 捲動」,正規化再減掉 body 原點。
@@ -82,9 +84,23 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         var report = new FidelityReport(
             req.Route, req.Impl.Url, $"{req.Design.Source}#{req.Design.NodeId}",
             nodes, match.Unmatched, summary, extras);
-        return new ScanResult(report, designTree, renderedTree, renderedOrigin);
+        return new ScanResult(report, designTree, renderedTree, renderedOrigin, designOrigin);
+    }
 
+    /// <summary>報告的摘要。節點清單之後又多了落差時(圖片比對)要重算,所以獨立出來。</summary>
+    internal static ReportSummary Summarize(IReadOnlyList<NodeResult> nodes, int unmatched)
+    {
         int Count(Severity s) => nodes.SelectMany(n => n.Diffs).Count(x => x.Severity == s);
+        return new ReportSummary(
+            DesignNodes: nodes.Count + unmatched,
+            Matched: nodes.Count,
+            Unmatched: unmatched,
+            NodesWithDiffs: nodes.Count(n => n.Diffs.Count > 0),
+            Critical: Count(Severity.Critical),
+            Serious: Count(Severity.Serious),
+            Medium: Count(Severity.Medium),
+            Minor: Count(Severity.Minor),
+            MaxSeverity: nodes.Count == 0 ? Severity.None : nodes.Max(n => n.Severity));
     }
 
     /// <summary>
@@ -128,4 +144,5 @@ public sealed record ScanResult(
     FidelityReport Report,
     DesignNode DesignTree,
     RenderedNode RenderedTree,
-    Model.Box RenderedOrigin);
+    Model.Box RenderedOrigin,
+    Model.Box DesignOrigin = default);

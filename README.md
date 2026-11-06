@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1198**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1371**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -115,7 +115,7 @@ up for someone, to pass on as it is. The full description is in
   how many design nodes could not be matched per reason, and, if `compare.extras` is on, how many extra
   elements were found. There is no ID unless the user adds one to the config.
 - **Never sent:** URLs, routes, page or layer names, selectors, file names or paths, screenshots, colour
-  values, design content, tokens, or repository, user or machine names. The request carries no User-Agent
+  values, design content, page text, image contents, tokens, or repository, user or machine names. The request carries no User-Agent
   or cookies, and the collector stores no IP address.
 - **Where and why:** `stats.cornhsu.com`, for academic research on how far real implementations drift from
   their designs; only aggregate results are published, and each record is kept for at most 3 years
@@ -182,8 +182,12 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   ],
   "compare": {
     "position": "relative",                  // relative = compare relative position (default); none = skip position
-    "extras": "none"                         // optional: "list" = also list page elements the design has no node for;
+    "extras": "none",                        // optional: "list" = also list page elements the design has no node for;
                                              //   listed only, never gates (see "Elements the design does not have")
+    "text": "soft",                          // optional: text content. soft = report it, never gate (default);
+                                             //   gate = serious gap; none = do not compare
+    "images": "none"                         // optional: "soft" = compare image content against a reference image
+                                             //   (snapshot baselines and designImage only)
   },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
@@ -312,6 +316,43 @@ Only the things that should hold no matter how the layout flows:
   (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `color(display-p3 …)`).
 - **Absolute x/y is deliberately never compared**: it legitimately differs in a flexible layout,
   so comparing it means false positives, which means losing trust.
+
+These are all **soft gaps** too, like font-family: reported, but they cost no fidelity points, never
+gate and do not count as new in `--baseline` mode. They start soft on purpose, until real sites show
+how noisy each one is.
+
+- **Text content** (`text`): a layer matched by name whose text differs. Case, whitespace, invisible
+  characters and quote style are ignored. When the element has children, the design text only has to
+  appear somewhere inside. Layers you matched by hand are skipped (design systems often use placeholder
+  text), and so are snapshot baselines (dynamic content changes between runs). `compare.text: "gate"`
+  makes it a serious gap, snapshot baselines included; `"none"` turns it off. **Both texts go into
+  `report.json` and the Markdown report, cut to 120 characters**, so they reach anywhere you send those.
+- **Child order** (`childOrder`): children of an auto-layout container in a different order along its
+  main axis. Compared on the real boxes, so CSS `order` and `row-reverse` count correctly. Wrapping
+  containers and absolutely positioned children are skipped.
+- **Container alignment** (`mainAxisOffset`, `crossAxisOffset`): the distance from a child to its
+  auto-layout parent's edge. Only where that distance should be fixed: both sizes explicitly FIXED, no
+  text nodes, and no padding or size gap that already explains the shift. The main axis is compared for
+  the first child under `MIN`, `CENTER` or `MAX`. Order and alignment follow `compare.position`, and are
+  skipped when a target's viewport width differs from the design, because the layout may reflow.
+- **Line count** (`lineCount`): how many lines a text takes, measured from the real line boxes. This is
+  the root cause when a wrapped subtitle pushes everything below it down. The design side is box height
+  over line height; fixed-height text boxes are skipped.
+- **Style**: `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `opacity`, `borderWidth`,
+  `borderColor`, `shadow`, `shadowColor`, `gradient`. Only what the design states is compared: Figma nodes
+  always state it, and a hand-written design JSON states what it sets (`text.fontStyle`, `opacity`,
+  `borderWidth`, `shadows`, `gradient` and so on). Invisible shadows do not count, and neither does a
+  text transform that changes nothing on screen. Opacity is the element's own, not accumulated from its
+  ancestors. A gradient's direction is not compared yet, only its end colors.
+- **Image content** (`image`, off by default): `"compare": { "images": "soft" }` crops each `img`, `svg`,
+  `picture` and background image out of a full-page screenshot and compares it with the same box in the
+  reference image, which is the screenshot next to a `parity snapshot` baseline, or `designImage`.
+  Recompressing or rescaling an image does not count. It takes one extra screenshot per page, and it does
+  not work with Figma yet (exporting node images would spend your API quota): setting it there is a
+  config error.
+
+A snapshot taken by an older version has none of the style values, so nothing new appears until you run
+`parity snapshot` again.
 
 > When the design source is Figma, layer names in the report (the Markdown written by
 > `check --md` or re-rendered by `parity report`, and the local UI) **link back to that node in
@@ -682,12 +723,13 @@ for, how long it is kept — is **<https://stats.cornhsu.com/>**.
 | `data.designSource` | `figma`, `snapshot` (a file written by `parity snapshot`), `file` (any other design JSON) or `image` |
 | `data.designNodes`, `data.matched` | Design nodes and matched nodes, summed over all pages |
 | `data.severity` | Gap counts per severity: `critical`, `serious`, `medium`, `minor` |
-| `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`/`background` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), and weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300). `fontFamily` has no ranges, only counts |
+| `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`, `borderWidth`, `shadow`, `mainAxisOffset`, `crossAxisOffset`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`, `background`, `borderColor`, `shadowColor`, `gradient` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300), a 0–1 difference for `opacity` and `image` (<0.05, 0.05–0.1, 0.1–0.25, 0.25–0.5, ≥0.5), and lines for `lineCount` (1, 2, 3–4, 5 or more). `fontFamily`, `text`, `childOrder`, `fontStyle`, `textDecoration`, `textTransform`, `textAlign` have no ranges, only counts: never the text, the layer names or the values |
 | `data.unmatchedBy` | Design nodes that could not be matched, counted per reason: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, or `other` for any reason this version does not list. Only reasons with at least one node; `{}` when everything matched. Never the layer names |
 | `data.extras` | How many extra page elements `compare.extras` found, summed over all pages (the total, before the 20-per-page cap). Only present when the list is on. Never their selectors, tags or boxes |
 
 **Never sent:** URLs, routes, page or layer names, selectors, file names or paths, screenshots, colour
-values, design content, tokens, repository names or IDs, user names, machine names. The request has no
+values, design content, text from the page or the design, image contents or image hashes, tokens,
+repository names or IDs, user names, machine names. The request has no
 User-Agent and no cookies. The collector does not store IP addresses or the time a record arrived (only
 its date); Cloudflare, which hosts the collector, sees the connection address at its edge, as any network
 provider does.

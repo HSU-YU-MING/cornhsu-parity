@@ -101,6 +101,7 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
                   "layoutSizingHorizontal": "FIXED", "layoutSizingVertical": "FIXED",
                   "children": [
                     { "id": "3:3", "name": "align-chip", "type": "Frame", "box": { "x": 40, "y": 80, "width": 120, "height": 40 },
+                      "layoutSizingHorizontal": "FIXED", "layoutSizingVertical": "FIXED",
                       "fill": { "r": 37, "g": 99, "b": 235, "a": 1 }, "children": [] } ] } ] },
             { "id": "4:1", "name": "align-free", "type": "Frame", "box": { "x": 900, "y": 0, "width": 800, "height": 600 },
               "fill": { "r": 255, "g": 255, "b": 255, "a": 1 },
@@ -178,30 +179,37 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
         new("G2", "徽章不見", Group.Lab, Remove(Badge), 0, [], ["hero-badge (no-anchor)"]),
         // 要擋得用 minMatchRate,但那是「配對可信度」(exit 3:結果不可信),不是「做錯了」(exit 1)
         new("G2-minMatchRate", "徽章不見,gate.minMatchRate: 1", Group.StrictMatch, Remove(Badge), 3, [], ["hero-badge (no-anchor)"]),
-        // 標題文字寫錯:圖層名(class page-title)照樣配上,文字內容不比
-        new("G3", "文字寫錯", Group.Lab, Swap(">Parity Demo<", ">Totally Wrong Words<"), 0, [], []),
-        // 卡片 1、3 整個互換(含 id 與標題):各自照 id / 文字配回原圖層;自動排版的子元件不比相對位置
-        new("G4", "順序對調", Group.Lab, Exchange(Card1, Card3), 0, [], []),
+        // 標題文字寫錯:圖層名(class page-title)照樣配上,文字內容的落差是軟的:會列出、不擋
+        new("G3", "文字寫錯", Group.Lab, Swap(">Parity Demo<", ">Totally Wrong Words<"), 0, ["page-title.text (soft)"], []),
+        // 卡片 1、3 整個互換(含 id 與標題):各自照 id / 文字配回原圖層;自動排版的子元件不比相對位置,順序另外比,是軟落差
+        new("G4", "順序對調", Group.Lab, Exchange(Card1, Card3), 0, ["feature-list.childOrder (soft)"], []),
         // 設計稿沒有的大紅色區塊:配對以設計端為錨,多出來的元件沒有人看
         new("G5", "多餘元件", Group.Lab,
             Swap("<body>", "<body><div style=\"position:absolute;top:0;left:0;width:800px;height:200px;background:#FF0000\"></div>"),
             0, [], []),
-        // 圖片換成另一張同尺寸的:圖片內容不比
+        // 圖片換成另一張同尺寸的:圖片內容預設不比,這張設計稿也沒有參考圖。開了 compare.images 的情況見 ImageComparisonTests
         new("G6", "圖片換錯", Group.Lab, Swap(BlueSvg, RedSvg), 0, [], []),
-        // 透明度、邊框、陰影都不比
-        new("G7", "樣式", Group.Lab, Css("button.cta-button{opacity:.2;border:4px solid #000;box-shadow:0 0 30px #000}"), 0, [], []),
-        // 斜體、底線、大小寫轉換都不比
-        new("G8", "文字樣式", Group.Lab, Css("h1.page-title{font-style:italic;text-decoration:underline;text-transform:uppercase}"), 0, [], []),
-        // 文字對齊不比
-        new("G9", "文字對齊", Group.Lab, Css("button.cta-button{text-align:left}"), 0, [], []),
+        // 透明度、邊框、陰影、漸層:軟落差(設計稿要有寫才比,LabDesign 補上了)
+        new("G7", "樣式", Group.Lab, Css("button.cta-button{opacity:.2;border:4px solid #000;box-shadow:0 0 30px #000}"), 0,
+            ["cta-button.borderWidth (soft)", "cta-button.opacity (soft)", "cta-button.shadow (soft)"], []),
+        new("G7-gradient", "漸層", Group.Lab, Css("button.cta-button{background-image:linear-gradient(#ff0000,#0000ff)}"), 0,
+            ["cta-button.gradient (soft)"], []),
+        // Tailwind 的元素預設就帶這種看不見的陰影:不算有陰影
+        new("G7-invisible", "看不見的陰影", Group.Lab, Css("button.cta-button{box-shadow:0 0 #0000,0 0 #0000}"), 0, [], []),
+        // 斜體、底線、大小寫轉換:軟落差
+        new("G8", "文字樣式", Group.Lab, Css("h1.page-title{font-style:italic;text-decoration:underline;text-transform:uppercase}"), 0,
+            ["page-title.fontStyle (soft)", "page-title.textDecoration (soft)", "page-title.textTransform (soft)"], []),
+        // 文字對齊:軟落差
+        new("G9", "文字對齊", Group.Lab, Css("button.cta-button{text-align:left}"), 0, ["cta-label.textAlign (soft)"], []),
         // 副標題擠成五行、下方全部推開 96px(G10_… 那條驗這件事真的發生了):文字節點既不比尺寸、也不當位置目標,
-        // 其他元件的相對位置是對最近的已配對兄弟算的,跟著一起移就沒有偏移
-        new("G10", "換行", Group.Lab, Css("p.subtitle{width:60px}"), 0, [], []),
-        // 自動排版容器的對齊方式(primaryAxisAlignItems / counterAxisAlignItems)沒有解析,
-        // 自動排版的子元件又不比相對位置——設計稿垂直置中、頁面靠上,差 40px 沒有任何提示
-        new("G11", "容器對齊", Group.Align, Same, 0, [], [], Frame: "3:1"),
-        // 對照(不是缺口):同一頁對「容器不是自動排版」的設計稿,同樣的 40px 就量得到——
-        // 證明 G11 的頁面真的歪了,通過是因為自動排版那條路不比
+        // 其他元件的相對位置是對最近的已配對兄弟算的,跟著一起移就沒有偏移。根因另外比:行數,軟落差
+        new("G10", "換行", Group.Lab, Css("p.subtitle{width:60px}"), 0, ["subtitle.lineCount (soft)"], []),
+        // 設計稿垂直置中、頁面靠上,差 40px:自動排版的子元件不比相對位置,對齊另外比,是軟落差
+        new("G11", "容器對齊", Group.Align, Same, 0, ["align-chip.crossAxisOffset (soft)"], [], Frame: "3:1"),
+        // 主軸也一樣:設計稿靠左(MIN),頁面置中
+        new("G11-main", "容器主軸對齊", Group.Align, Css(".align-row{justify-content:center}"), 0,
+            ["align-chip.crossAxisOffset (soft)", "align-chip.mainAxisOffset (soft)"], [], Frame: "3:1"),
+        // 對照(不是缺口):同一頁對「容器不是自動排版」的設計稿,同樣的 40px 是硬落差 offsetY
         new("G11-control", "容器對齊(對照:容器不是自動排版)", Group.Align, Same, 1, ["align-chip.offsetY"], [], Frame: "4:1"),
     ];
 
@@ -319,6 +327,22 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
                 { "id": "1:14", "name": "hero-image", "type": "Shape",
                   "box": { "x": 40, "y": 400, "width": 120, "height": 64 }, "children": [] }
                 """));
+
+            // 樣式屬性要設計稿有寫才比:Figma 來的節點都有,手寫的 demo 沒有,這裡補上(值與基準頁相同,列 00 才會零落差)
+            IEnumerable<JsonNode> Walk(JsonNode n) =>
+                new[] { n }.Concat((n["children"]?.AsArray() ?? []).SelectMany(c => Walk(c!)));
+            var byName = Walk(root).ToDictionary(n => (string)n["name"]!);
+
+            var title = byName["page-title"]["text"]!;
+            title["fontStyle"] = "normal";
+            title["textDecoration"] = "none";
+            title["textTransform"] = "none";
+            byName["subtitle"]["text"]!["lineHeight"] = 24;
+            byName["cta-label"]["text"]!["textAlign"] = "center";
+            var button = byName["cta-button"];
+            button["opacity"] = 1;
+            button["borderWidth"] = JsonNode.Parse("""{ "top": 0, "right": 0, "bottom": 0, "left": 0 }""");
+            button["shadows"] = new JsonArray();
             return root.ToJsonString();
         }
 

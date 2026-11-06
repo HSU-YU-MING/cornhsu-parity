@@ -23,9 +23,22 @@ public sealed record PositionContext(
 ///     「比相對位置」)。參照優先用兄弟——一個元素壞掉才不會讓後面整排連環誤報。
 /// 不比絕對位置 x/y——彈性版面下本來就會不同,比了 = 狂誤報 = 失去信任。
 /// </summary>
-public sealed class DiffEngine(Tolerances tolerances)
+public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText = TextComparison.Soft)
 {
     private readonly Tolerances _tol = tolerances;
+    private readonly TextComparison _compareText = compareText;
+
+    /// <summary><see cref="RenderedNode.TextContent"/> 的長度上限(與 CaptureScript 同值):到上限代表被截斷,沒看完就不判。</summary>
+    internal const int TextContentLimit = 2000;
+
+    /// <summary>報告裡的文字最多幾個字元:report.json 會被推到伺服器、貼進 PR 留言,整段文字不用都帶。</summary>
+    internal const int MaxTextInReport = 120;
+
+    /// <summary>這些元素的文字不在子節點裡(值、替代文字、畫布),比了都是誤報。</summary>
+    private static readonly HashSet<string> NoTextTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "input", "textarea", "select", "img", "svg", "canvas", "video", "audio", "iframe", "object", "embed", "picture",
+    };
 
     public NodeResult Diff(NodePair pair, PositionContext? position = null)
     {
@@ -89,7 +102,12 @@ public sealed class DiffEngine(Tolerances tolerances)
                 CompareNum(diffs, "letterSpacing", ls, rls, _tol.FontSizePx);
             if (dt.FontFamily is { } ff && rt.FontFamily is { } rff)
                 CompareFontFamily(diffs, ff, rff); // 軟落差(Figma 名 ≠ CSS font stack)
+            CompareTextStyle(diffs, d, r, dt, rt);
         }
+
+        CompareTextContent(diffs, pair);
+        CompareLineCount(diffs, pair);
+        CompareBoxStyle(diffs, pair);
 
         // --- 顏色 ---
         if (d.Fill is { } fill && !fill.IsTransparent)
@@ -109,6 +127,158 @@ public sealed class DiffEngine(Tolerances tolerances)
 
         var severity = diffs.Count == 0 ? Severity.None : diffs.Max(x => x.Severity);
         return new NodeResult(d.Name, d.Id, r.Selector, pair.MatchedBy, severity, diffs, d.Box, r.Box);
+    }
+
+    /// <summary>
+    /// 要看父層與兄弟才算得出來的落差,依設計節點 Id 分組:自動排版容器裡的子元件順序(childOrder)與對齊(mainAxisOffset、crossAxisOffset)。
+    /// 自動排版的子元件不比相對位置(那會把 padding、gap 的同一個根因報兩次),所以順序對調、對齊跑掉原本完全看不到。
+    /// 都是軟落差。呼叫端在視窗寬度與設計稿不同時不要呼叫:版面可能合法重排。
+    /// </summary>
+    public Dictionary<string, List<PropDiff>> StructuralDiffs(
+        DesignNode designRoot, RenderedNode renderedRoot, IReadOnlyList<NodePair> pairs)
+    {
+        var renderedBy = new Dictionary<string, RenderedNode>();
+        foreach (var p in pairs) renderedBy.TryAdd(p.Design.Id, p.Rendered);
+
+        var result = new Dictionary<string, List<PropDiff>>();
+        List<PropDiff> DiffsOf(string id) => result.TryGetValue(id, out var list) ? list : result[id] = [];
+
+        void Walk(DesignNode parent, RenderedNode? rendered)
+        {
+            if (rendered is not null && (IsAutoLayout(parent) || parent.Padding is not null))
+            {
+                // 不參與版面流的子節點不算;順序照設計稿的位置排
+                var kids = parent.Children
+                    .Where(c => !string.Equals(c.LayoutPositioning, "ABSOLUTE", StringComparison.OrdinalIgnoreCase))
+                    .Where(c => !renderedBy.TryGetValue(c.Id, out var r) || !r.OutOfFlow)
+                    .ToList();
+                var matched = kids.Where(c => renderedBy.ContainsKey(c.Id)).Select(c => (Design: c, Rendered: renderedBy[c.Id])).ToList();
+                var horizontal = IsAutoLayout(parent)
+                    ? string.Equals(parent.LayoutMode, "HORIZONTAL", StringComparison.OrdinalIgnoreCase)
+                    : matched.Count > 1
+                        && Variance(matched.Select(m => m.Design.Box.X)) > Variance(matched.Select(m => m.Design.Box.Y));
+
+                var order = ChildOrderDiff(parent, matched, horizontal);
+                if (order is not null)
+                {
+                    // root 沒有 NodeResult(隱含配對),掛在第一個子元件上
+                    var owner = ReferenceEquals(parent, designRoot) ? matched[0].Design.Id : parent.Id;
+                    DiffsOf(owner).Add(order);
+                }
+                if (IsAutoLayout(parent))
+                    CompareAlignment(parent, rendered, kids, matched, horizontal, skipMainAxis: order is not null, DiffsOf);
+            }
+            foreach (var c in parent.Children) Walk(c, renderedBy.GetValueOrDefault(c.Id));
+        }
+        Walk(designRoot, renderedRoot);
+        return result;
+    }
+
+    private static bool IsAutoLayout(DesignNode n)
+        => string.Equals(n.LayoutMode, "HORIZONTAL", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(n.LayoutMode, "VERTICAL", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>明確寫了 FIXED。對齊只比這種:未知的尺寸(手寫 JSON)比下去,隨內容變動的距離就全是誤報。</summary>
+    private static bool ExplicitlyFixed(string? sizing) => string.Equals(sizing, "FIXED", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 子元件順序:沿主軸比設計稿與頁面上的先後,用實際的框比,所以 CSS 的 order、row-reverse 自然算對。
+    /// 這些情況不比:會換行的容器(第一版)、頁面上換了行(子元件在交叉軸上不重疊,先後沒有意義)、配到的子元件不到兩個。
+    /// 差 1px 以內不算先後,疊在一起的元素不會互換。
+    /// </summary>
+    private static PropDiff? ChildOrderDiff(DesignNode parent, List<(DesignNode Design, RenderedNode Rendered)> kids, bool horizontal)
+    {
+        if (kids.Count < 2 || string.Equals(parent.LayoutWrap, "WRAP", StringComparison.OrdinalIgnoreCase)) return null;
+
+        double Start(Box b) => horizontal ? b.X : b.Y;
+        var (firstStart, firstEnd) = CrossSpan(kids[0].Rendered.Box);
+        (double Start, double End) CrossSpan(Box b) => horizontal ? (b.Y, b.Y + b.H) : (b.X, b.X + b.W);
+        foreach (var (_, r) in kids.Skip(1))
+        {
+            var (s, e) = CrossSpan(r.Box);
+            if (s >= firstEnd || e <= firstStart) return null;
+        }
+
+        var inverted = false;
+        for (var i = 0; i < kids.Count && !inverted; i++)
+            for (var j = i + 1; j < kids.Count; j++)
+            {
+                var designDelta = Start(kids[j].Design.Box) - Start(kids[i].Design.Box);
+                var renderedDelta = Start(kids[j].Rendered.Box) - Start(kids[i].Rendered.Box);
+                if ((designDelta > 1 && renderedDelta < -1) || (designDelta < -1 && renderedDelta > 1))
+                {
+                    inverted = true;
+                    break;
+                }
+            }
+        if (!inverted) return null;
+
+        // 同名的子元件加上設計稿裡的序號,否則期望和實際看起來一模一樣
+        var byDesign = kids.OrderBy(k => Start(k.Design.Box)).ToList();
+        var duplicated = byDesign.GroupBy(k => k.Design.Name).Any(g => g.Count() > 1);
+        string Label((DesignNode Design, RenderedNode Rendered) k)
+            => duplicated ? $"{k.Design.Name} #{byDesign.IndexOf(k) + 1}" : k.Design.Name;
+        return new PropDiff("childOrder",
+            Excerpt(string.Join(", ", byDesign.Select(Label))),
+            Excerpt(string.Join(", ", kids.OrderBy(k => Start(k.Rendered.Box)).Select(Label))),
+            null, null, 0, Severity.Minor, Soft: true);
+    }
+
+    /// <summary>
+    /// 容器對齊:比子元件到父層邊的距離。只比「距離應該固定」的情況,其他原因造成的位移已經有別條落差,不重複報:
+    /// 父層尺寸或 padding 不一樣就整個跳過;交叉軸要父層與子元件都明確是 FIXED,而且子元件尺寸沒差;
+    /// 主軸只比第一個子元件、只比 MIN/CENTER/MAX,CENTER/MAX 還要所有子元件都配到、都是固定尺寸,總長度也沒差。
+    /// 文字節點不比:文字框跟瀏覽器量的本來就不同。
+    /// </summary>
+    private void CompareAlignment(
+        DesignNode parent, RenderedNode rendered, List<DesignNode> kids,
+        List<(DesignNode Design, RenderedNode Rendered)> matched, bool horizontal, bool skipMainAxis,
+        Func<string, List<PropDiff>> diffsOf)
+    {
+        if (parent.Padding is { } pad
+            && (Math.Abs(pad.Top - rendered.Padding.Top) > _tol.SpacingPx || Math.Abs(pad.Right - rendered.Padding.Right) > _tol.SpacingPx
+                || Math.Abs(pad.Bottom - rendered.Padding.Bottom) > _tol.SpacingPx || Math.Abs(pad.Left - rendered.Padding.Left) > _tol.SpacingPx))
+            return;
+
+        double Pos(Box b, bool mainAxis) => horizontal == mainAxis ? b.X : b.Y;
+        double Size(Box b, bool mainAxis) => horizontal == mainAxis ? b.W : b.H;
+        string? Sizing(DesignNode n, bool mainAxis) => horizontal == mainAxis ? n.LayoutSizingHorizontal : n.LayoutSizingVertical;
+        bool SameSize(Box a, Box b, bool mainAxis) => Math.Abs(Size(a, mainAxis) - Size(b, mainAxis)) <= _tol.SizePx;
+        void Offset(DesignNode child, Box actualBox, bool mainAxis)
+        {
+            var expected = Pos(child.Box, mainAxis) - Pos(parent.Box, mainAxis);
+            var actual = Pos(actualBox, mainAxis) - Pos(rendered.Box, mainAxis);
+            var delta = Math.Abs(expected - actual);
+            if (delta > _tol.PositionPx)
+                diffsOf(child.Id).Add(new PropDiff(mainAxis ? "mainAxisOffset" : "crossAxisOffset",
+                    Fmt(expected), Fmt(actual), "px", Math.Round(delta, 2), _tol.PositionPx, Severity.Minor, Soft: true));
+        }
+
+        // 交叉軸:每個子元件各比一次
+        if (ExplicitlyFixed(Sizing(parent, false)) && SameSize(parent.Box, rendered.Box, false)
+            && !string.Equals(parent.CounterAxisAlignItems, "BASELINE", StringComparison.OrdinalIgnoreCase))
+            foreach (var (d, r) in matched)
+                if (d.Type != DesignNodeType.Text && ExplicitlyFixed(Sizing(d, false)) && SameSize(d.Box, r.Box, false))
+                    Offset(d, r.Box, false);
+
+        // 主軸:第一個子元件。順序對調時已經報了 childOrder,這裡的距離沒有意義
+        if (skipMainAxis || matched.Count == 0
+            || parent.PrimaryAxisAlignItems?.ToUpperInvariant() is not ("MIN" or "CENTER" or "MAX")
+            || !ExplicitlyFixed(Sizing(parent, true)) || !SameSize(parent.Box, rendered.Box, true))
+            return;
+        var byDesign = matched.OrderBy(m => Pos(m.Design.Box, true)).ToList();
+        var (first, firstRendered) = byDesign[0];
+        if (first.Type == DesignNodeType.Text) return;
+        if (!parent.PrimaryAxisAlignItems.Equals("MIN", StringComparison.OrdinalIgnoreCase))
+        {
+            // 置中、靠尾:第一個子元件的位置取決於所有子元件的總長度,長度不一樣時位移是別的原因
+            if (matched.Count != kids.Count || byDesign.Any(m => m.Design.Type == DesignNodeType.Text || !ExplicitlyFixed(Sizing(m.Design, true)))) return;
+            var (last, lastRendered) = byDesign[^1];
+            var designSpan = Pos(last.Box, true) + Size(last.Box, true) - Pos(first.Box, true);
+            var renderedSpan = Pos(lastRendered.Box, true) + Size(lastRendered.Box, true) - Pos(firstRendered.Box, true);
+            if (Math.Abs(designSpan - renderedSpan) > _tol.SizePx) return;
+        }
+        Offset(first, firstRendered.Box, true);
     }
 
     /// <summary>
@@ -202,6 +372,223 @@ public sealed class DiffEngine(Tolerances tolerances)
             null, 0, Severity.Minor, Soft: true)); // 軟落差,不擋 gate
     }
 
+    /// <summary>軟落差:會列出、不扣分、永遠不擋、--baseline 不算新增。新的比對項目都先做成這樣,真實網站測過誤報再改。</summary>
+    private static void SoftDiff(List<PropDiff> diffs, string prop, string expected, string actual,
+        string? unit = null, double? delta = null, double tolerance = 0, DiffStatus status = DiffStatus.Mismatch)
+        => diffs.Add(new PropDiff(prop, expected, actual, unit, delta, tolerance, Severity.Minor, status, Soft: true));
+
+    /// <summary>
+    /// 文字內容(設計稿的 TEXT 節點 ↔ 頁面上的文字)。文字配對配上的本來就一樣,這條抓的是靠圖層名配上、文字卻不一樣的。
+    /// 比法與 text-not-found 相同:忽略大小寫(text-transform)、所有空白與看不見的字元,彎引號當直引號。
+    /// 元素有子元素時,設計稿的文字在子孫文字裡就算對(圖層名可能配到外層容器,內容不只這一段)。
+    /// </summary>
+    private void CompareTextContent(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+        if (_compareText == TextComparison.None || d.Type != DesignNodeType.Text || string.IsNullOrWhiteSpace(d.Characters)) return;
+        // 手動對應:設計系統常用佔位文字,會手動對應通常就是因為這樣,比了全是誤報(README「設計系統」那段)
+        if (pair.MatchedBy == "explicit") return;
+        // 快照基準:動態內容每次都不同(野生實查 F4),預設不比;明說 gate 才比
+        if (pair.MatchedBy == "selector" && _compareText != TextComparison.Gate) return;
+        if (NoTextTags.Contains(r.Tag)) return;
+
+        var expected = Matcher.TextFingerprint(d.Characters!);
+        if (r.Text is { } own && Matcher.TextFingerprint(own).Equals(expected, StringComparison.OrdinalIgnoreCase)) return;
+        if (r.TextContent is { } full)
+        {
+            if (Matcher.TextFingerprint(full).Contains(expected, StringComparison.OrdinalIgnoreCase)) return;
+            if (full.Length >= TextContentLimit) return;
+        }
+
+        var actual = r.TextContent ?? r.Text;
+        var missing = string.IsNullOrWhiteSpace(actual);
+        var shownExpected = Excerpt(d.Characters!);
+        var shownActual = missing ? "(no text)" : Excerpt(actual!);
+        if (_compareText == TextComparison.Gate)
+            diffs.Add(new PropDiff("text", shownExpected, shownActual, null, null, 0, Severity.Serious,
+                missing ? DiffStatus.Missing : DiffStatus.Mismatch));
+        else
+            SoftDiff(diffs, "text", shownExpected, shownActual, status: missing ? DiffStatus.Missing : DiffStatus.Mismatch);
+    }
+
+    /// <summary>斜體、底線與刪除線、大小寫、文字對齊。任一邊沒有這項資訊就不比。</summary>
+    private static void CompareTextStyle(List<PropDiff> diffs, DesignNode d, RenderedNode r, Typography dt, Typography rt)
+    {
+        if (dt.FontStyle is { } style && rt.FontStyle is { } actualStyle && !Same(style, actualStyle))
+            SoftDiff(diffs, "fontStyle", style, actualStyle);
+        if (dt.TextDecoration is { } decoration && rt.TextDecoration is { } actualDecoration
+            && !SameWords(decoration, actualDecoration))
+            SoftDiff(diffs, "textDecoration", decoration, actualDecoration);
+        if (dt.TextTransform is { } transform && rt.TextTransform is { } actualTransform && !Same(transform, actualTransform)
+            && !LooksTheSame(d.Characters, r.Text, transform, actualTransform))
+            SoftDiff(diffs, "textTransform", transform, actualTransform);
+        if (dt.TextAlign is { } align && rt.TextAlign is { } actualAlign && !Same(align, actualAlign))
+            SoftDiff(diffs, "textAlign", align, actualAlign);
+
+        static bool Same(string a, string b) => a.Equals(b, StringComparison.OrdinalIgnoreCase);
+        static bool SameWords(string a, string b)
+            => a.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                .SetEquals(b.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// 設計稿直接打大寫字母、頁面用 text-transform: uppercase(或反過來)時,畫面上是一樣的,不算落差。
+    /// 只有轉換真的會改變那段文字才算;中文沒有大小寫,任何轉換都不會改變。
+    /// </summary>
+    private static bool LooksTheSame(string? designText, string? pageText, string designTransform, string pageTransform)
+    {
+        if (designText is { } dt && CssEffects.ApplyTextTransform(pageTransform, dt) == CssEffects.ApplyTextTransform(designTransform, dt)) return true;
+        return pageText is { } pt && CssEffects.ApplyTextTransform(pageTransform, pt) == CssEffects.ApplyTextTransform(designTransform, pt);
+    }
+
+    /// <summary>
+    /// 文字行數:抓「副標換行,下面全被推開」的根因。不比絕對座標,比行數。
+    /// 期望值:快照有量到的就用它;其他用「框高 ÷ 行高」,文字框固定高度時框高跟行數無關,不比。舊快照的框含 padding,算不準,不比。
+    /// </summary>
+    private static void CompareLineCount(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+        if (d.Type != DesignNodeType.Text || r.LineCount is not { } actual) return;
+        var expected = d.LineCount;
+        if (expected is null && pair.MatchedBy != "selector" && d.Text?.LineHeight is > 0
+            && d.TextAutoResize?.ToUpperInvariant() is not ("NONE" or "TRUNCATE"))
+            expected = Math.Max(1, (int)Math.Round(d.Box.H / d.Text.LineHeight!.Value));
+        if (expected is { } e && e != actual)
+            SoftDiff(diffs, "lineCount", e.ToString(CultureInfo.InvariantCulture), actual.ToString(CultureInfo.InvariantCulture), delta: Math.Abs(e - actual));
+    }
+
+    /// <summary>邊框粗細的容差比一般尺寸嚴:1px 的邊框有或沒有,一眼就看得出來。</summary>
+    private const double BorderTolerance = 0.5;
+
+    /// <summary>透明度的容差:0–1 的差。</summary>
+    private const double OpacityTolerance = 0.01;
+
+    /// <summary>陰影位移、模糊、擴散的容差(px)。</summary>
+    private const double ShadowTolerance = 1;
+
+    /// <summary>透明度、邊框、陰影、漸層。任一邊沒有這項資訊就不比,所以舊快照重跑不會多出落差。</summary>
+    private void CompareBoxStyle(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+
+        if (d.Opacity is { } opacity && r.Opacity is { } actualOpacity && Math.Abs(opacity - actualOpacity) > OpacityTolerance)
+            SoftDiff(diffs, "opacity", Fmt(opacity), Fmt(actualOpacity), delta: Math.Round(Math.Abs(opacity - actualOpacity), 2), tolerance: OpacityTolerance);
+
+        if (d.BorderWidth is { } width && r.BorderWidth is { } actualWidth)
+        {
+            var delta = new[]
+            {
+                Math.Abs(width.Top - actualWidth.Top), Math.Abs(width.Right - actualWidth.Right),
+                Math.Abs(width.Bottom - actualWidth.Bottom), Math.Abs(width.Left - actualWidth.Left),
+            }.Max();
+            if (delta > BorderTolerance)
+                SoftDiff(diffs, "borderWidth", Describe(width), Describe(actualWidth), "px", Math.Round(delta, 2), BorderTolerance);
+            else if (d.BorderColor is { } color && r.BorderColor is { } actualColor)
+                CompareColorSoft(diffs, "borderColor", color, actualColor);
+        }
+
+        CompareShadows(diffs, d.Shadows, d.Type == DesignNodeType.Text ? r.TextShadows : r.Shadows);
+        CompareGradient(diffs, pair);
+    }
+
+    /// <summary>
+    /// 陰影。兩邊的順序不一定一樣(Figma 由下往上、CSS 由上往下),所以照「外陰影優先、模糊大的優先」排好再一對一比,
+    /// 位移、模糊、擴散的差取最大。只有一邊有陰影算 missing。多出來的那幾層不比。
+    /// </summary>
+    private void CompareShadows(List<PropDiff> diffs, IReadOnlyList<ShadowSpec>? design, IReadOnlyList<ShadowSpec>? actual)
+    {
+        if (design is null || actual is null || (design.Count == 0 && actual.Count == 0)) return;
+        if (design.Count == 0 || actual.Count == 0)
+        {
+            SoftDiff(diffs, "shadow", Describe(design), Describe(actual), status: DiffStatus.Missing);
+            return;
+        }
+
+        var ds = Sorted(design);
+        var rs = Sorted(actual);
+        var delta = 0.0;
+        var colorDelta = 0.0;
+        (Rgba Expected, Rgba Actual)? worstColor = null;
+        for (var i = 0; i < Math.Min(ds.Count, rs.Count); i++)
+        {
+            if (ds[i].Inset != rs[i].Inset)
+            {
+                SoftDiff(diffs, "shadow", Describe(design), Describe(actual), status: DiffStatus.Missing);
+                return;
+            }
+            delta = Math.Max(delta, new[]
+            {
+                Math.Abs(ds[i].X - rs[i].X), Math.Abs(ds[i].Y - rs[i].Y),
+                Math.Abs(ds[i].Blur - rs[i].Blur), Math.Abs(ds[i].Spread - rs[i].Spread),
+            }.Max());
+            var de = ColorDelta.Ciede2000(ds[i].Color, rs[i].Color);
+            if (de > colorDelta) (colorDelta, worstColor) = (de, (ds[i].Color, rs[i].Color));
+        }
+        if (delta > ShadowTolerance)
+            SoftDiff(diffs, "shadow", Describe(design), Describe(actual), delta: Math.Round(delta, 2), tolerance: ShadowTolerance);
+        if (worstColor is { } w) CompareColorSoft(diffs, "shadowColor", w.Expected, w.Actual);
+
+        static List<ShadowSpec> Sorted(IReadOnlyList<ShadowSpec> list)
+            => [.. list.OrderBy(s => s.Inset).ThenByDescending(s => s.Blur).ThenBy(s => s.X).ThenBy(s => s.Y)];
+    }
+
+    /// <summary>
+    /// 漸層:只有一邊有算 missing;兩邊都有就比頭尾色,方向第一版不比,所以頭尾對調也算一樣(取兩種配法裡差比較小的)。
+    /// 「設計稿是純色、頁面是漸層」只有設計稿明確是純色才算;舊快照沒記漸層,不能當作「沒有」。
+    /// </summary>
+    private void CompareGradient(List<PropDiff> diffs, NodePair pair)
+    {
+        var (d, r) = (pair.Design, pair.Rendered);
+        if (d.Gradient is { } gradient)
+        {
+            if (r.Gradient is not { } actual)
+            {
+                SoftDiff(diffs, "gradient", Describe(gradient), NoGradient, status: DiffStatus.Missing);
+                return;
+            }
+            if (gradient is { Start: { } a, End: { } b } && actual is { Start: { } c, End: { } e })
+            {
+                var straight = Math.Max(ColorDelta.Ciede2000(a, c), ColorDelta.Ciede2000(b, e));
+                var flipped = Math.Max(ColorDelta.Ciede2000(a, e), ColorDelta.Ciede2000(b, c));
+                var delta = Math.Min(straight, flipped);
+                if (delta > _tol.ColorDeltaE)
+                    SoftDiff(diffs, "gradient", Describe(gradient), Describe(actual), delta: Math.Round(delta, 2), tolerance: _tol.ColorDeltaE);
+            }
+        }
+        else if (r.Gradient is { } only && d.Type != DesignNodeType.Text && pair.MatchedBy != "selector" && d.Fill is { IsTransparent: false })
+        {
+            SoftDiff(diffs, "gradient", NoGradient, Describe(only), status: DiffStatus.Missing);
+        }
+    }
+
+    private const string NoGradient = "(no gradient)";
+
+    private static string Describe(Insets w)
+        => w.Top == w.Right && w.Right == w.Bottom && w.Bottom == w.Left
+            ? Fmt(w.Top)
+            : $"{Fmt(w.Top)} {Fmt(w.Right)} {Fmt(w.Bottom)} {Fmt(w.Left)}";
+
+    private static string Describe(IReadOnlyList<ShadowSpec> shadows)
+        => shadows.Count == 0 ? "none" : string.Join(", ", shadows.Select(s =>
+            $"{(s.Inset ? "inset " : "")}{Fmt(s.X)}px {Fmt(s.Y)}px {Fmt(s.Blur)}px {Fmt(s.Spread)}px"));
+
+    private static string Describe(GradientSpec g)
+        => g is { Start: { } a, End: { } b } ? $"{a.ToHex()} → {b.ToHex()}" : "(gradient)";
+
+    private void CompareColorSoft(List<PropDiff> diffs, string prop, Rgba expected, Rgba actual)
+    {
+        var deltaE = ColorDelta.Ciede2000(expected, actual);
+        if (deltaE > _tol.ColorDeltaE)
+            SoftDiff(diffs, prop, expected.ToHex(), actual.ToHex(), delta: Math.Round(deltaE, 2), tolerance: _tol.ColorDeltaE);
+    }
+
+    /// <summary>報告用的文字:壓空白、太長的截斷。</summary>
+    private static string Excerpt(string s)
+    {
+        var flat = Matcher.NormalizeText(s);
+        return flat.Length <= MaxTextInReport ? flat : flat[..(MaxTextInReport - 1)] + "…";
+    }
+
     private void CompareColor(List<PropDiff> diffs, string prop, Rgba expected, Rgba actual)
     {
         var deltaE = ColorDelta.Ciede2000(expected, actual);
@@ -235,12 +622,13 @@ public sealed class DiffEngine(Tolerances tolerances)
 
         static double VarianceX(List<RenderedNode> ns) => Variance(ns.Select(n => n.Box.X));
         static double VarianceY(List<RenderedNode> ns) => Variance(ns.Select(n => n.Box.Y));
-        static double Variance(IEnumerable<double> xs)
-        {
-            var list = xs.ToList();
-            var mean = list.Average();
-            return list.Sum(v => (v - mean) * (v - mean)) / list.Count;
-        }
+    }
+
+    private static double Variance(IEnumerable<double> xs)
+    {
+        var list = xs.ToList();
+        var mean = list.Average();
+        return list.Sum(v => (v - mean) * (v - mean)) / list.Count;
     }
 
     /// <summary>嚴重度 = 超出容差的倍率:≤3x medium、≤6x serious、>6x critical。</summary>

@@ -99,6 +99,69 @@ internal static class CaptureScript
 
           const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'META', 'LINK']);
 
+          // 連子孫一起的文字(文字內容比對用,見 RenderedNode.TextContent)。子元素太多的是版面容器,不是一段文字;
+          // 裡面有 script/style 的話 textContent 會把程式碼算進去,都不給。2000 與 DiffEngine.TextContentLimit 同值
+          const fullText = (el) => {
+            if (el.childElementCount === 0 || el.childElementCount > 50) return null;
+            if (el.querySelector('script,style,template,noscript')) return null;
+            return el.textContent.slice(0, 2000);
+          };
+
+          // 文字佔幾行、最寬多少:量實際的行框。不用「高度 ÷ 行高」:line-height: normal 算不出來,padding 也會被算進去。
+          // 中心點落在上一行底部以下才算新的一行,同一行裡字型大小不同的行內元素不會被算成兩行。
+          // 裡面有區塊子元素時,範圍會包到別段的框,不準,不量。
+          const measureText = (el, win) => {
+            for (const c of el.children) if (!win.getComputedStyle(c).display.startsWith('inline')) return null;
+            const range = el.ownerDocument.createRange();
+            range.selectNodeContents(el);
+            const rects = [...range.getClientRects()].filter(q => q.width > 0 && q.height > 0).sort((a, b) => a.top - b.top);
+            if (rects.length === 0) return null;
+            let lines = 1, bottom = rects[0].bottom, left = Infinity, right = -Infinity;
+            for (const q of rects) {
+              if (q.top + q.height / 2 > bottom) { lines++; bottom = q.bottom; } else bottom = Math.max(bottom, q.bottom);
+              left = Math.min(left, q.left);
+              right = Math.max(right, q.right);
+            }
+            return { lines, width: right - left };
+          };
+
+          // 文字對齊:換算成 left/center/right/justify。文字把容器塞滿時(flex 子元素、行內區塊)對齊沒有視覺意義,不給。
+          // 行內元素的「容器」是最近的非行內祖先
+          const textAlignOf = (el, s, win, measured) => {
+            let a = s.textAlign.replace(/^-(webkit|moz)-/, '');
+            if (a === 'start') a = s.direction === 'rtl' ? 'right' : 'left';
+            else if (a === 'end') a = s.direction === 'rtl' ? 'left' : 'right';
+            if (!['left', 'center', 'right', 'justify'].includes(a) || !measured) return null;
+            let box = el, bs = s;
+            while (bs.display === 'inline' || bs.display === 'contents') {
+              box = box.parentElement;
+              if (!box) return null;
+              bs = win.getComputedStyle(box);
+            }
+            const room = box.clientWidth - parseFloat(bs.paddingLeft) - parseFloat(bs.paddingRight);
+            return measured.lines === 1 && room - measured.width < 2 ? null : a;
+          };
+
+          // 文字裝飾會傳給子孫,但計算值不會顯示出來:<a><span>字</span></a> 的 span 計算值是 none,畫面上有底線。
+          // 所以沿祖先收集,直到傳遞中斷的地方(行內區塊、浮動、絕對定位)
+          const decorationOf = (el) => {
+            const found = new Set();
+            for (let cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
+              const cs = cur.ownerDocument.defaultView.getComputedStyle(cur);
+              for (const line of cs.textDecorationLine.split(' '))
+                if (line === 'underline' || line === 'line-through') found.add(line);
+              if (cs.display.startsWith('inline-') || cs.float !== 'none' || cs.position === 'absolute' || cs.position === 'fixed') break;
+            }
+            return found.size ? [...found].sort().join(' ') : 'none';
+          };
+
+          // 邊框顏色:第一條有粗細的邊;沒有邊框不給
+          const borderColorOf = (s) => {
+            for (const side of ['Top', 'Right', 'Bottom', 'Left'])
+              if (parseFloat(s['border' + side + 'Width']) > 0) return s['border' + side + 'Color'];
+            return null;
+          };
+
           // ctx = { ox, oy(座標平移), stop(路徑的 root), prefix, rootLabel }
           const walk = (el, ctx) => {
             if (SKIP.has(el.tagName) || ignored.has(el)) return null;
@@ -161,10 +224,29 @@ internal static class CaptureScript
             for (const n of el.childNodes) if (n.nodeType === 3) ownText += n.textContent;
             ownText = ownText.replace(/\s+/g, ' ').trim();
 
+            const textContent = fullText(el);
+            const hasText = !!(ownText || textContent);
+            const measured = ownText ? measureText(el, win) : null;
+
             return {
               selector: selfPath,
               tag: el.tagName.toLowerCase(),
               text: ownText || null,
+              textContent,
+              lineCount: measured ? measured.lines : null,
+              fontStyle: hasText ? (s.fontStyle === 'normal' ? 'normal' : 'italic') : null,
+              textDecoration: hasText ? decorationOf(el) : null,
+              textTransform: hasText ? (s.fontVariantCaps.includes('small-caps') ? 'small-caps' : s.textTransform) : null,
+              textAlign: ownText ? textAlignOf(el, s, win, measured) : null,
+              opacity: s.opacity,
+              borderTopWidth: s.borderTopWidth, borderRightWidth: s.borderRightWidth,
+              borderBottomWidth: s.borderBottomWidth, borderLeftWidth: s.borderLeftWidth,
+              borderColor: borderColorOf(s),
+              boxShadow: s.boxShadow,
+              textShadow: hasText ? s.textShadow : null,
+              backgroundImage: s.backgroundImage.includes('gradient(') ? s.backgroundImage : null,
+              hasBackgroundImage: s.backgroundImage.includes('url('),
+              imageBroken: el.tagName === 'IMG' && el.complete && el.naturalWidth === 0,
               domId: el.id || null,
               classes: (typeof el.className === 'string' && el.className) ? el.className : null,
               ariaLabel: el.getAttribute('aria-label') || el.getAttribute('data-testid') || null,
@@ -177,6 +259,7 @@ internal static class CaptureScript
               paddingTop: s.paddingTop, paddingRight: s.paddingRight,
               paddingBottom: s.paddingBottom, paddingLeft: s.paddingLeft,
               cornerRadius: s.borderTopLeftRadius,
+              outOfFlow: s.position === 'absolute' || s.position === 'fixed',
               explicitMatch: el.getAttribute('data-parity') || mapped.get(el) || null,
               children
             };

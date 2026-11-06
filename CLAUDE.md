@@ -177,6 +177,15 @@ NuGet 通路是一個指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parit
 - **`any` 與 `linux-musl-*` 不帶 Playwright driver。** 這些平台本來就跑不了要開瀏覽器的指令;`WebImplementationSource.NoDriverMessage`
   負責講清楚,exit code 跟單一套件時代一樣(`check` 這類 2、`install-browser` 1)。
 
+### 新的比對項目先做成軟落差
+
+2026-11-05 新增的 16 個屬性(文字、順序、對齊、行數、樣式、圖片)都是軟的:會列出、不扣分、不擋。**真實網站量過誤報,才逐項改成硬的**,改的時候 CHANGELOG 開頭標「升級必做」,統計協定 7.2 記版本。幾個不明顯的地方:
+
+- **`DesignNode`、`Typography` 新欄位的 `JsonIgnore(WhenWritingNull)` 不能拿掉**:沒有值就不寫,既有快照才會逐位元相同(`SnapshotWireTests`)。舊快照讀到 null 就不比。
+- **`ImageComparer` 不把 ImageSharp 的型別露給外面**:授權金鑰只對 `Parity.Engine` 有效,CLI 不能直接碰 Six Labors 的套件。
+- **報告裡的文字來自頁面**:Markdown 一律走 `MarkdownReport.Code`(圍欄比最長的連續反引號多一個),主控台走 `ConsoleText.Safe`。
+- **Figma 欄位對應沒有拿真實回應驗過**(2026-11-05 本機沒有快取,打 API 會耗配額):`StyleDiffTests` 用的是照官方文件寫的 JSON。
+
 ### 量測前的「定案」是幾何保證，不是等待
 
 `SettleScript.cs` 走過兩次彎路(0.11.0、0.11.1)才收斂:凍結 transition 只保證不動，

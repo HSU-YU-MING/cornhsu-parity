@@ -161,6 +161,22 @@ public static class FixHint
         "color" => $"color: {d.Expected}",
         "background" => $"background: {d.Expected}",
         "fontFamily" => $"font-family should include {d.Expected}",
+        "text" => $"text should read: {d.Expected}",
+        "fontStyle" => $"font-style: {d.Expected}",
+        "textDecoration" => $"text-decoration-line: {d.Expected}",
+        "textTransform" => d.Expected == "small-caps" ? "font-variant-caps: small-caps" : $"text-transform: {d.Expected}",
+        "textAlign" => $"text-align: {d.Expected}",
+        "lineCount" => $"this text should take {d.Expected} line(s)",
+        "opacity" => $"opacity: {d.Expected}",
+        "borderWidth" => $"border-width: {d.Expected} (px, top right bottom left when they differ)",
+        "borderColor" => $"border-color: {d.Expected}",
+        "shadow" => $"box-shadow / text-shadow: {d.Expected}",
+        "shadowColor" => $"shadow color: {d.Expected}",
+        "gradient" => $"background-image: {d.Expected}",
+        "image" => "use the same image as the reference",
+        "childOrder" => $"children should be in this order: {d.Expected}",
+        "mainAxisOffset" => $"justify-content: the first child should be {d.Expected}px from the container's start",
+        "crossAxisOffset" => $"align-items / align-self: this child should be {d.Expected}px from the container's edge",
         // 相對位置:沒有單一 CSS 可以給(取決於版面做法),給人話方向提示
         "offsetX" => $"horizontal offset from its sibling/parent should be {d.Expected}px",
         "offsetY" => $"vertical offset from its sibling/parent should be {d.Expected}px",
@@ -240,10 +256,11 @@ public static class MarkdownReport
             sb.AppendLine(multi ? "|---|---|---|---|---|---|" : "|---|---|---|---|---|");
             foreach (var (route, n, d) in rows)
             {
-                var arrow = $"`{Esc(d.Expected)}` → `{Esc(d.Actual)}`" +
+                // Code:期望與實際可能是設計稿或頁面的文字(compare.text),反引號不能讓它跳出程式碼區段
+                var arrow = $"{Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}" +
                     (d.Delta is { } dl ? $" (Δ{dl})" : "");
                 var sev = d.Soft ? $"{d.Severity.ToString().ToLowerInvariant()}(soft)" : d.Severity.ToString().ToLowerInvariant();
-                var fix = FixHint.For(d, tokens) is { } f ? $"`{Esc(f)}`" : "—";
+                var fix = FixHint.For(d, tokens) is { } f ? Code(f, MaxValueCell + 40) : "—";
                 var cells = multi
                     ? $"| {Esc(route)} | {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |"
                     : $"| {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |";
@@ -303,7 +320,7 @@ public static class MarkdownReport
         if (items.Count == 0) return;
         sb.AppendLine($"**{title}**");
         foreach (var d in items)
-            sb.AppendLine($"- `{Esc(d.DesignLayer)}` · {d.Prop} · `{Esc(d.Expected)}` → `{Esc(d.Actual)}`");
+            sb.AppendLine($"- `{Esc(d.DesignLayer)}` · {d.Prop} · {Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}");
         sb.AppendLine();
     }
 
@@ -313,9 +330,13 @@ public static class MarkdownReport
     /// <summary>表格裡的 selector 最多幾個字元(真實網站的結構路徑常有上百字元,表格會被撐爆)。</summary>
     internal const int MaxSelectorCell = 100;
 
+    /// <summary>表格裡的期望值與實際值最多幾個字元。比報告裡的文字上限(120)長一點:正常情況不會再被截一次。</summary>
+    internal const int MaxValueCell = 140;
+
     /// <summary>
     /// 來自頁面的字串放進表格的行內程式碼:控制字元(含換行)換成空白、太長的從中間截斷(頭尾都留:
-    /// 開頭是最近的 id 錨點、結尾是元素本身)、<c>|</c> 跳脫;字串裡有反引號就改用雙反引號包,不讓它提早結束程式碼區段。
+    /// 開頭是最近的 id 錨點、結尾是元素本身)、<c>|</c> 跳脫。字串裡有反引號時,圍欄比最長的一段連續反引號多一個(CommonMark 的規則):
+    /// 這裡的內容來自頁面或設計稿,跳出程式碼區段就能在 PR 留言裡寫任意 Markdown。區段內 GitHub 不處理 @ 提及與 HTML,不必另外跳脫。
     /// </summary>
     internal static string Code(string s, int max)
     {
@@ -326,7 +347,16 @@ public static class MarkdownReport
             flat = flat[..head] + "…" + flat[^(max - head - 1)..];
         }
         flat = flat.Replace("|", "\\|");
-        return flat.Contains('`') ? $"`` {flat} ``" : $"`{flat}`";
+
+        int longest = 0, run = 0;
+        foreach (var c in flat)
+        {
+            run = c == '`' ? run + 1 : 0;
+            longest = Math.Max(longest, run);
+        }
+        if (longest == 0) return $"`{flat}`";
+        var fence = new string('`', longest + 1);
+        return $"{fence} {flat} {fence}"; // 前後留空白:開頭或結尾是反引號時才不會黏在圍欄上
     }
 }
 

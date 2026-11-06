@@ -41,15 +41,55 @@ public static class SnapshotBuilder
             Type: isText ? DesignNodeType.Text : DesignNodeType.Frame,
             Box: r.Box,
             Fill: isText ? r.Color : (r.Background is { IsTransparent: false } bg ? bg : null),
-            Text: isText ? FirstFamily(r.Typography) : null,
+            Text: isText ? WithoutStyleDefaults(FirstFamily(r.Typography)) : null,
             Padding: hasPad ? pad : null,
             ItemSpacing: null, // 位置比對 + padding 已覆蓋;不重複記
             CornerRadius: r.CornerRadius,
             Children: r.Children.Select(Convert).ToList())
         {
             Characters = isText ? r.Text : null,
+            // 只記非預設值:大部分節點的透明度是 1、沒有邊框、沒有陰影,全部都寫快照會大 34～44%
+            Opacity = r.Opacity == DefaultOpacity ? null : r.Opacity,
+            BorderWidth = r.BorderWidth == NoBorder ? null : r.BorderWidth,
+            BorderColor = r.BorderColor,
+            Shadows = (isText ? r.TextShadows : r.Shadows) is { Count: > 0 } shadows ? shadows : null,
+            Gradient = r.Gradient,
+            LineCount = isText ? r.LineCount : null,
         };
     }
+
+    private const double DefaultOpacity = 1;
+    private const string NormalStyle = "normal";
+    private const string NoTextEffect = "none";
+    private static readonly Insets NoBorder = new(0, 0, 0, 0);
+
+    private static Typography? WithoutStyleDefaults(Typography? t)
+        => t is null ? null : t with
+        {
+            FontStyle = t.FontStyle == NormalStyle ? null : t.FontStyle,
+            TextDecoration = t.TextDecoration == NoTextEffect ? null : t.TextDecoration,
+            TextTransform = t.TextTransform == NoTextEffect ? null : t.TextTransform,
+        };
+
+    /// <summary>
+    /// 把只記非預設值的快照(<see cref="SnapshotDocument.StyleDefaultsOmitted"/>)還原:沒寫的就是預設值,不是不知道。
+    /// TextAlign 不還原:它是 null 代表對齊沒有視覺意義。
+    /// </summary>
+    public static DesignNode ExpandStyleDefaults(DesignNode node) => node with
+    {
+        Opacity = node.Opacity ?? DefaultOpacity,
+        BorderWidth = node.BorderWidth ?? NoBorder,
+        Shadows = node.Shadows ?? [],
+        Text = node.Text is { } t && node.Type == DesignNodeType.Text
+            ? t with
+            {
+                FontStyle = t.FontStyle ?? NormalStyle,
+                TextDecoration = t.TextDecoration ?? NoTextEffect,
+                TextTransform = t.TextTransform ?? NoTextEffect,
+            }
+            : node.Text,
+        Children = (node.Children ?? []).Select(ExpandStyleDefaults).ToList(),
+    };
 
     /// <summary>
     /// 連拍實測隨機 id(F2 殘留的根治):同一個 URL 載入兩次,id 出現在兩邊的 = 穩定,

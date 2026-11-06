@@ -181,13 +181,22 @@ public class PageTextCaptureTests(PageTextCaptureTests.CapturedPage page) : ICla
     [InlineData("歡迎使用\n我們的服務")]  // 設計稿手動斷行,頁面是一整行
     [InlineData("請先登入帳號")]          // 頁面用 <br> 斷行,設計稿一整行
     [InlineData("Total: $10")]            // 兩個行內元素靠 margin 隔開,innerText 沒有空白
-    [InlineData("Don't miss out")]        // 設計稿直引號,頁面彎引號
-    [InlineData("Internationalization")]  // 頁面有軟連字號(&shy;),畫面上通常看不到
-    public void Whitespace_and_typography_differences_are_not_missing_text(string characters)
+    public void Whitespace_differences_across_elements_are_not_missing_text(string characters)
     {
         if (!Captured()) return;
 
         Assert.Equal("ambiguous-or-missing-text", ReasonFor(characters));
+    }
+
+    [Theory]
+    [InlineData("Don't miss out")]        // 設計稿直引號,頁面彎引號
+    [InlineData("Internationalization")]  // 頁面有軟連字號(&shy;),畫面上通常看不到
+    public void Typography_differences_inside_one_element_are_paired(string characters)
+    {
+        // 文字都在同一個元素裡:放寬的文字比對配得上,不會進未配對清單
+        if (!Captured()) return;
+
+        Assert.Null(ReasonFor(characters));
     }
 
     [Fact]

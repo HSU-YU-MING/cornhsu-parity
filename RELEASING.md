@@ -52,6 +52,8 @@ git tag -f v2 v2.x.y && git push -f origin v2
 
 **tag 要打在 master 上**:先 `git switch master && git pull`,確認本機等於 `origin/master` 再打(2.2.0 忘了切回來,tag 打在 PR 分支的 commit 上;內容相同所以沒事,但不該靠運氣)。
 
+**這一版開始量新屬性的話**,回 stats-collector 的 `PROTOCOL.md` 7.2 填「開始量的工具版本」。舊版的 0 不代表沒有落差,不填就分不出來。
+
 推 tag 之前還有兩件事要查,**CI 都不會擋**(2.2.0 發版前都抓到問題):
 
 - **相依變動**:`git diff v<上一版>..HEAD -- '*.csproj'`。dependabot 升版不會寫 CHANGELOG,也不會改 `THIRD-PARTY-NOTICES.md`。

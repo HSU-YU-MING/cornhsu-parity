@@ -43,6 +43,8 @@ public sealed class JsonDesignSource : IDesignSource
                         "it was probably produced by a newer Parity. Upgrade the tool, or re-run `parity snapshot` with this version.");
                 root = probe.Root
                     ?? throw new InvalidOperationException($"design JSON {path} has a schemaVersion but no \"root\" node.");
+                if (probe.StyleDefaultsOmitted == true)
+                    root = Snapshot.SnapshotBuilder.ExpandStyleDefaults(root);
             }
             else
             {
@@ -104,5 +106,5 @@ public sealed class JsonDesignSource : IDesignSource
     /// 有 SchemaVersion 才走信封路徑。
     /// </summary>
     private sealed record SnapshotEnvelopeProbe(
-        int? SchemaVersion, DesignNode? Root, IReadOnlyList<string>? StableIdAnchors);
+        int? SchemaVersion, DesignNode? Root, IReadOnlyList<string>? StableIdAnchors, bool? StyleDefaultsOmitted = null);
 }

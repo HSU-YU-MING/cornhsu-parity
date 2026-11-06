@@ -23,13 +23,17 @@ public sealed class ScanSession : IAsyncDisposable
     private readonly IDesignSource _designSource;
     private readonly WebImplementationSource _implSource;
     private readonly FidelityEngine _engine;
+    private readonly bool _compareImages;
 
     /// <param name="extrasAllowed">
     /// false = 不管設定檔怎麼寫都不算多餘元件(報告的 extras 是 null):<c>check --reverse</c> 的報告不帶它,
     /// <c>baseline save</c> 只存落差、用不到它。
     /// </param>
+    /// <param name="imagesAllowed">
+    /// false = 不管設定檔怎麼寫都不比圖片內容:<c>check --reverse</c> 的現況就是期望,<c>baseline save</c> 不存軟落差。
+    /// </param>
     public ScanSession(string configPath, bool refreshCache = false, bool headless = true, bool captureScreenshots = false,
-        bool extrasAllowed = true)
+        bool extrasAllowed = true, bool imagesAllowed = true)
     {
         ConfigPath = configPath;
         Config = ParityConfig.Load(configPath);
@@ -37,14 +41,17 @@ public sealed class ScanSession : IAsyncDisposable
             throw new InvalidOperationException("the config file declares no targets.");
 
 
+        // 比圖片內容要多拍一張整頁截圖,所以預設關閉
+        _compareImages = imagesAllowed && Config.CompareImages;
         _designSource = CreateDesignSource(Config, refreshCache);
         _implSource = new WebImplementationSource(
-            new WebCaptureOptions(Headless: headless, CaptureScreenshot: captureScreenshots));
+            new WebCaptureOptions(Headless: headless, CaptureScreenshot: captureScreenshots || _compareImages));
         _engine = new FidelityEngine(_designSource, _implSource,
             new EngineOptions(Config.ToEngineTolerances())
             {
                 ComparePosition = Config.ComparePosition,
                 ListExtras = extrasAllowed && Config.ListExtras,
+                CompareText = Config.CompareText,
             });
     }
 
@@ -89,9 +96,52 @@ public sealed class ScanSession : IAsyncDisposable
 
             var result = await _engine.RunDetailedAsync(new ScanRequest(designRef, implRef, target.Route), ct);
             _implSource.Screenshots.TryGetValue(url, out var screenshot);
+            if (_compareImages && screenshot is not null)
+                result = await CompareImagesAsync(result, target, screenshot, ct);
             scans.Add(new TargetScan(target, result, screenshot));
         }
         return scans;
+    }
+
+    /// <summary>
+    /// 比圖片內容。這是軟落差,比不了不該讓 check 失敗:沒有參考圖、參考圖壞了,都只在 stderr 說一聲。
+    /// </summary>
+    private async Task<ScanResult> CompareImagesAsync(ScanResult result, TargetConfig target, byte[] screenshot, CancellationToken ct)
+    {
+        var reference = await ReferenceImagePathAsync(target, ct);
+        if (reference is null)
+        {
+            Console.Error.WriteLine($"note: compare.images: no reference image for target {ConsoleText.Safe(target.Route)}, so images were not compared " +
+                "(a parity snapshot baseline writes one next to the JSON; designImage is its own reference).");
+            return result;
+        }
+        try
+        {
+            return await Parity.Engine.Comparison.ImageComparer.CompareAsync(result, reference, screenshot, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine($"note: images were not compared for target {ConsoleText.Safe(target.Route)}: {ConsoleText.Safe(ex.Message)}");
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// 這個 target 的參考圖。designImage 就是它自己;快照的參考截圖在 JSON 旁邊:單頁 <c>x.png</c>,
+    /// 多頁 <c>x.{第幾個 frame}.png</c>(parity snapshot 寫的,順序與快照裡的 frame 相同)。找不到是 null。
+    /// </summary>
+    private async Task<string?> ReferenceImagePathAsync(TargetConfig target, CancellationToken ct)
+    {
+        if (Config.DesignImage is { } image) return Path.GetFullPath(Path.Combine(Config.BaseDirectory, image));
+        if (Config.DesignFile is not { } file) return null;
+
+        var path = Path.GetFullPath(Path.Combine(Config.BaseDirectory, file));
+        var root = await new JsonDesignSource().GetFrameAsync(new DesignRef(path, ""), ct);
+        var index = root.Children.Select(c => c.Id).ToList().IndexOf(target.Frame);
+        var candidate = root.Id == "snapshot" && index >= 0
+            ? Path.ChangeExtension(path, $".{index}.png")
+            : Path.ChangeExtension(path, ".png");
+        return File.Exists(candidate) ? candidate : null;
     }
 
     public bool ShouldFail(IEnumerable<TargetScan> scans)

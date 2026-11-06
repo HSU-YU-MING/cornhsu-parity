@@ -79,6 +79,64 @@ public class TextNotFoundMatcherTests
         Assert.Equal("text-not-found", ReasonOf(copy, Page(pageText)));
     }
 
+    // ---------- 配對:精確比對對不到時,退回放寬的文字比對 ----------
+
+    private static MatchResult MatchOne(DesignNode textNode, params RenderedNode[] children)
+        => Matcher.Match(Design("1", "frame", children: textNode), Rendered("body", children: children));
+
+    [Theory]
+    [InlineData("歡迎使用\n我們的服務", "歡迎使用我們的服務")]   // 設計稿手動斷行,頁面是一整行
+    [InlineData("歡迎使用\n\n我們的服務", "歡迎使用我們的服務")] // 空一行
+    [InlineData("歡迎使用我們的服務", "歡迎使用 我們的服務")]    // 反過來:原始碼換行,自己的文字壓成一個空白
+    [InlineData("Don't miss", "Don’t miss")]                     // 設計稿直引號,頁面彎引號
+    [InlineData("Inter­national", "International")]         // 軟連字號
+    public void Text_that_only_differs_by_whitespace_or_typography_is_paired(string characters, string pageText)
+    {
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: characters);
+        var p = Rendered("body > p", "p", text: pageText);
+
+        var result = MatchOne(copy, p);
+
+        Assert.Empty(result.Unmatched);
+        var pair = Assert.Single(result.Pairs);
+        Assert.Same(p, pair.Rendered);
+        Assert.Equal("auto-text", pair.MatchedBy);
+    }
+
+    [Fact]
+    public void The_exact_text_wins_over_the_relaxed_one()
+    {
+        // 頁面同時有 "AB" 和 "A B":設計稿寫 "A B" 就是 "A B",不能因為放寬而變成兩個候選、配不起來
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: "A\nB");
+        var spaced = Rendered("body > p:nth-of-type(1)", "p", text: "A B");
+        var joined = Rendered("body > p:nth-of-type(2)", "p", text: "AB");
+
+        var pair = Assert.Single(MatchOne(copy, spaced, joined).Pairs);
+
+        Assert.Same(spaced, pair.Rendered);
+    }
+
+    [Fact]
+    public void The_relaxed_text_still_has_to_be_unique()
+    {
+        // 放寬不等於猜:兩個候選分不出來就不配,維持未配對
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: "歡迎使用\n我們\n的服務");
+        var result = MatchOne(copy,
+            Rendered("body > p:nth-of-type(1)", "p", text: "歡迎使用我們的服務"),
+            Rendered("body > p:nth-of-type(2)", "p", text: "歡迎使用 我們的服務"));
+
+        Assert.Empty(result.Pairs);
+        Assert.Equal("ambiguous-or-missing-text", Assert.Single(result.Unmatched).Reason);
+    }
+
+    [Fact]
+    public void A_really_different_text_is_not_paired_by_the_relaxed_comparison()
+    {
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: "歡迎使用\n我們的服務");
+
+        Assert.Empty(MatchOne(copy, Rendered("body > p", "p", text: "歡迎光臨我們的服務")).Pairs);
+    }
+
     [Fact]
     public void Duplicate_text_that_cannot_be_disambiguated_stays_ambiguous()
     {

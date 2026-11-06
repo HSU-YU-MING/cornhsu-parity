@@ -27,12 +27,13 @@ public static class ReportJson
     /// </summary>
     public static string SerializeSnapshotTree(
         Parity.Engine.DesignSources.DesignNode root,
-        IReadOnlyList<string>? stableIdAnchors = null)
+        IReadOnlyList<string>? stableIdAnchors = null,
+        bool styleDefaultsOmitted = false)
     {
         try
         {
             return JsonSerializer.Serialize(
-                Parity.Engine.DesignSources.Snapshot.SnapshotDocument.Of(root, stableIdAnchors), Indented);
+                Parity.Engine.DesignSources.Snapshot.SnapshotDocument.Of(root, stableIdAnchors, styleDefaultsOmitted), Indented);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException && ex.Message.Contains("object cycle"))
         {
