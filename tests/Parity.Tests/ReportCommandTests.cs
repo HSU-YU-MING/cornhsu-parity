@@ -55,6 +55,25 @@ public class ReportCommandTests
     }
 
     [Fact]
+    public async Task A_hostile_layer_name_stays_in_a_code_span_in_the_gate_note()
+    {
+        // parity report 讀的是檔案:走完整條路,不只測 Render
+        using var dir = new TempDir();
+        var report = SampleReport() with
+        {
+            Unmatched = [new UnmatchedNode("[click](https://evil.example/a)", "1:9", "text-not-found")],
+        };
+        var config = Setup(dir, """{ "targets": [], "gate": { "failOnUnmatched": ["*"] } }""", report);
+        var md = dir.File("report.md");
+
+        var r = await Cli.RunAsync("report", "--config", config, "--md", md);
+
+        Assert.Equal(0, r.ExitCode);
+        Assert.Contains("> ⚠️ /: 1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: `[click](https://evil.example/a)`)",
+            File.ReadAllText(md));
+    }
+
+    [Fact]
     public async Task Without_md_the_report_goes_to_stdout_from_the_default_location()
     {
         using var dir = new TempDir();
@@ -107,7 +126,7 @@ public class ReportCommandTests
 
         Assert.Equal(0, r.ExitCode);
         Assert.Contains("❌ **GATE FAIL**", r.Out);
-        Assert.Contains("> ⚠️ /: 1 unmatched design node blocked by gate.failOnUnmatched (no-anchor: Badge)", r.Out);
+        Assert.Contains("> ⚠️ /: 1 unmatched design node blocked by gate.failOnUnmatched (no-anchor: `Badge`)", r.Out);
 
         var off = await Cli.RunAsync("report", "--config", Setup(dir, """{ "targets": [], "gate": { "failOn": [] } }"""));
         Assert.Contains("✅ PASS", off.Out);

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Parity.Engine.Model;
 
 namespace Parity.Engine;
@@ -185,6 +186,13 @@ public static class FixHint
 }
 
 /// <summary>
+/// Markdown 報告最上面的警示。內容直接當 Markdown 輸出:工具自己寫的句子可以直接放,來自資料的值(route、圖層名)
+/// 要先用 <see cref="MarkdownReport.Name"/> 或 <see cref="MarkdownReport.Word"/> 包好。
+/// 刻意不收 string:主控台的訊息長得一模一樣,直接拿來用,圖層名就能在 PR 留言裡寫任意 Markdown(2.3.0 就是這樣漏的)。
+/// </summary>
+public sealed record MarkdownNote(string Markdown);
+
+/// <summary>
 /// 把報告輸出成 Markdown——可讀、可分享、可貼 PR 留言(規畫書「給 PM 讀的報告」那半的載體)。
 /// 含:還原度分數、gate 結論、落差表(附建議修法)、相對 baseline 的變化、未配對清單。
 /// </summary>
@@ -193,7 +201,7 @@ public static class MarkdownReport
     public static string Render(
         IReadOnlyList<FidelityReport> reports, bool gateFail,
         BaselineComparison? baseline = null, DesignTokens? tokens = null,
-        IReadOnlyList<string>? gateNotes = null,
+        IReadOnlyList<MarkdownNote>? gateNotes = null,
         string? figmaFileKey = null, int? baselineScore = null)
     {
         var score = FidelityScore.Compute(reports);
@@ -204,8 +212,8 @@ public static class MarkdownReport
         // 圖層名連回 Figma 節點(設計來源是 Figma 才有;設計師點了直接跳到那個圖層)
         string Layer(string name, string designId)
             => figmaFileKey is not null && designId.Length > 0
-                ? $"[`{Esc(name)}`](https://www.figma.com/design/{Uri.EscapeDataString(figmaFileKey)}?node-id={Uri.EscapeDataString(designId.Replace(':', '-'))})"
-                : $"`{Esc(name)}`";
+                ? $"[{Name(name)}](https://www.figma.com/design/{Uri.EscapeDataString(figmaFileKey)}?node-id={Uri.EscapeDataString(designId.Replace(':', '-'))})"
+                : Name(name);
 
         // 分數走勢(baseline 模式且基準有存分數):PM 一眼看到方向
         var trend = baselineScore is { } bs
@@ -226,7 +234,7 @@ public static class MarkdownReport
         if (gateNotes is { Count: > 0 })
         {
             foreach (var note in gateNotes)
-                sb.AppendLine($"> ⚠️ {Esc(note)}");
+                sb.AppendLine($"> ⚠️ {note.Markdown}");
             sb.AppendLine();
         }
 
@@ -265,8 +273,8 @@ public static class MarkdownReport
                 var sev = d.Soft ? $"{d.Severity.ToString().ToLowerInvariant()}(soft)" : d.Severity.ToString().ToLowerInvariant();
                 var fix = FixHint.For(d, tokens) is { } f ? Code(f, MaxValueCell + 40) : "—";
                 var cells = multi
-                    ? $"| {Esc(route)} | {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |"
-                    : $"| {Layer(n.DesignLayer, n.DesignId)} | {d.Prop} | {arrow} | {sev} | {fix} |";
+                    ? $"| {Word(route)} | {Layer(n.DesignLayer, n.DesignId)} | {Word(d.Prop)} | {arrow} | {sev} | {fix} |"
+                    : $"| {Layer(n.DesignLayer, n.DesignId)} | {Word(d.Prop)} | {arrow} | {sev} | {fix} |";
                 sb.AppendLine(cells);
             }
             sb.AppendLine();
@@ -279,7 +287,7 @@ public static class MarkdownReport
             sb.AppendLine($"### Unmatched ({unmatched.Count}) — resolve with `data-parity` or `parity map`");
             sb.AppendLine();
             foreach (var (route, u) in unmatched)
-                sb.AppendLine($"- {(multi ? $"`{Esc(route)}` " : "")}{Layer(u.DesignLayer, u.DesignId)} — {u.Reason}");
+                sb.AppendLine($"- {(multi ? $"{Name(route)} " : "")}{Layer(u.DesignLayer, u.DesignId)} — {Word(u.Reason)}");
             sb.AppendLine();
         }
 
@@ -300,7 +308,7 @@ public static class MarkdownReport
                 foreach (var e in x.Items)
                 {
                     var cells = $"{Code(e.Selector, MaxSelectorCell)} | {Code(e.Tag, 40)} | {ExtraBox.Describe(e.Box)} |";
-                    sb.AppendLine(multi ? $"| {Esc(route)} | {cells}" : $"| {cells}");
+                    sb.AppendLine(multi ? $"| {Word(route)} | {cells}" : $"| {cells}");
                 }
             var unlisted = extras.Sum(x => x.Extras.Total - x.Extras.Items.Count);
             if (unlisted > 0)
@@ -323,12 +331,27 @@ public static class MarkdownReport
         if (items.Count == 0) return;
         sb.AppendLine($"**{title}**");
         foreach (var d in items)
-            sb.AppendLine($"- `{Esc(d.DesignLayer)}` · {d.Prop} · {Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}");
+            sb.AppendLine($"- {Name(d.DesignLayer)} · {Word(d.Prop)} · {Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}");
         sb.AppendLine();
     }
 
-    /// <summary>Markdown 表格用:跳脫會破壞表格/格式的字元。</summary>
-    private static string Esc(string s) => s.Replace("|", "\\|").Replace("\n", " ");
+    /// <summary>圖層名這類名稱最多幾個字元:比表格的值寬鬆,正常的名字不會被截斷。</summary>
+    internal const int MaxNameCell = 200;
+
+    /// <summary>
+    /// 來自資料的名稱(圖層名)放進 Markdown:一律是程式碼區段。GitHub 在區段內不處理連結、圖片、@ 提及與 HTML,
+    /// 其他寫法都擋不住提及(它在 Markdown 解析之後才處理,反斜線沒有用)。
+    /// 這些字串不是工具寫的:Figma 的編輯者、快照頁面的 id、report.json 與基準都改得到,而報告會貼成 PR 留言。
+    /// </summary>
+    public static string Name(string s) => Code(s, MaxNameCell);
+
+    /// <summary>
+    /// route、屬性名、未配對原因:平常是簡單的字,照原樣印,表格才不會滿是程式碼區段。有其他字元就放進程式碼區段。
+    /// 允許的字元組不出連結、圖片或提及;開頭是 / 才准有點,否則 www.example.com 會被 GitHub 自動變成連結。
+    /// </summary>
+    public static string Word(string s) => PlainWord.IsMatch(s) ? s : Name(s);
+
+    private static readonly Regex PlainWord = new(@"\A(?:/[A-Za-z0-9/.\-]*|[A-Za-z][A-Za-z0-9\-]*)\z", RegexOptions.CultureInvariant);
 
     /// <summary>表格裡的 selector 最多幾個字元(真實網站的結構路徑常有上百字元,表格會被撐爆)。</summary>
     internal const int MaxSelectorCell = 100;
