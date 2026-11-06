@@ -110,8 +110,12 @@ internal static class CaptureScript
           // 文字佔幾行、最寬多少:量實際的行框。不用「高度 ÷ 行高」:line-height: normal 算不出來,padding 也會被算進去。
           // 中心點落在上一行底部以下才算新的一行,同一行裡字型大小不同的行內元素不會被算成兩行。
           // 裡面有區塊子元素時,範圍會包到別段的框,不準,不量。
+          const onlyInlineChildren = (el, win) => {
+            for (const c of el.children) if (!win.getComputedStyle(c).display.startsWith('inline')) return false;
+            return true;
+          };
           const measureText = (el, win) => {
-            for (const c of el.children) if (!win.getComputedStyle(c).display.startsWith('inline')) return null;
+            if (!onlyInlineChildren(el, win)) return null;
             const range = el.ownerDocument.createRange();
             range.selectNodeContents(el);
             const rects = [...range.getClientRects()].filter(q => q.width > 0 && q.height > 0).sort((a, b) => a.top - b.top);
@@ -155,10 +159,16 @@ internal static class CaptureScript
             return found.size ? [...found].sort().join(' ') : 'none';
           };
 
-          // 邊框顏色:第一條有粗細的邊;沒有邊框不給
+          // 透明的邊框看不見,算沒有邊框:border: 1px solid transparent 很常見,留位置給 hover 或 focus 用
+          // (Carbon 的按鈕就是,對真實 Figma 實測抓到的:設計稿沒有邊框,被報成 0 → 1)
+          // 只認真的帶 alpha 的寫法:rgba(…, 0) 或 … / 0)。rgb(255, 0, 0) 的結尾也是「, 0)」,那是紅色,不是透明
+          const isTransparent = (c) => !c || c === 'transparent' || /^rgba\(.*,\s*0(\.0+)?\s*\)$/.test(c) || /\/\s*0(\.0+)?%?\s*\)$/.test(c);
+          const borderWidthOf = (s, side) => isTransparent(s['border' + side + 'Color']) ? '0px' : s['border' + side + 'Width'];
+
+          // 邊框顏色:第一條看得見的邊;沒有邊框不給
           const borderColorOf = (s) => {
             for (const side of ['Top', 'Right', 'Bottom', 'Left'])
-              if (parseFloat(s['border' + side + 'Width']) > 0) return s['border' + side + 'Color'];
+              if (parseFloat(borderWidthOf(s, side)) > 0) return s['border' + side + 'Color'];
             return null;
           };
 
@@ -233,14 +243,15 @@ internal static class CaptureScript
               tag: el.tagName.toLowerCase(),
               text: ownText || null,
               textContent,
+              textIsInline: textContent !== null && onlyInlineChildren(el, win),
               lineCount: measured ? measured.lines : null,
               fontStyle: hasText ? (s.fontStyle === 'normal' ? 'normal' : 'italic') : null,
               textDecoration: hasText ? decorationOf(el) : null,
               textTransform: hasText ? (s.fontVariantCaps.includes('small-caps') ? 'small-caps' : s.textTransform) : null,
               textAlign: ownText ? textAlignOf(el, s, win, measured) : null,
               opacity: s.opacity,
-              borderTopWidth: s.borderTopWidth, borderRightWidth: s.borderRightWidth,
-              borderBottomWidth: s.borderBottomWidth, borderLeftWidth: s.borderLeftWidth,
+              borderTopWidth: borderWidthOf(s, 'Top'), borderRightWidth: borderWidthOf(s, 'Right'),
+              borderBottomWidth: borderWidthOf(s, 'Bottom'), borderLeftWidth: borderWidthOf(s, 'Left'),
               borderColor: borderColorOf(s),
               boxShadow: s.boxShadow,
               textShadow: hasText ? s.textShadow : null,

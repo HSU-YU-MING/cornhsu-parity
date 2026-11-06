@@ -129,6 +129,80 @@ public class TextNotFoundMatcherTests
         Assert.Equal("ambiguous-or-missing-text", Assert.Single(result.Unmatched).Reason);
     }
 
+    // ---------- 配對:同一段文字被行內元素拆開 ----------
+
+    private static RenderedNode Split(string selector, string tag, string? own, string full, bool inline = true, params RenderedNode[] children)
+        => Rendered(selector, tag, text: own, children: children) with { TextContent = full, TextIsInline = inline };
+
+    [Theory]
+    [InlineData("歡迎使用我們的服務")]
+    [InlineData("歡迎使用\n我們的服務")]  // 設計稿還手動斷行
+    [InlineData("歡迎使用 我們的服務")]
+    public void Text_split_by_inline_elements_is_paired_with_the_parent(string characters)
+    {
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: characters);
+        var b = Rendered("p > b", "b", text: "我們的");
+        var p = Split("p", "p", "歡迎使用服務", "歡迎使用我們的服務", children: b);
+
+        var pair = Assert.Single(MatchOne(copy, p).Pairs);
+
+        Assert.Same(p, pair.Rendered);
+        Assert.Equal("auto-text", pair.MatchedBy);
+    }
+
+    [Fact]
+    public void The_innermost_element_with_that_text_is_paired()
+    {
+        // <p><span>Hello <b>world</b></span></p>:p 和 span 的文字一樣,是同一段,不是兩個候選
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: "Hello world");
+        var span = Split("p > span", "span", "Hello", "Hello world", children: Rendered("p > span > b", "b", text: "world"));
+        var p = Split("p", "p", null, "Hello world", children: span);
+
+        Assert.Same(span, Assert.Single(MatchOne(copy, p).Pairs).Rendered);
+    }
+
+    [Fact]
+    public void A_block_container_is_not_paired_because_its_font_belongs_to_other_elements()
+    {
+        // <div><h3>Title</h3><p>Subtitle</p></div>:文字湊得起來,但這是兩段文字,配上去字體會比出假落差
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: "Title Subtitle");
+        var div = Split("div", "div", null, "TitleSubtitle", inline: false,
+            children: [Rendered("div > h3", "h3", text: "Title"), Rendered("div > p", "p", text: "Subtitle")]);
+
+        Assert.Empty(MatchOne(copy, div).Pairs);
+    }
+
+    [Fact]
+    public void Split_text_still_has_to_be_unique()
+    {
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: "Hello world");
+        var result = MatchOne(copy,
+            Split("p:nth-of-type(1)", "p", "Hello", "Hello world"),
+            Split("p:nth-of-type(2)", "p", "Hello", "Hello world"));
+
+        Assert.Empty(result.Pairs);
+        Assert.Equal("ambiguous-or-missing-text", Assert.Single(result.Unmatched).Reason);
+    }
+
+    [Fact]
+    public void The_elements_own_text_wins_over_split_text()
+    {
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: "Hello world");
+        var own = Rendered("h1", "h1", text: "Hello world");
+        var splitUp = Split("p", "p", "Hello", "Hello world");
+
+        Assert.Same(own, Assert.Single(MatchOne(copy, splitUp, own).Pairs).Rendered);
+    }
+
+    [Fact]
+    public void A_truncated_text_cannot_be_paired()
+    {
+        var text = new string('x', DiffEngine.TextContentLimit);
+        var copy = Design("2", "copy-under-test", DesignNodeType.Text, characters: text);
+
+        Assert.Empty(MatchOne(copy, Split("p", "p", null, text)).Pairs);
+    }
+
     [Fact]
     public void A_really_different_text_is_not_paired_by_the_relaxed_comparison()
     {

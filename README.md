@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1371**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1443**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -186,8 +186,8 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
                                              //   listed only, never gates (see "Elements the design does not have")
     "text": "soft",                          // optional: text content. soft = report it, never gate (default);
                                              //   gate = serious gap; none = do not compare
-    "images": "none"                         // optional: "soft" = compare image content against a reference image
-                                             //   (snapshot baselines and designImage only)
+    "images": "none"                         // optional: "soft" = compare image content against a reference image:
+                                             //   a snapshot baseline, designImage, or the exported Figma frame
   },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
@@ -328,8 +328,9 @@ how noisy each one is.
   makes it a serious gap, snapshot baselines included; `"none"` turns it off. **Both texts go into
   `report.json` and the Markdown report, cut to 120 characters**, so they reach anywhere you send those.
 - **Child order** (`childOrder`): children of an auto-layout container in a different order along its
-  main axis. Compared on the real boxes, so CSS `order` and `row-reverse` count correctly. Wrapping
-  containers and absolutely positioned children are skipped.
+  main axis. Compared on the real boxes, so CSS `order` and `row-reverse` count correctly. In a wrapping
+  container the reading order is compared, so breaking onto a new row at a different place is not a gap.
+  Absolutely positioned children are skipped.
 - **Container alignment** (`mainAxisOffset`, `crossAxisOffset`): the distance from a child to its
   auto-layout parent's edge. Only where that distance should be fixed: both sizes explicitly FIXED, no
   text nodes, and no padding or size gap that already explains the shift. The main axis is compared for
@@ -341,15 +342,16 @@ how noisy each one is.
 - **Style**: `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `opacity`, `borderWidth`,
   `borderColor`, `shadow`, `shadowColor`, `gradient`. Only what the design states is compared: Figma nodes
   always state it, and a hand-written design JSON states what it sets (`text.fontStyle`, `opacity`,
-  `borderWidth`, `shadows`, `gradient` and so on). Invisible shadows do not count, and neither does a
-  text transform that changes nothing on screen. Opacity is the element's own, not accumulated from its
-  ancestors. A gradient's direction is not compared yet, only its end colors.
+  `borderWidth`, `shadows`, `gradient` and so on). What cannot be seen does not count: invisible shadows, transparent borders, a border the same color as the
+  fill, and a text transform that changes nothing on screen. Opacity is the element's own, not accumulated from its
+  ancestors. Gradients compare their kind, direction and end colors, not the stops in between; a direction
+  that depends on the box, like `to top right`, is not compared.
 - **Image content** (`image`, off by default): `"compare": { "images": "soft" }` crops each `img`, `svg`,
   `picture` and background image out of a full-page screenshot and compares it with the same box in the
-  reference image, which is the screenshot next to a `parity snapshot` baseline, or `designImage`.
-  Recompressing or rescaling an image does not count. It takes one extra screenshot per page, and it does
-  not work with Figma yet (exporting node images would spend your API quota): setting it there is a
-  config error.
+  reference image: the screenshot next to a `parity snapshot` baseline, `designImage`, or the frame exported
+  from Figma. Recompressing or rescaling an image does not count. It takes one extra screenshot per page.
+  With Figma it also spends API quota, one export per frame, kept in `.parity/cache` until you pass
+  `--refresh`. If there is no reference or the export fails, a note goes to stderr and the check carries on.
 
 A snapshot taken by an older version has none of the style values, so nothing new appears until you run
 `parity snapshot` again.

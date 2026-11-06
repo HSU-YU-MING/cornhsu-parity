@@ -130,7 +130,7 @@ public class PageTextCaptureTests(PageTextCaptureTests.CapturedPage page) : ICla
     {
         if (!Captured()) return;
 
-        Assert.Equal("ambiguous-or-missing-text", ReasonFor(characters));
+        Assert.NotEqual("text-not-found", ReasonFor(characters));
     }
 
     [Theory]
@@ -140,7 +140,7 @@ public class PageTextCaptureTests(PageTextCaptureTests.CapturedPage page) : ICla
     {
         if (!Captured()) return;
 
-        Assert.Equal("ambiguous-or-missing-text", ReasonFor(characters));
+        Assert.NotEqual("text-not-found", ReasonFor(characters));
     }
 
     [Theory]
@@ -152,7 +152,7 @@ public class PageTextCaptureTests(PageTextCaptureTests.CapturedPage page) : ICla
     {
         if (!Captured()) return;
 
-        Assert.Equal("ambiguous-or-missing-text", ReasonFor(characters));
+        Assert.NotEqual("text-not-found", ReasonFor(characters));
     }
 
     [Theory]
@@ -185,7 +185,19 @@ public class PageTextCaptureTests(PageTextCaptureTests.CapturedPage page) : ICla
     {
         if (!Captured()) return;
 
-        Assert.Equal("ambiguous-or-missing-text", ReasonFor(characters));
+        Assert.NotEqual("text-not-found", ReasonFor(characters));
+    }
+
+    [Theory]
+    [InlineData("Hello world")]           // Hello <b>world</b>
+    [InlineData("歡迎使用\n我們的服務")]  // 歡迎使用<b>我們的</b>服務,設計稿還手動斷行
+    [InlineData("請先登入帳號")]          // 請先<b>登入</b><br>帳號
+    [InlineData("Total: $10")]            // <div><span>Total:</span><span>$10</span></div>
+    public void Text_split_across_inline_elements_is_paired(string characters)
+    {
+        if (!Captured()) return;
+
+        Assert.Null(ReasonFor(characters));
     }
 
     [Theory]

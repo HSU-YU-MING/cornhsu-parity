@@ -8,7 +8,7 @@ using SixLabors.ImageSharp.Processing;
 namespace Parity.Engine.Comparison;
 
 /// <summary>
-/// 圖片內容比對(compare.images):拿參考圖(快照的參考截圖、designImage)與這次的整頁截圖,裁出同一個元素來比。
+/// 圖片內容比對(compare.images):拿參考圖(快照的參考截圖、designImage、Figma 匯出的 frame)與這次的整頁截圖,裁出同一個元素來比。
 /// 屬性比對看不到「圖換錯了」:尺寸一樣、位置一樣,內容完全不同。
 /// 差異比例 0 = 相同、1 = 完全不同,取下面兩個的最大值:
 ///   - 結構:縮成 9×8 灰階,比相鄰格的明暗方向(差異雜湊的三態版)。差不到門檻算「一樣亮」,
@@ -39,9 +39,14 @@ public static class ImageComparer
     /// <summary>
     /// 把圖片落差加進報告。參考圖或截圖解不開時丟 <see cref="InvalidOperationException"/>,由呼叫端決定怎麼告知。
     /// </summary>
-    /// <param name="referencePath">參考圖(PNG/JPEG)。座標與設計節點相同:設計節點的框加上 <see cref="ScanResult.DesignOrigin"/>。</param>
+    /// <param name="referencePath">參考圖(PNG/JPEG)。</param>
     /// <param name="screenshot">這次的整頁截圖(PNG)。座標:實作節點的框加上 <see cref="ScanResult.RenderedOrigin"/>。</param>
-    public static async Task<ScanResult> CompareAsync(ScanResult result, string referencePath, byte[] screenshot, CancellationToken ct = default)
+    /// <param name="referenceOrigin">
+    /// 參考圖上,設計 frame 的原點在哪。預設是 <see cref="ScanResult.DesignOrigin"/>:快照截圖與 designImage 用的是設計稿本來的座標。
+    /// Figma 匯出的圖就是 frame 本身,傳 <c>default</c>(圖的左上角就是 frame 的原點)。
+    /// </param>
+    public static async Task<ScanResult> CompareAsync(
+        ScanResult result, string referencePath, byte[] screenshot, Box? referenceOrigin = null, CancellationToken ct = default)
     {
         var imageNodes = result.RenderedTree.DescendantsAndSelf()
             .Where(IsImage)
@@ -58,7 +63,7 @@ public static class ImageComparer
         {
             if (!imageNodes.TryGetValue(n.Selector, out var r)) return n;
             // 先看畫面有沒有不一樣,載入失敗只決定怎麼標:基準拍下來時就沒載入的圖,兩邊一樣,不是落差(野生實查:gov.tw 30 條)
-            var diff = Compare(reference, Shift(n.DesignBox, result.DesignOrigin), current, Shift(n.RenderedBox, result.RenderedOrigin), r.ImageBroken);
+            var diff = Compare(reference, Shift(n.DesignBox, referenceOrigin ?? result.DesignOrigin), current, Shift(n.RenderedBox, result.RenderedOrigin), r.ImageBroken);
             if (diff is null) return n;
             changed = true;
             var diffs = n.Diffs.Append(diff).ToList();

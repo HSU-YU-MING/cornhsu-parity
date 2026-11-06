@@ -174,11 +174,6 @@ public sealed class ParityConfig
             throw new InvalidOperationException(
                 $"config {path}: compare.images is {(Compare.Images is null ? "null" : $"\"{ConsoleText.Safe(Compare.Images)}\"")}, " +
                 "which is not valid (use: none, soft).");
-        // Figma 要多打一次匯出節點圖的 API,會用掉配額,第一版不做。開了要講清楚,不能安靜地沒有效果
-        if (CompareImages && DesignImage is null && DesignFile is null)
-            throw new InvalidOperationException(
-                $"config {path}: compare.images needs a reference image, which only a parity snapshot baseline or designImage has. " +
-                "Comparing images against Figma is not supported yet: remove compare.images, or use designFile/designImage.");
         if (DesignImage is not null && DesignFile is null)
             throw new InvalidOperationException(
                 $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
@@ -391,8 +386,9 @@ public sealed class CompareConfig
     public string Text { get; set; } = "soft";
 
     /// <summary>
-    /// 圖片內容比對。"none"(預設):不比,每頁也不必多拍一張整頁截圖。"soft":拿參考圖(快照的參考截圖、designImage)
-    /// 與這次的截圖比,會列出、不扣分、不擋。不分大小寫;其他值載入即報錯。Figma 來源不支援。
+    /// 圖片內容比對。"none"(預設):不比,每頁也不必多拍一張整頁截圖。"soft":拿參考圖(快照的參考截圖、designImage、
+    /// Figma 匯出的 frame)與這次的截圖比,會列出、不扣分、不擋。Figma 來源每個 frame 要多打一次 API(有快取)。
+    /// 不分大小寫;其他值載入即報錯。
     /// </summary>
     public string Images { get; set; } = "none";
 }

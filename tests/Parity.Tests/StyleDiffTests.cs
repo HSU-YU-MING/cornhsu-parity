@@ -167,6 +167,40 @@ public class StyleDiffTests
             Rendered("div") with { BorderWidth = one, BorderColor = Red })).Prop);
     }
 
+    [Fact]
+    public void A_border_the_same_color_as_the_fill_cannot_be_seen()
+    {
+        // 真實案例:Ant Design 的設計稿邊框與底色同色(1px),頁面是透明邊框,兩邊看起來一模一樣
+        var one = new Insets(1, 1, 1, 1);
+        var blue = new Rgba(24, 144, 255);
+
+        Assert.Empty(Diffs(Design("1", "btn", fill: blue) with { BorderWidth = one, BorderColor = blue }, Rendered("button", background: blue) with { BorderWidth = NoBorder }));
+
+        // 反過來:頁面的邊框跟自己的底色同色,設計稿沒有邊框
+        Assert.Empty(Diffs(Design("1", "btn") with { BorderWidth = NoBorder }, Rendered("button", background: blue) with { BorderWidth = one, BorderColor = blue }));
+    }
+
+    [Fact]
+    public void A_border_of_another_color_is_still_a_border()
+    {
+        var one = new Insets(1, 1, 1, 1);
+        var blue = new Rgba(24, 144, 255);
+
+        Assert.Equal("borderWidth", Assert.Single(Diffs(Design("1", "btn", fill: blue) with { BorderWidth = one, BorderColor = Black }, Rendered("button", background: blue) with { BorderWidth = NoBorder })).Prop);
+        Assert.Equal("borderWidth", Assert.Single(Diffs(Design("1", "btn") with { BorderWidth = NoBorder }, Rendered("button", background: blue) with { BorderWidth = one, BorderColor = Black })).Prop);
+    }
+
+    [Fact]
+    public void A_text_nodes_fill_is_its_text_color_so_a_matching_border_still_counts()
+    {
+        // 快照的文字節點:Fill 是字色。border: 1px solid currentColor 看得見,不能當成跟底色同色
+        var one = new Insets(1, 1, 1, 1);
+
+        Assert.Equal("borderWidth", Assert.Single(Diffs(
+            Design("1", "t", DesignNodeType.Text, fill: Black, characters: "Hello") with { BorderWidth = one, BorderColor = Black },
+            Rendered("p", "p", text: "Hello") with { BorderWidth = NoBorder })).Prop);
+    }
+
     // ---------- 陰影 ----------
 
     private static ShadowSpec Shadow(double y, double blur, Rgba? color = null, bool inset = false) => new(0, y, blur, 0, color ?? Black, inset);
@@ -245,8 +279,116 @@ public class StyleDiffTests
     public void An_old_snapshot_is_not_assumed_to_have_no_gradient()
         => Assert.Empty(Diffs(Design("1", "hero", fill: Blue), Rendered("div", background: Blue) with { Gradient = new GradientSpec(Red, Blue) }, "selector"));
 
+    [Theory]
+    [InlineData(0, 0.5, 1, 0.5, 90)]      // 左 → 右
+    [InlineData(0.5, 0, 0.5, 1, 180)]     // 上 → 下
+    [InlineData(1, 0.5, 0, 0.5, 270)]     // 右 → 左
+    [InlineData(0.5, 1, 0.5, 0, 0)]       // 下 → 上
+    public void Figma_gradient_handles_become_a_css_angle(double x0, double y0, double x1, double y1, double angle)
+    {
+        var node = Figma($$"""
+            { "id": "1", "name": "f", "type": "FRAME", "absoluteBoundingBox": { "x": 0, "y": 0, "width": 200, "height": 100 },
+              "fills": [{ "type": "GRADIENT_LINEAR",
+                "gradientHandlePositions": [{ "x": {{x0}}, "y": {{y0}} }, { "x": {{x1}}, "y": {{y1}} }, { "x": 0, "y": 0 }],
+                "gradientStops": [{ "position": 0, "color": { "r": 1, "g": 0, "b": 0, "a": 1 } }, { "position": 1, "color": { "r": 0, "g": 0, "b": 1, "a": 1 } }] }] }
+            """);
+
+        Assert.Equal(angle, node.Gradient!.Angle!.Value, 3);
+    }
+
     [Fact]
-    public void Gradient_end_colors_are_compared_but_not_their_direction()
+    public void Figma_gradient_handles_use_the_real_box_proportions()
+    {
+        // 對角線:正規化座標是 45 度,但框是 300×100,畫面上的方向要乘上寬高
+        var node = Figma("""
+            { "id": "1", "name": "f", "type": "FRAME", "absoluteBoundingBox": { "x": 0, "y": 0, "width": 300, "height": 100 },
+              "fills": [{ "type": "GRADIENT_LINEAR",
+                "gradientHandlePositions": [{ "x": 0, "y": 1 }, { "x": 1, "y": 0 }, { "x": 0, "y": 0 }],
+                "gradientStops": [{ "position": 0, "color": { "r": 1, "g": 0, "b": 0, "a": 1 } }, { "position": 1, "color": { "r": 0, "g": 0, "b": 1, "a": 1 } }] }] }
+            """);
+
+        Assert.Equal(Math.Atan2(300, 100) * 180 / Math.PI, node.Gradient!.Angle!.Value, 3);
+    }
+
+    [Theory]
+    [InlineData("GRADIENT_RADIAL", "radial")]
+    [InlineData("GRADIENT_ANGULAR", "conic")]
+    [InlineData("GRADIENT_DIAMOND", null)]
+    public void Figma_gradient_kinds_map_to_css(string figma, string? css)
+    {
+        var node = Figma($$"""{ "id": "1", "name": "f", "type": "FRAME", "fills": [{ "type": "{{figma}}" }] }""");
+
+        Assert.Equal(css, node.Gradient!.Kind);
+        Assert.Null(node.Gradient.Angle);
+    }
+
+    [Theory]
+    [InlineData("linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 180.0)]  // 沒寫方向預設往下
+    [InlineData("linear-gradient(90deg, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 90.0)]
+    [InlineData("linear-gradient(-90deg, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 270.0)]
+    [InlineData("linear-gradient(0.25turn, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 90.0)]
+    [InlineData("linear-gradient(to right, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 90.0)]
+    [InlineData("linear-gradient(to left, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 270.0)]
+    [InlineData("linear-gradient(to top right, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", null)] // 要看框的比例
+    [InlineData("repeating-linear-gradient(45deg, rgb(255, 0, 0), rgb(0, 0, 255))", "linear", 45.0)]
+    [InlineData("radial-gradient(rgb(255, 0, 0), rgb(0, 0, 255))", "radial", null)]
+    [InlineData("conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))", "conic", null)]
+    public void Css_gradient_kind_and_direction_are_parsed(string css, string kind, double? angle)
+    {
+        var g = CssEffects.ParseGradient(css)!;
+
+        Assert.Equal(kind, g.Kind);
+        Assert.Equal(angle, g.Angle);
+        Assert.Equal(new Rgba(255, 0, 0), g.Start);
+        Assert.Equal(new Rgba(0, 0, 255), g.End);
+    }
+
+    [Fact]
+    public void A_gradient_pointing_another_way_is_a_diff_without_a_color_difference()
+    {
+        var diff = Assert.Single(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Kind = "linear", Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) { Kind = "linear", Angle = 180 } }));
+
+        AssertSoft(diff, "gradient", "#FF0000 → #0000FF, 90deg", "#FF0000 → #0000FF, 180deg");
+        Assert.Null(diff.Delta); // 統計上 gradient 的區間是色差,方向不一樣只算條數
+    }
+
+    [Theory]
+    [InlineData(92)]   // 容差內
+    [InlineData(450)]  // 繞一圈
+    public void Gradient_angles_within_tolerance_are_the_same(double actual)
+        => Assert.Empty(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) { Angle = actual } }));
+
+    [Fact]
+    public void Swapped_colors_turned_around_are_the_same_gradient()
+        => Assert.Empty(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Blue, Red) { Angle = 270 } }));
+
+    [Fact]
+    public void Swapped_colors_pointing_the_same_way_are_a_diff()
+        => Assert.Equal("gradient", Assert.Single(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Blue, Red) { Angle = 90 } })).Prop);
+
+    [Fact]
+    public void A_different_gradient_kind_is_a_diff()
+        => AssertSoft(Assert.Single(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Kind = "linear" } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) { Kind = "radial" } })),
+            "gradient", "#FF0000 → #0000FF", "radial #FF0000 → #0000FF");
+
+    [Fact]
+    public void An_unknown_direction_is_not_compared()
+        => Assert.Empty(Diffs(
+            Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) { Angle = 90 } },
+            Rendered("div") with { Gradient = new GradientSpec(Red, Blue) })); // to top right
+
+    [Fact]
+    public void Gradient_end_colors_are_compared_when_no_direction_is_known()
     {
         var design = Design("1", "hero") with { Gradient = new GradientSpec(Red, Blue) };
 
@@ -339,6 +481,66 @@ public class StyleDiffTests
     }
 
     [Theory]
+    [InlineData("""{ "fontStyle": "Regular" }""", "normal")]     // 真實回應:沒有 italic 欄位
+    [InlineData("""{ "fontStyle": "Bold" }""", "normal")]
+    [InlineData("""{ "fontStyle": "Bold Italic", "italic": true }""", "italic")]
+    [InlineData("""{ "italic": true }""", "italic")]
+    [InlineData("""{ "fontStyle": "Italic" }""", "italic")]      // 字型名稱有寫、italic 欄位漏掉
+    [InlineData("""{ "fontStyle": "Light Oblique" }""", "italic")]
+    public void Figma_italic_is_read_from_either_field(string style, string expected)
+        => Assert.Equal(expected, Figma($$"""{ "id": "1", "name": "t", "type": "TEXT", "style": {{style}} }""").Text!.FontStyle);
+
+    [Fact]
+    public void A_real_figma_text_node_parses_as_expected()
+    {
+        // 2026-11-06 真實回應的節錄(Carbon 的 Button 文字):預設值都被省略,textAutoResize 在 style 裡
+        var node = Figma("""
+            { "id": "1854:1779", "name": "Button", "type": "TEXT", "characters": "Button", "strokeWeight": 1, "strokeAlign": "OUTSIDE", "strokes": [], "effects": [],
+              "layoutSizingHorizontal": "HUG", "layoutSizingVertical": "HUG", "layoutAlign": "INHERIT", "layoutGrow": 0,
+              "absoluteBoundingBox": { "x": 0, "y": 0, "width": 44, "height": 18 },
+              "fills": [{ "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+              "style": { "fontFamily": "IBM Plex Sans", "fontPostScriptName": "IBMPlexSans", "fontStyle": "Regular", "fontWeight": 400, "textAutoResize": "WIDTH_AND_HEIGHT",
+                "fontSize": 14, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0.16, "lineHeightPx": 18, "lineHeightUnit": "PIXELS" } }
+            """);
+
+        Assert.Equal("normal", node.Text!.FontStyle);
+        Assert.Equal("none", node.Text.TextDecoration);
+        Assert.Equal("none", node.Text.TextTransform);
+        Assert.Null(node.Text.TextAlign); // 文字框隨內容縮放:對齊沒有視覺意義
+        Assert.Equal("WIDTH_AND_HEIGHT", node.TextAutoResize);
+        Assert.Null(node.BorderWidth);    // 文字的 stroke 不是 CSS 的 border,strokeWeight 1 也不算
+        Assert.Empty(node.Shadows!);
+        Assert.Equal(1, node.Opacity);
+    }
+
+    [Fact]
+    public void A_real_figma_button_with_a_border_parses_as_expected()
+    {
+        // 2026-11-06 真實回應的節錄(Codex 的按鈕)
+        var node = Figma("""
+            { "id": "10019:92457", "name": "Button", "type": "COMPONENT", "strokeWeight": 1, "strokeAlign": "INSIDE", "effects": [],
+              "strokes": [{ "blendMode": "NORMAL", "type": "SOLID", "color": { "r": 0.4470588, "g": 0.4666667, "b": 0.4901961, "a": 1 } }],
+              "layoutMode": "HORIZONTAL", "primaryAxisAlignItems": "CENTER", "counterAxisAlignItems": "CENTER",
+              "layoutSizingHorizontal": "HUG", "layoutSizingVertical": "FIXED", "cornerRadius": 2 }
+            """);
+
+        Assert.Equal(new Insets(1, 1, 1, 1), node.BorderWidth);
+        Assert.Equal("#72777D", node.BorderColor!.Value.ToHex());
+        Assert.Equal("CENTER", node.PrimaryAxisAlignItems);
+    }
+
+    [Fact]
+    public void A_real_figma_frame_without_strokes_has_no_border_even_with_a_stroke_weight()
+    {
+        // 2026-11-06 真實回應:沒有 strokes 時 strokeWeight 仍然是 1
+        var node = Figma("""{ "id": "1", "name": "f", "type": "FRAME", "strokeWeight": 1, "strokeAlign": "INSIDE", "strokes": [], "effects": [], "layoutMode": "VERTICAL", "layoutWrap": "NO_WRAP" }""");
+
+        Assert.Equal(new Insets(0, 0, 0, 0), node.BorderWidth);
+        Assert.Null(node.BorderColor);
+        Assert.Equal("MIN", node.PrimaryAxisAlignItems); // 預設值被省略
+    }
+
+    [Theory]
     [InlineData("UNDERLINE", "underline")]
     [InlineData("STRIKETHROUGH", "line-through")]
     public void Figma_text_decoration_maps_to_css(string figma, string css)
@@ -413,7 +615,10 @@ public class StyleDiffTests
               { "position": 0, "color": { "r": 1, "g": 0, "b": 0, "a": 1 } } ] }] }
             """);
 
-        Assert.Equal(new GradientSpec(new Rgba(255, 0, 0), new Rgba(0, 0, 255)), node.Gradient);
+        Assert.Equal(new Rgba(255, 0, 0), node.Gradient!.Start);
+        Assert.Equal(new Rgba(0, 0, 255), node.Gradient.End);
+        Assert.Equal("linear", node.Gradient.Kind);
+        Assert.Null(node.Gradient.Angle); // 沒有 gradientHandlePositions
         Assert.Null(Figma("""{ "id": "1", "name": "f", "type": "FRAME", "fills": [{ "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1 } }] }""").Gradient);
     }
 

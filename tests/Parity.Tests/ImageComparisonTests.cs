@@ -298,16 +298,71 @@ public class ImageComparisonTests
     }
 
     [Fact]
-    public void Figma_is_rejected_when_loading_the_config_rather_than_silently_doing_nothing()
+    public async Task A_gradient_turned_another_way_is_reported_on_a_real_page()
+    {
+        // 走真的瀏覽器:計算值的格式要真的解析得出方向
+        static string Gradient(string direction) => Page(SvgDataUri("#2563EB"))
+            .Replace("</style>", $".bg {{ background: linear-gradient({direction}, #ff0000, #0000ff) }}\n</style>");
+        if (await SnapshotThenCheck(Gradient("180deg"), images: "none", baseline: Gradient("90deg")) is not { } run) { Console.WriteLine(Skipped); return; }
+
+        var diff = Assert.Single(run.Report.Nodes.Single(n => n.DesignLayer == "banner").Diffs);
+        Assert.Equal("gradient", diff.Prop);
+        Assert.Contains("90deg", diff.Expected);
+        Assert.Contains("180deg", diff.Actual);
+    }
+
+    [Fact]
+    public async Task The_same_gradient_written_another_way_is_not_a_diff_on_a_real_page()
+    {
+        static string Gradient(string direction) => Page(SvgDataUri("#2563EB"))
+            .Replace("</style>", $".bg {{ background: linear-gradient({direction}, #ff0000, #0000ff) }}\n</style>");
+        if (await SnapshotThenCheck(Gradient("to right"), images: "none", baseline: Gradient("90deg")) is not { } run) { Console.WriteLine(Skipped); return; }
+
+        Assert.Empty(run.Report.Nodes.SelectMany(n => n.Diffs));
+    }
+
+    [Fact]
+    public async Task A_figma_reference_starts_at_the_frame_so_the_design_origin_is_not_added()
+    {
+        // 快照與 designImage 的參考圖用設計稿本來的座標;Figma 匯出的圖左上角就是 frame。frame 在檔案裡的位置(這裡是 500, 500)不能算進去
+        using var reference = Solid(255, 255, 255, 100);
+        for (var y = 10; y < 30; y++)
+            for (var x = 10; x < 30; x++)
+                reference[x, y] = new Rgba32(0, 0, 255);
+        using var screenshot = reference.Clone();
+        using var dir = new TempDir();
+        var referencePath = dir.File("frame.png");
+        await reference.SaveAsPngAsync(referencePath);
+        using var shot = new MemoryStream();
+        await screenshot.SaveAsPngAsync(shot);
+
+        var box = new Box(10, 10, 20, 20);
+        var report = new FidelityReport("/", "http://x/", "d",
+            [new NodeResult("hero", "1:2", "#hero", "auto-name", Severity.None, [], box, box)], [],
+            new ReportSummary(1, 1, 0, 0, 0, 0, 0, 0, Severity.None));
+        var tree = TestData.Rendered("body", children: TestData.Rendered("#hero", "img"));
+        var result = new ScanResult(report, TestData.Design("1:1", "frame"), tree, default, new Box(500, 500, 100, 100));
+
+        var same = await ImageComparer.CompareAsync(result, referencePath, shot.ToArray(), referenceOrigin: default(Box));
+        Assert.Empty(same.Report.Nodes.Single().Diffs);
+
+        // 對照:用設計稿本來的座標就裁到圖外,比不出結果(也就不會有落差),所以這裡另外確認換了圖會報
+        using var other = Solid(255, 0, 0, 100);
+        using var otherShot = new MemoryStream();
+        await other.SaveAsPngAsync(otherShot);
+        var changed = await ImageComparer.CompareAsync(result, referencePath, otherShot.ToArray(), referenceOrigin: default(Box));
+        Assert.Equal("image", Assert.Single(changed.Report.Nodes.Single().Diffs).Prop);
+    }
+
+    [Fact]
+    public void Figma_is_accepted_now_that_frames_can_be_exported()
     {
         using var dir = new TempDir();
         var config = dir.Write("parity.config.json", """
             { "figmaFileKey": "abc", "targets": [{ "route": "/", "frame": "1:1", "url": "./a.html" }], "compare": { "images": "soft" } }
             """);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => Parity.Cli.ParityConfig.Load(config));
-
-        Assert.Contains("not supported yet", ex.Message);
+        Assert.True(Parity.Cli.ParityConfig.Load(config).CompareImages);
     }
 
     [Theory]

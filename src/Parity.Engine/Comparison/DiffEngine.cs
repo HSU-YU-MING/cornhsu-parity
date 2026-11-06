@@ -158,7 +158,7 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
                     : matched.Count > 1
                         && Variance(matched.Select(m => m.Design.Box.X)) > Variance(matched.Select(m => m.Design.Box.Y));
 
-                var order = ChildOrderDiff(parent, matched, horizontal);
+                var order = ChildOrderDiff(matched, horizontal);
                 if (order is not null)
                 {
                     // root 沒有 NodeResult(隱含配對),掛在第一個子元件上
@@ -182,45 +182,62 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
     private static bool ExplicitlyFixed(string? sizing) => string.Equals(sizing, "FIXED", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// 子元件順序:沿主軸比設計稿與頁面上的先後,用實際的框比,所以 CSS 的 order、row-reverse 自然算對。
-    /// 這些情況不比:會換行的容器(第一版)、頁面上換了行(子元件在交叉軸上不重疊,先後沒有意義)、配到的子元件不到兩個。
-    /// 差 1px 以內不算先後,疊在一起的元素不會互換。
+    /// 子元件順序:比閱讀順序的先後,用實際的框比,所以 CSS 的 order、row-reverse 自然算對。
+    /// 同一排(交叉軸上重疊)比主軸,不同排比交叉軸。所以會換行的容器也比得了,而且兩邊在哪裡換行不一樣不算落差:
+    /// 設計稿一排四張、頁面一排三張,只要先後一樣就對。差 1px 以內不算先後,疊在一起的元素不會互換。
     /// </summary>
-    private static PropDiff? ChildOrderDiff(DesignNode parent, List<(DesignNode Design, RenderedNode Rendered)> kids, bool horizontal)
+    private static PropDiff? ChildOrderDiff(List<(DesignNode Design, RenderedNode Rendered)> kids, bool horizontal)
     {
-        if (kids.Count < 2 || string.Equals(parent.LayoutWrap, "WRAP", StringComparison.OrdinalIgnoreCase)) return null;
+        if (kids.Count < 2) return null;
 
-        double Start(Box b) => horizontal ? b.X : b.Y;
-        var (firstStart, firstEnd) = CrossSpan(kids[0].Rendered.Box);
-        (double Start, double End) CrossSpan(Box b) => horizontal ? (b.Y, b.Y + b.H) : (b.X, b.X + b.W);
-        foreach (var (_, r) in kids.Skip(1))
+        double MainStart(Box b) => horizontal ? b.X : b.Y;
+        double CrossStart(Box b) => horizontal ? b.Y : b.X;
+        double CrossEnd(Box b) => horizontal ? b.Y + b.H : b.X + b.W;
+        int Relation(Box a, Box b)
         {
-            var (s, e) = CrossSpan(r.Box);
-            if (s >= firstEnd || e <= firstStart) return null;
+            var delta = CrossStart(a) < CrossEnd(b) && CrossStart(b) < CrossEnd(a)
+                ? MainStart(b) - MainStart(a)
+                : CrossStart(b) - CrossStart(a);
+            return Math.Abs(delta) <= 1 ? 0 : Math.Sign(delta);
         }
 
         var inverted = false;
         for (var i = 0; i < kids.Count && !inverted; i++)
             for (var j = i + 1; j < kids.Count; j++)
-            {
-                var designDelta = Start(kids[j].Design.Box) - Start(kids[i].Design.Box);
-                var renderedDelta = Start(kids[j].Rendered.Box) - Start(kids[i].Rendered.Box);
-                if ((designDelta > 1 && renderedDelta < -1) || (designDelta < -1 && renderedDelta > 1))
+                if (Relation(kids[i].Design.Box, kids[j].Design.Box) * Relation(kids[i].Rendered.Box, kids[j].Rendered.Box) < 0)
                 {
                     inverted = true;
                     break;
                 }
-            }
         if (!inverted) return null;
 
+        // 閱讀順序:先分排,排內照主軸
+        List<(DesignNode Design, RenderedNode Rendered)> InReadingOrder(Func<(DesignNode Design, RenderedNode Rendered), Box> box)
+        {
+            var row = 0;
+            var rowEnd = double.NegativeInfinity;
+            var ranked = new List<((DesignNode Design, RenderedNode Rendered) Kid, int Row)>();
+            foreach (var k in kids.OrderBy(k => CrossStart(box(k))))
+            {
+                if (ranked.Count > 0 && CrossStart(box(k)) >= rowEnd)
+                {
+                    row++;
+                    rowEnd = double.NegativeInfinity;
+                }
+                rowEnd = Math.Max(rowEnd, CrossEnd(box(k)));
+                ranked.Add((k, row));
+            }
+            return ranked.OrderBy(r => r.Row).ThenBy(r => MainStart(box(r.Kid))).Select(r => r.Kid).ToList();
+        }
+
         // 同名的子元件加上設計稿裡的序號,否則期望和實際看起來一模一樣
-        var byDesign = kids.OrderBy(k => Start(k.Design.Box)).ToList();
+        var byDesign = InReadingOrder(k => k.Design.Box);
         var duplicated = byDesign.GroupBy(k => k.Design.Name).Any(g => g.Count() > 1);
         string Label((DesignNode Design, RenderedNode Rendered) k)
             => duplicated ? $"{k.Design.Name} #{byDesign.IndexOf(k) + 1}" : k.Design.Name;
         return new PropDiff("childOrder",
             Excerpt(string.Join(", ", byDesign.Select(Label))),
-            Excerpt(string.Join(", ", kids.OrderBy(k => Start(k.Rendered.Box)).Select(Label))),
+            Excerpt(string.Join(", ", InReadingOrder(k => k.Rendered.Box).Select(Label))),
             null, null, 0, Severity.Minor, Soft: true);
     }
 
@@ -474,8 +491,12 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
         if (d.Opacity is { } opacity && r.Opacity is { } actualOpacity && Math.Abs(opacity - actualOpacity) > OpacityTolerance)
             SoftDiff(diffs, "opacity", Fmt(opacity), Fmt(actualOpacity), delta: Math.Round(Math.Abs(opacity - actualOpacity), 2), tolerance: OpacityTolerance);
 
-        if (d.BorderWidth is { } width && r.BorderWidth is { } actualWidth)
+        if (d.BorderWidth is { } designedWidth && r.BorderWidth is { } renderedWidth)
         {
+            // 跟自己底色同色的邊框看不出來,算沒有邊框。對真實 Figma 實測抓到的:Ant Design 的設計稿邊框與底色同色,
+            // 頁面是透明邊框,兩邊看起來一模一樣。文字節點的 Fill 是字色,不是底色,不算
+            var width = d.Type != DesignNodeType.Text && BlendsIn(d.BorderColor, d.Fill) ? NoBorder : designedWidth;
+            var actualWidth = BlendsIn(r.BorderColor, r.Background) ? NoBorder : renderedWidth;
             var delta = new[]
             {
                 Math.Abs(width.Top - actualWidth.Top), Math.Abs(width.Right - actualWidth.Right),
@@ -483,13 +504,18 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
             }.Max();
             if (delta > BorderTolerance)
                 SoftDiff(diffs, "borderWidth", Describe(width), Describe(actualWidth), "px", Math.Round(delta, 2), BorderTolerance);
-            else if (d.BorderColor is { } color && r.BorderColor is { } actualColor)
+            else if (width != NoBorder && d.BorderColor is { } color && r.BorderColor is { } actualColor)
                 CompareColorSoft(diffs, "borderColor", color, actualColor);
         }
 
         CompareShadows(diffs, d.Shadows, d.Type == DesignNodeType.Text ? r.TextShadows : r.Shadows);
         CompareGradient(diffs, pair);
     }
+
+    private static readonly Insets NoBorder = new(0, 0, 0, 0);
+
+    private bool BlendsIn(Rgba? border, Rgba? fill)
+        => border is { } b && fill is { IsTransparent: false } f && ColorDelta.Ciede2000(b, f) <= _tol.ColorDeltaE;
 
     /// <summary>
     /// 陰影。兩邊的順序不一定一樣(Figma 由下往上、CSS 由上往下),所以照「外陰影優先、模糊大的優先」排好再一對一比,
@@ -533,7 +559,8 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
     }
 
     /// <summary>
-    /// 漸層:只有一邊有算 missing;兩邊都有就比頭尾色,方向第一版不比,所以頭尾對調也算一樣(取兩種配法裡差比較小的)。
+    /// 漸層:只有一邊有算 missing;兩邊都有就比頭尾色(取兩種配法裡差比較小的),再比種類與方向。
+    /// 方向要兩邊都知道才比:「to top right」要看框的比例才知道角度,那種不比。
     /// 「設計稿是純色、頁面是漸層」只有設計稿明確是純色才算;舊快照沒記漸層,不能當作「沒有」。
     /// </summary>
     private void CompareGradient(List<PropDiff> diffs, NodePair pair)
@@ -552,7 +579,22 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
                 var flipped = Math.Max(ColorDelta.Ciede2000(a, e), ColorDelta.Ciede2000(b, c));
                 var delta = Math.Min(straight, flipped);
                 if (delta > _tol.ColorDeltaE)
+                {
                     SoftDiff(diffs, "gradient", Describe(gradient), Describe(actual), delta: Math.Round(delta, 2), tolerance: _tol.ColorDeltaE);
+                    return;
+                }
+
+                // 顏色對得上,再看種類與方向。這種落差沒有色差可分區間,只算條數
+                if (gradient.Kind is { } kind && actual.Kind is { } actualKind && !kind.Equals(actualKind, StringComparison.OrdinalIgnoreCase))
+                {
+                    SoftDiff(diffs, "gradient", Describe(gradient), Describe(actual));
+                    return;
+                }
+                // 頭尾對調再轉 180 度,畫出來是同一個漸層
+                if (gradient.Angle is { } angle && actual.Angle is { } actualAngle
+                    && !(straight <= _tol.ColorDeltaE && AngleGap(angle, actualAngle) <= GradientAngleTolerance)
+                    && !(flipped <= _tol.ColorDeltaE && AngleGap(angle, actualAngle + 180) <= GradientAngleTolerance))
+                    SoftDiff(diffs, "gradient", Describe(gradient), Describe(actual), tolerance: GradientAngleTolerance);
             }
         }
         else if (r.Gradient is { } only && d.Type != DesignNodeType.Text && pair.MatchedBy != "selector" && d.Fill is { IsTransparent: false })
@@ -562,6 +604,15 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
     }
 
     private const string NoGradient = "(no gradient)";
+
+    /// <summary>漸層方向的容差(度)。</summary>
+    private const double GradientAngleTolerance = 5;
+
+    private static double AngleGap(double a, double b)
+    {
+        var gap = Math.Abs(a - b) % 360;
+        return gap > 180 ? 360 - gap : gap;
+    }
 
     private static string Describe(Insets w)
         => w.Top == w.Right && w.Right == w.Bottom && w.Bottom == w.Left
@@ -573,7 +624,11 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
             $"{(s.Inset ? "inset " : "")}{Fmt(s.X)}px {Fmt(s.Y)}px {Fmt(s.Blur)}px {Fmt(s.Spread)}px"));
 
     private static string Describe(GradientSpec g)
-        => g is { Start: { } a, End: { } b } ? $"{a.ToHex()} → {b.ToHex()}" : "(gradient)";
+    {
+        var colors = g is { Start: { } a, End: { } b } ? $"{a.ToHex()} → {b.ToHex()}" : "(gradient)";
+        var kind = g.Kind is null || g.Kind.Equals("linear", StringComparison.OrdinalIgnoreCase) ? "" : g.Kind + " ";
+        return g.Angle is { } angle ? $"{kind}{colors}, {Fmt(angle)}deg" : kind + colors;
+    }
 
     private void CompareColorSoft(List<PropDiff> diffs, string prop, Rgba expected, Rgba actual)
     {

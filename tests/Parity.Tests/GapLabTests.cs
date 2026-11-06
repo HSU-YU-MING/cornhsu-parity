@@ -196,6 +196,11 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
             ["cta-button.gradient (soft)"], []),
         // Tailwind 的元素預設就帶這種看不見的陰影:不算有陰影
         new("G7-invisible", "看不見的陰影", Group.Lab, Css("button.cta-button{box-shadow:0 0 #0000,0 0 #0000}"), 0, [], []),
+        // 透明的邊框也看不見(對真實 Figma 實測抓到的:Carbon 的按鈕是 border: 1px solid transparent)
+        new("G7-transparent-border", "透明的邊框", Group.Lab, Css("button.cta-button{border:2px solid transparent}"), 0, [], []),
+        // 藍色分量是 0 的顏色不是透明:rgb(255, 0, 0) 的結尾也是「, 0)」,判斷透明時曾經把它算進去
+        new("G7-red-border", "紅色邊框", Group.Lab, Css("button.cta-button{border:2px solid #ff0000}"), 0, ["cta-button.borderWidth (soft)"], []),
+        new("G7-half-transparent-border", "半透明的邊框", Group.Lab, Css("button.cta-button{border:2px solid rgba(0,0,0,.5)}"), 0, ["cta-button.borderWidth (soft)"], []),
         // 斜體、底線、大小寫轉換:軟落差
         new("G8", "文字樣式", Group.Lab, Css("h1.page-title{font-style:italic;text-decoration:underline;text-transform:uppercase}"), 0,
             ["page-title.fontStyle (soft)", "page-title.textDecoration (soft)", "page-title.textTransform (soft)"], []),

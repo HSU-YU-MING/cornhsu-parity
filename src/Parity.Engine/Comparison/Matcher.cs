@@ -97,14 +97,26 @@ public static class Matcher
             .Where(g => g.Key.Length > 0)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
+        // 再放寬一層:同一段文字被行內元素拆開(歡迎使用<b>我們的</b>服務、請先<b>登入</b><br>帳號)。
+        // 元素自己的文字湊不出來,要看連子孫一起的文字。區塊容器不算(TextIsInline):它的字體是別的元素的,配上去就是假落差
+        var bySplitText = candidates
+            .Where(r => r.TextIsInline && !string.IsNullOrWhiteSpace(r.TextContent) && r.TextContent!.Length < DiffEngine.TextContentLimit)
+            .GroupBy(r => TextFingerprint(r.TextContent!), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Key.Length > 0)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
         var stillRemaining = new List<DesignNode>();
         foreach (var d in remaining)
         {
+            var split = false;
             if (!string.IsNullOrWhiteSpace(d.Characters)
                 && (byText.TryGetValue(NormalizeText(d.Characters!), out var hits)
-                    || byFingerprint.TryGetValue(TextFingerprint(d.Characters!), out hits)))
+                    || byFingerprint.TryGetValue(TextFingerprint(d.Characters!), out hits)
+                    || (split = bySplitText.TryGetValue(TextFingerprint(d.Characters!), out hits))))
             {
-                var free = hits.Where(h => !taken.Contains(h)).ToList();
+                var free = hits!.Where(h => !taken.Contains(h)).ToList();
+                // <p><span>Hello <b>world</b></span></p>:p 和 span 的文字一樣,是同一段,取最裡面的
+                if (split) free = free.Where(h => !free.Any(o => !ReferenceEquals(o, h) && h.DescendantsAndSelf().Skip(1).Contains(o))).ToList();
                 if (free.Count == 1) // 唯一才配
                 {
                     Pair(d, free[0], "auto-text");
