@@ -51,10 +51,16 @@ try {
   const manifest = require.resolve(`${target.pkg}/package.json`);
   binary = path.join(path.dirname(manifest), "bin", target.bin);
 } catch {
+  // npm 對選用相依是解析不到、下載不到都不報錯,所以這裡是使用者第一次看到問題的地方。
+  // npx 的安裝放在 npm-cache/_npx/<hash>/,半成品會一直被重用:叫人 npm install 修不到它(2.3.1 實測)。
+  const npxCache = __dirname.match(/^(.*[\\/]_npx[\\/][^\\/]+)[\\/]/)?.[1];
   console.error(
     `cornhsu-parity: the platform package ${target.pkg} is not installed.\n` +
-      `It is an optional dependency, so the install may have skipped it (--no-optional / --omit=optional) or been interrupted.\n` +
-      `Reinstall: npm install cornhsu-parity`
+      `npm skips optional dependencies without an error, so this happens with --no-optional / --omit=optional, ` +
+      `after an interrupted install, or while a new release is still reaching the npm registry.\n` +
+      (npxCache
+        ? `npx cached this incomplete install, so running it again will not help. Delete this folder, then run npx again:\n  ${npxCache}`
+        : `Reinstall: npm install cornhsu-parity`)
   );
   process.exit(EXECUTION_ERROR);
 }

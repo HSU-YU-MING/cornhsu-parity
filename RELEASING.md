@@ -76,7 +76,7 @@ pwsh scripts/verify-readme-facts.ps1 -Update    # 確認新數字對之後,一�
 `release.yml` 會自動發**兩個通路**（版號都從 tag 推導,`-p:Version` 覆蓋 csproj 裡的本機預設值）:
 
 - **NuGet**（指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parity.<rid>`,dotnet tool）:build → test → pack → 檢查每個包的內容 → OIDC → 推平台包 → 等 nuget.org 查得到 → 重新 OIDC → 推指標包;平台包含 snupkg + SourceLink,可 step-in 除錯。
-- **npm**（`cornhsu-parity` + 6 個 `@cornhsu/parity-<platform>` 平台子套件,支援 `npx`）:各 RID `dotnet publish --self-contained` → `prepare.mjs` 組裝 → OIDC 信任發布（已存在的版號跳過,可安全重跑）。
+- **npm**（`cornhsu-parity` + 6 個 `@cornhsu/parity-<platform>` 平台子套件,支援 `npx`）:各 RID `dotnet publish --self-contained` → `prepare.mjs` 組裝 → OIDC 信任發布平台子套件 → 等每個壓縮檔都下載得到(最多 3 小時)→ 發入口套件（`scripts/publish-npm-packages.sh`;已存在的版號跳過,可安全重跑）。
 
 ## 1.0.0 首發（介面凍結,一次性)
 
@@ -209,9 +209,13 @@ Alpine 3.23(10.0.110,`alpine.3.23-x64` → `linux-musl-x64`)。那個 job 只跑
 **2.3.0 實際發版的結果(2026-11-06,run 42157284408):NuGet 跟上面差不多,npm 的平台子套件慢很多。**
 
 - 平台包推完到查得到花了約 14 分半,入口套件再約 6 分鐘。
-- npm 的入口套件發佈後 4 分鐘就查得到,平台子套件各平台不同:快的 8 分鐘,`darwin-arm64` 55 分鐘,`win32-arm64` 過了 1.5 小時還是 404(原因沒查到,發版紀錄顯示有發佈成功)。
+- npm 的入口套件發佈後 4 分鐘就查得到,平台子套件各平台不同:快的 8 分鐘,`darwin-arm64` 55 分鐘,`win32-arm64` 超過 1.5 小時才查得到(原因沒查到,發版紀錄顯示有發佈成功)。2.3.1 也一樣,`win32-x64` 57 分鐘才查得到。
 - 入口套件先到、子套件還沒到的這段時間,該平台的 `npm install` 不報錯(選用相依解析不到就跳過),執行時才印 `Reinstall: npm install cornhsu-parity`、exit 2。別的平台的子套件查不到,不影響你這個平台。
   **所以發完驗 npm 要真的裝、真的跑。** 看到這個訊息先查子套件在 registry 上有沒有這一版,不要直接當成套件壞了。
+- **查得到不等於裝得起來**(2.3.1 實測):套件清單與 `/<版本>` 回 200 之後,`.tgz` 還 404 了幾分鐘,一樣默默跳過。`npm install --loglevel=http` 看得到是哪一步。
+- **空窗期跑過 `npx` 的人,同步完成後還是壞的**:沒有子套件的半成品留在 `npm-cache/_npx/<hash>/`,要刪掉那個資料夾。
+- **這個空窗 2.3.1 之後已修**(`scripts/publish-npm-packages.sh`):入口套件等壓縮檔都下載得到才發,所以 npm 會比 NuGet 晚上架,發版 job 最長多跑 3 小時,別誤判成卡住。
+  逾時的話入口套件沒發、使用者還是裝到上一版,晚一點重跑 job 即可。還沒實際發過版:等待之後才發入口套件,靠的是 npm CLI 在 publish 當下換 OIDC 金鑰;如果等太久換不到,一樣是重跑。
 - 本機的 `python` 是 Windows 的佔位捷徑:跑腳本會 exit 49 而且沒有任何輸出,看起來不像失敗。`verify-tool-packages.py` 要用 `py -3`。
 
 ## ImageSharp 的授權金鑰
