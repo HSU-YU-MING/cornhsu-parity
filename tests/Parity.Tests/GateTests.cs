@@ -194,8 +194,8 @@ public class GateTests
         var blocked = WithUnmatched(("cta-label", "text-not-found"));
         var other = WithUnmatched(("badge", "no-anchor")) with { Route = "/about" };
 
-        Assert.Equal(["/: 1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: cta-label)"],
-            config.UnmatchedGateFailures([blocked, other]));
+        Assert.Equal([new MarkdownNote("/: 1 unmatched design node blocked by gate.failOnUnmatched (text-not-found: `cta-label`)")],
+            config.UnmatchedGateNotes([blocked, other]));
     }
 
     // ---------- baseline 模式用的可信度檢查:與 failOn 分離 ----------
@@ -218,7 +218,7 @@ public class GateTests
     {
         var report = Report(designNodes: 3, matched: 0);
         var md = MarkdownReport.Render([report], gateFail: true,
-            gateNotes: ["/: 0/3 design nodes matched — there is nothing to compare"]);
+            gateNotes: [new MarkdownNote("/: 0/3 design nodes matched — there is nothing to compare")]);
 
         Assert.Contains("⚠️", md);
         Assert.Contains("0/3", md);

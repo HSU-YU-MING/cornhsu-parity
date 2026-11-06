@@ -2,6 +2,22 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 2.3.1 — 2026-11-06
+
+> **安全修正:設計稿的圖層名不會再變成 PR 留言裡的連結、圖片或 @ 提及。** 把 Markdown 報告貼到 PR 的專案(Action 的 `comment`、`check --md`、`parity report`)建議升級。
+> 設定檔不用改,`report.json`、exit code、主控台輸出都不變。
+> *Security fix: design layer names can no longer turn into links, images or @mentions in a PR comment. Upgrade if you post the Markdown report to pull
+> requests (the Action's `comment`, `check --md`, `parity report`). No config changes; `report.json`, exit codes and console output are unchanged.*
+
+- **安全:Markdown 報告裡來自資料的字串一律放進程式碼區段**(none;六面都沒動,所以是 patch)。報告會貼成 PR 留言,而圖層名不是工具寫的:
+  能改 Figma 圖層名、設計檔、快照頁面的 id、`report.json` 或基準的人都改得到。影響是留言裡出現假連結、外部圖片或多餘的通知,可以拿來釣魚;不會執行程式,這段也碰不到 token。
+  - **2.3.0 新增的**:`gate.failOnUnmatched` 的警示把圖層名原樣放進 Markdown,`[x](https://…)`、`![x](https://…)`、`@someone` 都會生效。有設這個選項才會發生。
+  - **更早就有的**:落差表、未配對清單、基準變動清單的圖層名雖然包在反引號裡,名字帶反引號就跳得出來。route、屬性名與未配對原因原本完全沒防。
+  - **實際交給 GitHub 渲染比對過**:同一份惡意報告,修前 7 個連結、2 張圖片、1 個提及,修後都是 0。
+  - **看得到的差別**:警示裡的圖層名變成程式碼樣式。一般的 route、屬性名、未配對原因照舊,有特殊字元時才變成程式碼樣式。超過 200 字元的圖層名從中間截斷。
+  *Strings that come from data now always stay inside code spans in the Markdown report, the only place GitHub does not process links, images, mentions and HTML.
+  Visible changes: layer names in the gate note are shown as code, and layer names over 200 characters are cut in the middle. Ordinary routes, property names and reasons look the same.*
+
 ## 2.3.0 — 2026-11-06
 
 > **多比 16 個項目,元件不見也能擋 PR。** 文字內容、子元件順序、容器對齊、換行數、邊框、陰影、漸層、透明度、文字樣式都會比了,

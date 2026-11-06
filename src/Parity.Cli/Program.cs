@@ -108,7 +108,7 @@ internal static class CheckCommand
 
         if (reverse)
         {
-            WriteMarkdown(opts, session.Config, reports, gateFail: false, gateNotes: [ReverseNote]);
+            WriteMarkdown(opts, session.Config, reports, gateFail: false, gateNotes: [new MarkdownNote(ReverseNote)]);
             Console.WriteLine("\n\x1b[36mreverse mode\x1b[0m: no gating, exit 0.");
             if (statsPreview) UsageStats.PreviewReverse(StatsEnvironment.Current()); // 反向檢視不送統計
             return 0;
@@ -136,7 +136,7 @@ internal static class CheckCommand
         // 後者是「東西真的做歪了」。給不同 exit code(3 vs 1),CI 才分得清該重設定還是修實作。
         if (integrity.Count > 0)
         {
-            WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: integrity);
+            WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: session.Config.MatchIntegrityNotes(reports));
             Console.WriteLine("\n\x1b[31m✘ MATCH INTEGRITY TOO LOW\x1b[0m (results are not trustworthy; no gate verdict was made)");
             foreach (var r in integrity)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
@@ -146,7 +146,7 @@ internal static class CheckCommand
         var gateReasons = session.GateFailReasons(scans);
         var gateFail = gateReasons.Count > 0;
         // failOnUnmatched 擋下的節點在 Markdown 裡另起一行講明:分數可能是 100/100(配上的都沒落差),只看表頭會以為誤判
-        WriteMarkdown(opts, session.Config, reports, gateFail, gateNotes: session.Config.UnmatchedGateFailures(reports));
+        WriteMarkdown(opts, session.Config, reports, gateFail, gateNotes: session.Config.UnmatchedGateNotes(reports));
         if (gateFail)
         {
             Console.WriteLine($"\n\x1b[31m✘ GATE FAIL\x1b[0m ({session.Config.GateCriteria()})");
@@ -161,7 +161,7 @@ internal static class CheckCommand
     /// <summary>--md &lt;path&gt;:把報告輸出成 Markdown(可分享 / 貼 PR 留言);有設定 tokensFile 就帶進 token 提示。</summary>
     private static void WriteMarkdown(
         Dictionary<string, string?> opts, ParityConfig config, IReadOnlyList<FidelityReport> reports,
-        bool gateFail, BaselineComparison? baseline = null, IReadOnlyList<string>? gateNotes = null,
+        bool gateFail, BaselineComparison? baseline = null, IReadOnlyList<MarkdownNote>? gateNotes = null,
         int? baselineScore = null)
     {
         if (opts.GetValueOrDefault("--md") is not { } mdPath) return;
@@ -184,7 +184,7 @@ internal static class CheckCommand
         // 配對可信度不過就不做 baseline 比對:殘缺的 current 會把 baseline 裡的一切誤判成「修好」
         if (integrity.Count > 0)
         {
-            WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: integrity);
+            WriteMarkdown(opts, session.Config, reports, gateFail: true, gateNotes: session.Config.MatchIntegrityNotes(reports));
             Console.WriteLine("\n\x1b[31m✘ MATCH INTEGRITY TOO LOW\x1b[0m (skipping baseline comparison)");
             foreach (var r in integrity)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
@@ -208,7 +208,7 @@ internal static class CheckCommand
             // 一般 gate 的全部條件(含 failOnUnmatched),原因照一般模式印出來
             var fallbackReasons = session.GateFailReasons(scans);
             var fail = fallbackReasons.Count > 0;
-            WriteMarkdown(opts, session.Config, reports, fail, gateNotes: session.Config.UnmatchedGateFailures(reports));
+            WriteMarkdown(opts, session.Config, reports, fail, gateNotes: session.Config.UnmatchedGateNotes(reports));
             Console.WriteLine(fail ? "\x1b[31m✘ GATE FAIL\x1b[0m" : "\x1b[32m✔ PASS\x1b[0m");
             foreach (var r in fallbackReasons)
                 Console.WriteLine($"  \x1b[31m·\x1b[0m {r}");
@@ -356,9 +356,9 @@ internal static class ReportCommand
             gateFail: !reverse && config.GateFailReasons(reports).Count > 0,
             tokens: tokens,
             // 與 check --md 同一套提示:可信度不過講它,否則講 failOnUnmatched 擋下了哪些未配對節點
-            gateNotes: reverse ? [CheckCommand.ReverseNote]
-                : config.MatchIntegrityFailures(reports) is { Count: > 0 } integrity ? integrity
-                : config.UnmatchedGateFailures(reports),
+            gateNotes: reverse ? [new MarkdownNote(CheckCommand.ReverseNote)]
+                : config.MatchIntegrityNotes(reports) is { Count: > 0 } integrity ? integrity
+                : config.UnmatchedGateNotes(reports),
             figmaFileKey: config.FigmaLinkFileKey); // 與 check --md 同一條:圖層名連回 Figma 節點
 
         if (opts.GetValueOrDefault("--md") is { } mdPath)

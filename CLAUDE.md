@@ -183,7 +183,7 @@ NuGet 通路是一個指標包 `Cornhsu.Parity` + 九個平台包 `Cornhsu.Parit
 
 - **`DesignNode`、`Typography` 新欄位的 `JsonIgnore(WhenWritingNull)` 不能拿掉**:沒有值就不寫,既有快照才會逐位元相同(`SnapshotWireTests`)。舊快照讀到 null 就不比。
 - **`ImageComparer` 不把 ImageSharp 的型別露給外面**:授權金鑰只對 `Parity.Engine` 有效,CLI 不能直接碰 Six Labors 的套件。
-- **報告裡的文字來自頁面**:Markdown 一律走 `MarkdownReport.Code`(圍欄比最長的連續反引號多一個),主控台走 `ConsoleText.Safe`。
+- **報告裡的字串不是工具寫的,不只頁面文字**:圖層名(Figma 的編輯者、快照頁面的 id)、route、selector、屬性名、report.json 與基準裡的字串都算。報告會貼成 PR 留言,所以進 Markdown 一律走 `MarkdownReport.Name`、`Word`、`Code`(程式碼區段是唯一擋得住 @ 提及的寫法),進主控台走 `ConsoleText.Safe`。**同一句話有兩個出口就分開組**:`ConsoleText.Safe` 只防控制字元,擋不住 Markdown;`MarkdownNote` 不收 string 就是為了這個(2.3.0 的 gate 訊息就這樣漏的)。`MarkdownInjectionTests` 把惡意字串放進每個欄位,報告新增欄位時要加進去。
 - **Figma 欄位對應驗過一部分**(2026-11-06,真實回應的節錄在 `StyleDiffTests`):文字預設值、邊框、陰影、auto-layout 欄位、匯出 frame 都對。漸層方向、斜體與底線與大小寫的非預設值、每邊不同的邊框粗細還是照官方文件做的。真實回應存在本機 `.parity/figma-samples/`(gitignore),重驗不必再打 API。
 - **看不見的不算**:隱形的陰影、透明的邊框、跟底色同色的邊框。這三個都是真實樣本才抓到的,自己寫的測試頁長不出來。
 - **文字配對有三層,順序不能換**:元素自己的文字精確比對 → 放寬(空白、引號)→ 被行內元素拆開的整段文字(`TextIsInline`)。後兩層都要唯一才配,只在前一層完全對不到時才用。
@@ -301,6 +301,8 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 ## 開工慣例
 
 - **動這個 repo 任何檔案，都要先看 `nuget-packages` skill。**
+- **雲端工作階段開的 PR(分支 `claude/*`)合併前要自己看一次資料流向**:本機的推送安全審查看起來不會跑在它們身上,而且它只看改動的那幾行(2.3.0 的 Markdown 注入來自 #68,發版時前移 `v2` 那一推才第一次被審到)。新字串會進哪些出口(主控台、Markdown、JSON、UI),要逐一想過。
+- **修一個 repo 的安全問題,其他 repo 也看一次**:XamlContrast 2026-10-22 修過同一類問題,沒有帶回 Parity。
 - 收尾:動了 console 輸出或加了測試 → 跑 `verify-readme-facts.ps1`;
   動了功能面 → **兩份 README 一起改**(英文是主檔，`README.zh-Hant.md` 不能漂);
   重大決策記進 CHANGELOG／ROADMAP，workaround 留技術債帳。

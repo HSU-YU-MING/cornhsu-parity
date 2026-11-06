@@ -276,9 +276,14 @@ public sealed class ParityConfig
 
     /// <summary>
     /// gate.failOnUnmatched:未配對清單裡有要擋的原因 → 原因的說明(null = 不擋)。與配對可信度無關;
-    /// <c>check --baseline</c>(已有基準時)不套用這條。圖層名來自 repo 內容,先過 ConsoleText.Safe。
+    /// <c>check --baseline</c>(已有基準時)不套用這條。給主控台用:圖層名不是工具寫的,先過 ConsoleText.Safe
+    /// (換行會變成 workflow command)。它擋不住 Markdown,貼進報告要用 <see cref="UnmatchedGateNotes"/>。
     /// </summary>
     public string? UnmatchedGateFailure(FidelityReport report)
+        => DescribeUnmatchedGate(report, ConsoleText.Safe, ConsoleText.Safe);
+
+    /// <summary>同一句話有兩個出口,怕的東西不同:主控台怕控制字元,Markdown 怕語法。所以字串怎麼包由呼叫端決定。</summary>
+    private string? DescribeUnmatchedGate(FidelityReport report, Func<string, string> name, Func<string, string> reason)
     {
         var gated = Gate.FailOnUnmatched;
         if (gated.Count == 0) return null;
@@ -291,17 +296,17 @@ public sealed class ParityConfig
         const int namesPerReason = 5;
         var byReason = hits.GroupBy(u => u.Reason, StringComparer.Ordinal).Select(g =>
         {
-            var names = g.Take(namesPerReason).Select(u => ConsoleText.Safe(u.DesignLayer));
+            var names = g.Take(namesPerReason).Select(u => name(u.DesignLayer));
             var more = g.Count() > namesPerReason ? $", +{g.Count() - namesPerReason} more" : "";
-            return $"{ConsoleText.Safe(g.Key)}: {string.Join(", ", names)}{more}";
+            return $"{reason(g.Key)}: {string.Join(", ", names)}{more}";
         });
         return $"{hits.Count} unmatched design node{(hits.Count == 1 ? "" : "s")} blocked by gate.failOnUnmatched " +
             $"({string.Join("; ", byReason)})";
     }
 
-    /// <summary>各報告被 failOnUnmatched 擋下的說明(空 = 沒有),附 route 前綴——Markdown 報告的提示用。</summary>
-    public List<string> UnmatchedGateFailures(IEnumerable<FidelityReport> reports)
-        => CollectReasons(reports, UnmatchedGateFailure);
+    /// <summary>Markdown 報告的警示:各報告被 failOnUnmatched 擋下的節點(空 = 沒有),附 route 前綴。圖層名放進程式碼區段。</summary>
+    public List<MarkdownNote> UnmatchedGateNotes(IEnumerable<FidelityReport> reports)
+        => CollectNotes(reports, r => DescribeUnmatchedGate(r, MarkdownReport.Name, MarkdownReport.Word));
 
     /// <summary>GATE FAIL / PASS 那一行括號裡的把關條件。failOnUnmatched 沒設時與以前一字不差(含 failOn 空的 "fail on: ")。</summary>
     public string GateCriteria()
@@ -322,6 +327,17 @@ public sealed class ParityConfig
     /// <summary>各報告的配對可信度問題(空 = 可信)。baseline 模式也不可豁免。</summary>
     public List<string> MatchIntegrityFailures(IEnumerable<FidelityReport> reports)
         => CollectReasons(reports, MatchIntegrityFailure);
+
+    /// <summary>Markdown 報告的警示:各報告的配對可信度問題。句子裡只有工具寫的字與數字,要包的只有 route。</summary>
+    public List<MarkdownNote> MatchIntegrityNotes(IEnumerable<FidelityReport> reports)
+        => CollectNotes(reports, MatchIntegrityFailure);
+
+    private static List<MarkdownNote> CollectNotes(
+        IEnumerable<FidelityReport> reports, Func<FidelityReport, string?> check)
+        => reports.Select(r => (r.Route, Reason: check(r)))
+            .Where(x => x.Reason is not null)
+            .Select(x => new MarkdownNote($"{MarkdownReport.Word(x.Route)}: {x.Reason}"))
+            .ToList();
 
     private static List<string> CollectReasons(
         IEnumerable<FidelityReport> reports, Func<FidelityReport, string?> check)
