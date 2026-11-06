@@ -110,8 +110,12 @@ internal static class CaptureScript
           // 文字佔幾行、最寬多少:量實際的行框。不用「高度 ÷ 行高」:line-height: normal 算不出來,padding 也會被算進去。
           // 中心點落在上一行底部以下才算新的一行,同一行裡字型大小不同的行內元素不會被算成兩行。
           // 裡面有區塊子元素時,範圍會包到別段的框,不準,不量。
+          const onlyInlineChildren = (el, win) => {
+            for (const c of el.children) if (!win.getComputedStyle(c).display.startsWith('inline')) return false;
+            return true;
+          };
           const measureText = (el, win) => {
-            for (const c of el.children) if (!win.getComputedStyle(c).display.startsWith('inline')) return null;
+            if (!onlyInlineChildren(el, win)) return null;
             const range = el.ownerDocument.createRange();
             range.selectNodeContents(el);
             const rects = [...range.getClientRects()].filter(q => q.width > 0 && q.height > 0).sort((a, b) => a.top - b.top);
@@ -233,6 +237,7 @@ internal static class CaptureScript
               tag: el.tagName.toLowerCase(),
               text: ownText || null,
               textContent,
+              textIsInline: textContent !== null && onlyInlineChildren(el, win),
               lineCount: measured ? measured.lines : null,
               fontStyle: hasText ? (s.fontStyle === 'normal' ? 'normal' : 'italic') : null,
               textDecoration: hasText ? decorationOf(el) : null,

@@ -227,6 +227,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             AriaLabel = Str(el, "ariaLabel"),
             CornerRadius = Px(el, "cornerRadius"),
             TextContent = Str(el, "textContent"),
+            TextIsInline = el.TryGetProperty("textIsInline", out var textIsInline) && textIsInline.ValueKind == JsonValueKind.True,
             OutOfFlow = el.TryGetProperty("outOfFlow", out var outOfFlow) && outOfFlow.ValueKind == JsonValueKind.True,
             HasBackgroundImage = el.TryGetProperty("hasBackgroundImage", out var hasBackgroundImage) && hasBackgroundImage.ValueKind == JsonValueKind.True,
             ImageBroken = el.TryGetProperty("imageBroken", out var imageBroken) && imageBroken.ValueKind == JsonValueKind.True,

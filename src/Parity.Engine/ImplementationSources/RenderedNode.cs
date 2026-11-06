@@ -75,6 +75,13 @@ public sealed record RenderedNode(
     [JsonIgnore]
     public string? TextContent { get; init; }
 
+    /// <summary>
+    /// 子元素全部是行內的:<see cref="TextContent"/> 是同一段文字被 <c>&lt;b&gt;</c>、<c>&lt;br&gt;</c> 拆開,不是好幾段文字疊在一起。
+    /// 只有這種才能用來配對文字節點:區塊容器的字體是別的元素的,配上去就是假落差。
+    /// </summary>
+    [JsonIgnore]
+    public bool TextIsInline { get; init; }
+
     public IEnumerable<RenderedNode> DescendantsAndSelf()
     {
         yield return this;
