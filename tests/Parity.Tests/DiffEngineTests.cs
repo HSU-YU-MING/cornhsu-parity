@@ -1,6 +1,7 @@
 using Parity.Engine;
 using Parity.Engine.Comparison;
 using Parity.Engine.DesignSources;
+using Parity.Engine.ImplementationSources;
 using Parity.Engine.Model;
 using static Parity.Tests.TestData;
 
@@ -29,6 +30,78 @@ public class DiffEngineTests
         var left = result.Diffs.Single(d => d.Prop == "paddingLeft");
         Assert.Equal(12, left.Delta);
         Assert.DoesNotContain(result.Diffs, d => d.Prop is "paddingTop" or "paddingBottom");
+    }
+
+    // ---------- 等效內距:padding 由子元素的 margin 撐出來(DiffEngine.EffectivePadding)----------
+    // 真瀏覽器的那一列在 GapLabTests 的 E1;這裡是頁面不容易長出來的邊界
+
+    private static readonly Insets ButtonPadding = new(12, 20, 12, 20);
+
+    private static string[] PaddingDiffs(params RenderedNode[] kids) => PaddingDiffs(Insets.Zero, null, kids);
+
+    /// <summary>設計:160×48、內距 12/20 的按鈕。頁面:同樣大小的容器,自己的 padding 與 border 由參數給。</summary>
+    private static string[] PaddingDiffs(Insets padding, Insets? border, params RenderedNode[] kids)
+    {
+        var pair = new NodePair(
+            Design("d1", "cta-button", box: new Box(0, 0, 160, 48), padding: ButtonPadding),
+            Rendered("button.cta", "button", box: new Box(0, 0, 160, 48), padding: padding, children: kids) with { BorderWidth = border },
+            "auto-name");
+        return Engine.Diff(pair).Diffs.Where(d => d.Prop.StartsWith("padding")).Select(d => $"{d.Prop}={d.Actual}").Order().ToArray();
+    }
+
+    private static RenderedNode Label(Box box, Insets? margin) => Rendered("button.cta > span", "span", "Go", box: box) with { Margin = margin };
+
+    [Fact]
+    public void Margin_on_the_only_child_counts_as_padding()
+    {
+        Assert.Empty(PaddingDiffs(Label(new Box(20, 12, 120, 24), ButtonPadding)));
+    }
+
+    [Fact]
+    public void Padding_plus_margin_counts_and_border_is_not_inset()
+    {
+        // padding 4/8 + margin 8/12 = 12/20;容器的 1px 邊框不算內距,子元素從邊框裡面量起
+        var kid = Label(new Box(1 + 8 + 12, 1 + 4 + 8, 160 - 2 - 40, 48 - 2 - 24), new Insets(8, 12, 8, 12));
+        Assert.Empty(PaddingDiffs(new Insets(4, 8, 4, 8), new Insets(1, 1, 1, 1), kid));
+    }
+
+    [Fact]
+    public void A_margin_that_collapses_out_of_the_container_is_not_padding()
+    {
+        // 區塊容器沒有 padding、border 時,第一個子元素的上 margin 穿出容器外:子元素貼著容器頂,裡面沒有留白。
+        // computed 的 margin-top 照樣是 12 —— 只信幾何
+        Assert.Equal(["paddingTop=0"], PaddingDiffs(Label(new Box(20, 0, 120, 24), ButtonPadding)));
+    }
+
+    [Fact]
+    public void Margin_only_explains_the_exact_shortfall()
+    {
+        // 少 12,margin 只補 8:照舊報,印的是 CSS 的 padding(不是 padding + margin)
+        Assert.Equal(["paddingBottom=0", "paddingTop=0"],
+            PaddingDiffs(Label(new Box(20, 12, 120, 24), new Insets(8, 20, 8, 20))));
+        // 本來就對的邊不看 margin:padding 12 + margin 12 不會變成 24 去跟 12 比
+        Assert.Empty(PaddingDiffs(new Insets(12, 20, 12, 20), null, Label(new Box(32, 24, 96, 12), new Insets(12, 12, 12, 12))));
+    }
+
+    [Fact]
+    public void The_child_nearest_the_edge_decides()
+    {
+        // 兩個子元素上下疊:一個有 margin-left 20、一個貼著左邊 —— 貼邊那個沒有留白,左內距真的少了。
+        // 其他三邊各由最靠近的那個說了算:上面是第一個的 margin-top、下面是第二個的 margin-bottom、右邊兩個都離邊 ≥ 20
+        var padded = Label(new Box(20, 12, 100, 12), new Insets(12, 20, 0, 20));
+        var flush = Label(new Box(0, 24, 100, 12), new Insets(0, 0, 12, 0));
+        Assert.Equal(["paddingLeft=0"], PaddingDiffs(padded, flush));
+    }
+
+    [Fact]
+    public void Absolute_and_empty_children_do_not_count()
+    {
+        var absolute = Label(new Box(20, 12, 120, 24), ButtonPadding) with { OutOfFlow = true };
+        var empty = Label(new Box(20, 12, 0, 0), ButtonPadding);
+        Assert.Equal(["paddingBottom=0", "paddingLeft=0", "paddingRight=0", "paddingTop=0"], PaddingDiffs(absolute, empty));
+        // 沒有子元素(文字直接寫在容器裡)、擷取端沒給 margin:照舊
+        Assert.Equal(4, PaddingDiffs().Length);
+        Assert.Equal(4, PaddingDiffs(Label(new Box(20, 12, 120, 24), null)).Length);
     }
 
     [Fact]

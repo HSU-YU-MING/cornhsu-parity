@@ -69,12 +69,14 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
         }
 
         // --- 內距(設計端有 auto-layout padding 才比)---
+        // 比的是等效內距:padding 由子元素的 margin 撐出來、畫面一樣時不報(EffectivePadding)。對不上時印的還是 CSS 的 padding
         if (d.Padding is { } pad)
         {
-            CompareNum(diffs, "paddingTop", pad.Top, r.Padding.Top, _tol.SpacingPx);
-            CompareNum(diffs, "paddingRight", pad.Right, r.Padding.Right, _tol.SpacingPx);
-            CompareNum(diffs, "paddingBottom", pad.Bottom, r.Padding.Bottom, _tol.SpacingPx);
-            CompareNum(diffs, "paddingLeft", pad.Left, r.Padding.Left, _tol.SpacingPx);
+            var eff = EffectivePadding(pad, r);
+            CompareNum(diffs, "paddingTop", pad.Top, eff.Top, _tol.SpacingPx);
+            CompareNum(diffs, "paddingRight", pad.Right, eff.Right, _tol.SpacingPx);
+            CompareNum(diffs, "paddingBottom", pad.Bottom, eff.Bottom, _tol.SpacingPx);
+            CompareNum(diffs, "paddingLeft", pad.Left, eff.Left, _tol.SpacingPx);
         }
 
         // --- itemSpacing:設計 auto-layout gap ↔ 實際相鄰子元素間距 ---
@@ -242,6 +244,43 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
     }
 
     /// <summary>
+    /// 等效內距:容器自己的 padding,某一邊對不上設計值時,看最靠近那一邊的子元素是不是用 margin 補上了差額 ——
+    /// 設計稿(Figma auto-layout)的 padding 在頁面上常是子元素的 margin 撐出來的,畫面一樣,報了就是誤報。
+    /// 那一邊要兩件事都成立才加上那段 margin,否則照舊用 CSS 的 padding:
+    /// <list type="bullet">
+    /// <item>padding + margin 在容差內等於設計值(只解釋差額,不拿 margin 去湊別的數字);</item>
+    /// <item>那段 margin 真的在容器裡:子元素的邊框離容器的內距邊至少有 margin 那麼遠。區塊容器沒有 padding、border 時,
+    /// 第一個子元素的上 margin 會穿出容器外(margin collapse),容器整個往下移、裡面沒有留白 —— 那不是內距。</item>
+    /// </list>
+    /// 「最靠近那一邊」用子元素的邊框算(不是 margin 框):兩個子元素一樣靠左、一個有 margin 一個沒有,貼邊的那個說了算。
+    /// 只看參與版面的子元素(不算 absolute／fixed、零面積的);容器裡沒有子元素(文字直接寫在裡面)就沒有 margin 可以算。
+    /// </summary>
+    internal Insets EffectivePadding(Insets design, RenderedNode r)
+    {
+        var p = r.Padding;
+        var b = r.BorderWidth ?? default;
+        var kids = r.Children.Where(c => !c.OutOfFlow && c.Box.W > 0 && c.Box.H > 0).ToList();
+        if (kids.Count == 0) return p;
+
+        double Side(double expected, double padding, Func<RenderedNode, double> distance, Func<Insets, double> marginOf)
+        {
+            if (Math.Abs(expected - padding) <= _tol.SpacingPx) return padding;
+            var edge = kids.MinBy(distance)!;
+            var margin = marginOf(edge.Margin ?? default);
+            return Math.Abs(expected - (padding + margin)) <= _tol.SpacingPx && distance(edge) >= margin - _tol.SpacingPx
+                ? padding + margin
+                : padding;
+        }
+
+        // 子元素邊框到容器內距邊(border 之內、padding 之內)的距離
+        var top = Side(design.Top, p.Top, c => c.Box.Y - (r.Box.Y + b.Top + p.Top), m => m.Top);
+        var right = Side(design.Right, p.Right, c => r.Box.X + r.Box.W - b.Right - p.Right - (c.Box.X + c.Box.W), m => m.Right);
+        var bottom = Side(design.Bottom, p.Bottom, c => r.Box.Y + r.Box.H - b.Bottom - p.Bottom - (c.Box.Y + c.Box.H), m => m.Bottom);
+        var left = Side(design.Left, p.Left, c => c.Box.X - (r.Box.X + b.Left + p.Left), m => m.Left);
+        return new Insets(top, right, bottom, left);
+    }
+
+    /// <summary>
     /// 容器對齊:比子元件到父層邊的距離。只比「距離應該固定」的情況,其他原因造成的位移已經有別條落差,不重複報:
     /// 父層尺寸或 padding 不一樣就整個跳過;交叉軸要父層與子元件都明確是 FIXED,而且子元件尺寸沒差;
     /// 主軸只比第一個子元件、只比 MIN/CENTER/MAX,CENTER/MAX 還要所有子元件都配到、都是固定尺寸,總長度也沒差。
@@ -252,9 +291,9 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
         List<(DesignNode Design, RenderedNode Rendered)> matched, bool horizontal, bool skipMainAxis,
         Func<string, List<PropDiff>> diffsOf)
     {
-        if (parent.Padding is { } pad
-            && (Math.Abs(pad.Top - rendered.Padding.Top) > _tol.SpacingPx || Math.Abs(pad.Right - rendered.Padding.Right) > _tol.SpacingPx
-                || Math.Abs(pad.Bottom - rendered.Padding.Bottom) > _tol.SpacingPx || Math.Abs(pad.Left - rendered.Padding.Left) > _tol.SpacingPx))
+        if (parent.Padding is { } pad && EffectivePadding(pad, rendered) is var eff
+            && (Math.Abs(pad.Top - eff.Top) > _tol.SpacingPx || Math.Abs(pad.Right - eff.Right) > _tol.SpacingPx
+                || Math.Abs(pad.Bottom - eff.Bottom) > _tol.SpacingPx || Math.Abs(pad.Left - eff.Left) > _tol.SpacingPx))
             return;
 
         double Pos(Box b, bool mainAxis) => horizontal == mainAxis ? b.X : b.Y;

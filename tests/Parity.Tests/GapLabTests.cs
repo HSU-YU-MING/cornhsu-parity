@@ -216,7 +216,17 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
             ["align-chip.crossAxisOffset (soft)", "align-chip.mainAxisOffset (soft)"], [], Frame: "3:1"),
         // 對照(不是缺口):同一頁對「容器不是自動排版」的設計稿,同樣的 40px 是硬落差 offsetY
         new("G11-control", "容器對齊(對照:容器不是自動排版)", Group.Align, Same, 1, ["align-chip.offsetY"], [], Frame: "4:1"),
+
+        // ---------- E 組:寫法不同、畫面相同 → 不該有落差(誤報的回歸)----------
+        // 按鈕的內距改由文字的 margin 撐出來,畫面不變(E1_… 那條驗這件事)。2.3.1 以前只讀容器的 CSS padding,
+        // 報 4 條 critical 的 padding 落差、exit 1(實跑過)。現在比等效內距(DiffEngine.EffectivePadding)
+        new("E1", "內距改用子元素 margin", Group.Lab, Css(MarginInsteadOfPadding), 0, [], []),
+        // 對照:padding 拿掉、沒有 margin 補 —— 真的少了內距,照樣抓得到
+        new("E1-control", "內距拿掉、沒有補", Group.Lab, Css("button.cta-button{padding:0}"), 1,
+            ["cta-button.paddingBottom", "cta-button.paddingLeft", "cta-button.paddingRight", "cta-button.paddingTop"], []),
     ];
+
+    private const string MarginInsteadOfPadding = "button.cta-button{padding:0} button.cta-button span{display:inline-block;margin:12px 20px}";
 
     public static TheoryData<string, string> Rows()
     {
@@ -252,6 +262,20 @@ public class GapLabTests(GapLabTests.LabRuns runs) : IClassFixture<GapLabTests.L
         foreach (var layer in new[] { "cta-button", "cta-label", "feature-list", "feature-card-1", "hero-image" })
             Assert.True(Rendered("G10", layer).Y - Rendered("00", layer).Y == 96,
                 $"{layer}: 00 y={Rendered("00", layer).Y}, G10 y={Rendered("G10", layer).Y}");
+    }
+
+    [Fact]
+    public void E1_margin_instead_of_padding_draws_the_same_button()
+    {
+        // E1 那一列「不該有落差」的前提:畫面真的沒變。按鈕的框跟基準頁一樣,文字在同一個位置、一樣寬,只是內距換成了文字的 margin。
+        // 文字框的高度差 1px(實跑:17 → 18):行內元素的框量字型的上下緣,inline-block 量行高 —— 是框的量法,字畫在同一個地方
+        if (runs.BrowserMissing) { Console.WriteLine(Skipped); return; }
+        Box Rendered(string id, string layer) => runs.Of(id).Report.Nodes.Single(n => n.DesignLayer == layer).RenderedBox;
+
+        Assert.Equal(Rendered("00", "cta-button"), Rendered("E1", "cta-button"));
+        var (before, after) = (Rendered("00", "cta-label"), Rendered("E1", "cta-label"));
+        Assert.True((before.X, before.Y, before.W) == (after.X, after.Y, after.W) && Math.Abs(before.H - after.H) <= 1,
+            $"cta-label: 00 {before}, E1 {after}");
     }
 
     private static int DesignNodes(Group g) => g == Group.Align ? 2 : 13;

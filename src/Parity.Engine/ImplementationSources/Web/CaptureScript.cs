@@ -269,6 +269,8 @@ internal static class CaptureScript
               lineHeight: s.lineHeight, letterSpacing: s.letterSpacing,
               paddingTop: s.paddingTop, paddingRight: s.paddingRight,
               paddingBottom: s.paddingBottom, paddingLeft: s.paddingLeft,
+              marginTop: s.marginTop, marginRight: s.marginRight,
+              marginBottom: s.marginBottom, marginLeft: s.marginLeft,
               cornerRadius: s.borderTopLeftRadius,
               outOfFlow: s.position === 'absolute' || s.position === 'fixed',
               explicitMatch: el.getAttribute('data-parity') || mapped.get(el) || null,

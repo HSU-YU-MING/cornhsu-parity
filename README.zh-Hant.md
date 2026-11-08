@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1494 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1503 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -265,6 +265,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 - **自身尺寸**(寬高;TEXT 節點例外——文字框量測天生不同,比了狂誤報)
   - auto-layout 的 **HUG(隨內容)/ FILL(隨父層)** 那一軸也跳過——Figma 量的寬 ≠ 瀏覽器渲染寬是必然的,只比 **FIXED** 的軸
 - **內距 / 間距**:padding 四邊、auto-layout `itemSpacing` ↔ 實際子元素 gap
+  - 設計稿的 padding 在頁面上常是子元素的 `margin` 撐出來的(容器 `padding: 0`、裡面的元素 `margin: 12px 20px`),畫面一樣。2.4 起那一邊算「padding ＋ 最靠近那一邊的子元素的 margin」——但只在加起來等於設計值、而且那段 margin 真的在容器裡時才算(區塊容器裡穿出去的 margin collapse 不會在裡面留白,照樣報)。對不上時報告照舊印 CSS 的 padding
 - **相對位置**(`offsetX`/`offsetY`):自由擺放(非 auto-layout)容器的子元素,比「相對最近可靠兄弟/父層邊」的偏移——抓得到「尺寸顏色全對但擺錯位置」。參照只用可靠的邊(TEXT/HUG 的框不當參照、TEXT 不當目標、上方全是文字時 Y 誠實跳過),流動版面的行高漂移不會誤報。`compare.position: "none"` 可關閉
 - **字體**:size 與 letter-spacing 依 `tolerances.fontSizePx`、line-height 依 `tolerances.sizePx` 做數值比對;weight 沒有容差,不一樣就算落差(相差不到 200 是 medium,200 以上是 serious)。font-family 是**軟落差**:會列在報告裡(嚴重度 `minor`、標成 soft),但不扣還原度分數,**也永遠不擋 gate**——`failOn` 含 `minor` 時也一樣,`--baseline` 模式也不把它算「新增」
 - **顏色**:CIEDE2000 (ΔE) 設門檻,不是 hex 全等;解析含現代語法(`rgb(37 99 235 / .5)`、`color(srgb …)`、`oklch()`、`color(display-p3 …)`)
