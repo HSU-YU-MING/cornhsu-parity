@@ -2,7 +2,13 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.4.0 — 2026-11-09
+
+> **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、
+> 畫面一樣時,之前會報 4 條 critical 落差擋下 CI,現在不報;真的少了內距照樣抓得到。設定檔不用改,`report.json`、exit code 都不變。
+> *Padding that a child's margin provides instead (same picture) no longer fails the gate, while padding that is really missing still
+> does; the npm entry package now waits until every platform package can be downloaded. No config changes; `report.json` and exit
+> codes are unchanged.*
 
 **升級必做 (upgrade required):用 `--baseline` 的專案,升級後先跑一次 `parity check`,看結果再合併。** 內距的比法放寬了:
 容器的 padding 改由子元素的 margin 撐出來、畫面一樣時不再報落差。之前因此記在基準裡的 padding 落差會消失(算成修好了);
