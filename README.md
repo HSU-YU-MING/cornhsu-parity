@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1494**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1503**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -301,6 +301,12 @@ Only the things that should hold no matter how the layout flows:
     axes are compared.
 - **Padding / spacing**: all four padding edges, and auto-layout `itemSpacing` against the real
   gap between child elements.
+  - A design's padding is often built with a child's `margin` instead (`padding: 0` on the
+    container, `margin: 12px 20px` on what is inside). The page looks the same, so from 2.4 that
+    edge counts as padding + margin of the child nearest it — but only when the sum matches the
+    design and the margin really sits inside the container (a margin that collapses out of a block
+    container leaves no space inside and still reports). When it doesn't match, the report shows
+    the CSS padding as before.
 - **Relative position** (`offsetX`/`offsetY`): for children of freely positioned (non-auto-layout)
   containers, the offset relative to the nearest reliable sibling or parent edge — which is what
   catches "size and color are perfect, but it is in the wrong place." Only reliable edges are used

@@ -4,6 +4,26 @@
 
 ## 未發佈
 
+**升級必做 (upgrade required):用 `--baseline` 的專案,升級後先跑一次 `parity check`,看結果再合併。** 內距的比法放寬了:
+容器的 padding 改由子元素的 margin 撐出來、畫面一樣時不再報落差。之前因此記在基準裡的 padding 落差會消失(算成修好了);
+想清掉舊列就重存基準。設定檔不用改。
+*If you use `--baseline`, run `parity check` once after upgrading and look before merging: padding that a child's margin provides
+instead (same picture) no longer reports, so such padding rows in your baseline now show as fixed. Re-save the baseline to drop them.*
+
+- **修正:內距由子元素的 margin 撐出來時不再誤報**(none;六面都沒動,量測語意演進,所以是 minor)。設計稿(Figma auto-layout)的 padding
+  在頁面上常寫成 `padding: 0` 加上裡面元素的 `margin`,畫面一樣,但 Parity 只讀容器的 CSS padding:缺口實驗室的同一顆按鈕
+  (`GapLabTests` 的 E1)報 4 條 critical 的 padding 落差、exit 1,違反「寧可漏報,不可誤報」。
+  - 現在某一邊對不上時,看最靠近那一邊的子元素(用邊框算,不是 margin 框):padding 加上它那一邊的 margin 剛好等於設計值,
+    而且那段 margin 真的在容器裡(子元素離容器的內距邊至少有那麼遠),就不報。只解釋差額,本來就對的邊不看 margin。
+  - **照樣報的**:margin 補不足差額;區塊容器裡第一個子元素的 margin 穿出容器外(margin collapse,computed 值照樣是 12px,
+    但裡面沒有留白,所以只信幾何);兩個子元素一個貼邊;只有 absolute／fixed 或零面積的子元素;文字直接寫在容器裡。
+    `DiffEngineTests` 逐條鎖住,E1-control(padding 拿掉、沒有補)照樣 exit 1。
+  - 對不上時報告照舊印 CSS 的 padding,不是 padding + margin。容器對齊(軟落差)的「padding 不一樣就跳過」也改用同一個等效值。
+  - 擷取端多讀四邊的 margin(`RenderedNode.Margin`);`report.json`、快照、基準的格式都沒變。
+  *Padding built from a child's margin (same picture) no longer reports a gap. An edge counts as padding plus the margin of the child
+  nearest it only when the sum matches the design and the margin really sits inside the container; a margin that collapses out of a
+  block container still reports. When it doesn't match, the report shows the CSS padding as before.*
+
 - **修正:npm 通路發版時不再有裝不起來的空窗**(none;六面都沒動)。入口套件 `cornhsu-parity` 原本在平台子套件發完就立刻發佈,
   而子套件要同步一段時間才裝得起來:2.3.1 的 `win32-x64` 有一小時裝不起來,這段時間 `npm install` 不報錯,一執行才 exit 2,`npx` 還會把半成品留在快取。
   - 現在等每個平台的壓縮檔都下載得到,才發佈入口套件(`scripts/publish-npm-packages.sh`)。**代價**:npm 通路會比 NuGet 晚上架,最多再等 3 小時;逾時的話入口套件不發,使用者還是裝到上一版。

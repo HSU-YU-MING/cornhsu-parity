@@ -26,6 +26,13 @@ public sealed record RenderedNode(
     public string? AriaLabel { get; init; }
     public double? CornerRadius { get; init; }
 
+    /// <summary>
+    /// margin 四邊(computed,auto 是瀏覽器算出來的值)。只給內距的等效判斷用:設計稿的 padding 在頁面上可能是子元素的 margin
+    /// 撐出來的(<see cref="Comparison.DiffEngine"/> 的 EffectivePadding)。擷取端沒提供 = null(假來源、舊測試),當成 0。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Insets? Margin { get; init; }
+
     /// <summary>position: absolute 或 fixed:不參與版面流,子元件順序與容器對齊都不算它。</summary>
     public bool OutOfFlow { get; init; }
 

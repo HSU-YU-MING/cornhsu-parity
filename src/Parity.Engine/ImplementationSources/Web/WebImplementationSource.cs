@@ -226,6 +226,9 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             Classes = Str(el, "classes"),
             AriaLabel = Str(el, "ariaLabel"),
             CornerRadius = Px(el, "cornerRadius"),
+            Margin = Px(el, "marginTop") is { } marginTop
+                ? new Insets(marginTop, Px(el, "marginRight") ?? 0, Px(el, "marginBottom") ?? 0, Px(el, "marginLeft") ?? 0)
+                : null,
             TextContent = Str(el, "textContent"),
             TextIsInline = el.TryGetProperty("textIsInline", out var textIsInline) && textIsInline.ValueKind == JsonValueKind.True,
             OutOfFlow = el.TryGetProperty("outOfFlow", out var outOfFlow) && outOfFlow.ValueKind == JsonValueKind.True,
