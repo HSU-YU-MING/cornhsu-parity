@@ -698,6 +698,29 @@ public class CliBrowserTests
         Assert.Contains("· off token fontSize 18px", plain);
     }
 
+    // ---------- .fig 設計檔:不走 API ----------
+
+    [Fact]
+    public async Task Check_reads_a_fig_design_file_without_a_figma_token()
+    {
+        // 2.5.0:designFile 是 .fig 就讀本機檔,不需要 FIGMA_TOKEN。測試用的 Home frame 400×300、Title 文字 24px;
+        // 頁面照著做,配得上、量得到。frame 用 Figma 網址的寫法(1-2)
+        using var dir = new TempDir();
+        File.WriteAllBytes(dir.File("design.fig"), FigTestFiles.Zip(FigTestFiles.Canvas()));
+        dir.Write("page.html", Page("""<h1 style="margin:24px 16px; font: 600 24px/32px sans-serif; width:200px">Title</h1>"""));
+        var config = dir.Write("parity.config.json", """{ "designFile": "design.fig", "targets": [{ "route": "/", "frame": "1-2", "url": "./page.html" }] }""");
+
+        var r = await Cli.RunAsync("check", "--config", config);
+        if (Cli.BrowserMissing(r)) { Console.WriteLine(Skipped); return; }
+
+        Assert.True(r.ExitCode is 0 or 1, r.Out + r.Err); // 不是 2(讀檔失敗)也不是 3(什麼都沒配上)
+        using var doc = JsonDocument.Parse(File.ReadAllText(dir.File(".parity", "report.json")));
+        var title = doc.RootElement.GetProperty("reports")[0].GetProperty("nodes").EnumerateArray()
+            .Single(n => n.GetProperty("designLayer").GetString() == "Title");
+        Assert.Equal("1:3", title.GetProperty("designId").GetString());
+        Assert.DoesNotContain(title.GetProperty("diffs").EnumerateArray(), d => d.GetProperty("prop").GetString() == "fontSize");
+    }
+
     // ---------- 頁面狀態:snapshot 與 check 套同一組步驟 ----------
 
     [Fact]

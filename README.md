@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1730**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1767**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -356,6 +356,7 @@ window is already in whatever state you left it, and Parity does not click aroun
 | Design source | config | Who it is for |
 |---|---|---|
 | **Figma** (primary) | `figmaFileKey` + `FIGMA_TOKEN` | The normal workflow, when you have a Figma file |
+| **Figma `.fig` file** | `designFile` ending in `.fig` | The same Figma design **without the API**: free plans get very few API reads, and CI re-fetches on every run. Save the file from Figma (File → Save local copy) — see below |
 | **Snapshot** (`parity snapshot`) | `designFile` pointing at the generated snapshot JSON | **Refactor/redesign guard**: today's rendering is correct, so freeze it as the baseline and later checks prove nothing drifted (the numeric version of visual regression). Matching goes through selector identity, so it is 100% deterministic — randomized ids (React `useId`, CSS-in-JS) are detected at capture time and replaced with structural paths, so they survive regeneration; purely alphabetic random ids (the kind character heuristics cannot see) are caught **empirically**: snapshot loads the page twice, ids that differ between loads are never used as anchors, and the measured stable-id allowlist is stored in the snapshot for `check` to anchor the same way. Baselines taken by older versions may list such nodes as unmatched (reason `randomized-id`); re-run `parity snapshot` once to migrate |
 | **An image + annotations** | `designImage` (PNG/JPG) + `designFile` (annotations) | When all you have is a picture: an outsourced PNG, or a legacy project down to screenshots. **This is also the path for XD / Sketch / Photoshop and anything else that can export an image** — a universal adapter. The annotations are DesignNode JSON, and `fill` may be omitted: the engine samples the color from the corresponding region of the image. (Text color is deliberately not sampled — anti-aliasing blends it and the reading is unreliable — but you can fill it in by hand.) |
 | Hand-written JSON | `designFile` | Offline demos and tests |
@@ -366,6 +367,37 @@ parity snapshot            # 1. Freeze the current rendering (writes parity.snap
 #    Point designFile at it in the config, and set each target.frame to its route
 parity check               # 2. Refactor fearlessly; 3. check proves it still matches the snapshot
 ```
+
+### Figma without the API: a `.fig` file
+
+Figma's API allowance is small on free plans (View/Collab seats get a handful of file reads a month), and a
+CI runner starts with an empty cache, so every run spends it again. A `.fig` file sidesteps the API:
+
+1. In Figma, **File → Save local copy** (desktop app or browser). Commit the `.fig` file, or keep it where CI can reach it.
+2. Point the config at it; frames keep the node id from the Figma link (`12-34` or `12:34`):
+
+```jsonc
+{ "designFile": "design/app.fig", "figmaFileKey": "abcd1234",   // the key is optional: it only keeps report links pointing at Figma
+  "targets": [{ "route": "/", "frame": "10-2", "url": "http://localhost:8080/" }] }
+```
+
+Parity reads the file the same way as the API's answer — node ids, auto-layout, fills, strokes, text styles,
+component instances with their overrides and instance swaps, and color styles all come out in the same shape,
+so the comparison rules are identical. An unknown frame id lists the frames in the file.
+
+- **Measured against Figma itself** on the Ant Design community file (77,711 nodes, format version 101):
+  in four frames of 75–868 nodes, every node, text value and style, auto-layout setting, corner radius and
+  fill matched what Figma shows (six mixed-colour text runs excepted). Positions and sizes matched exactly for
+  90% of the 1,977 nodes and within 1px for 95%.
+- **Known limit: cached layout.** A `.fig` stores the layout Figma last computed. When a component changes
+  after an instance was laid out — the Ant Design file has instances swapped to shorter components — Figma
+  re-flows the page when it opens the file, but the stored sizes are the old ones. In one frame that put
+  71 of 284 nodes off by more than 10px. If a page shows a run of position gaps the page does not have,
+  check that region in Figma, or use the API for that frame.
+- The format is not published by Figma; it was reverse-engineered by the community. Parity reads the schema
+  embedded in each file, so new fields do not break it, and a file it cannot read says so and points back to
+  the API or a snapshot. Image comparison (`compare.images`) needs a reference image, which a `.fig` does not carry.
+- Reading a large file takes a few seconds (the 31 MB Ant Design file: about 10 s), once per run.
 
 ## Picking a Figma frame: three lessons from wild testing
 
@@ -924,7 +956,7 @@ for, how long it is kept — is **<https://stats.cornhsu.com/>**.
 | `data.score` | The fidelity score `check` printed (0–100) |
 | `data.gateFailed` | Whether `check`'s exit code was not 0 (so `--baseline` and exit 3 count as they did in your CI) |
 | `data.pages` | How many targets the report covers |
-| `data.designSource` | `figma`, `snapshot` (a file written by `parity snapshot`), `file` (any other design JSON) or `image` |
+| `data.designSource` | `figma` (the API, or a `.fig` file), `snapshot` (a file written by `parity snapshot`), `file` (any other design JSON) or `image` |
 | `data.designNodes`, `data.matched` | Design nodes and matched nodes, summed over all pages |
 | `data.severity` | Gap counts per severity: `critical`, `serious`, `medium`, `minor` |
 | `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`, `borderWidth`, `shadow`, `mainAxisOffset`, `crossAxisOffset`, `outlineWidth`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`, `background`, `borderColor`, `shadowColor`, `gradient`, `outlineColor`, `imageColor` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300), a 0–1 difference for `opacity` and `image` (<0.05, 0.05–0.1, 0.1–0.25, 0.25–0.5, ≥0.5), and lines for `lineCount` (1, 2, 3–4, 5 or more). `fontFamily`, `text`, `childOrder`, `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `relation` have no ranges, only counts: never the text, the layer names or the values |

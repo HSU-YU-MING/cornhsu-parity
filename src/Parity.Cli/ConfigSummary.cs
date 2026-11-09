@@ -42,6 +42,7 @@ internal sealed record ConfigSummary(
             UrlKinds: targets.GroupBy(t => UrlKind(t.Url)).OrderBy(g => g.Key, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Count()),
             DesignSource: config.DesignImage is not null ? "image (designImage + annotations)"
+                : config.DesignFileIsFig ? "Figma .fig file (designFile)"
                 : config.DesignFile is not null ? "design JSON file (designFile; snapshots use this too)"
                 : config.FigmaFileKey is not null ? "figma"
                 : "none set",

@@ -26,6 +26,7 @@ Versions are the ones resolved for `src/Parity.Cli` (`obj/project.assets.json`).
 | Playwright driver (`playwright-core`, inside Microsoft.Playwright) | 1.64.1 | Apache-2.0 | Copyright (c) Microsoft Corporation; portions Copyright 2017 Google Inc. | https://github.com/microsoft/playwright |
 | Node.js (inside Microsoft.Playwright; **NuGet package only**) | 24.22.1 | MIT, plus the licenses of the dependencies it bundles | Copyright Node.js contributors; Copyright Joyent, Inc. and other Node contributors | https://github.com/nodejs/node |
 | SixLabors.ImageSharp | 3.2.0 | Apache-2.0 ([why](#sixlaborsimagesharp-apache-20)) | Copyright © Six Labors | https://github.com/SixLabors/ImageSharp |
+| ZstdSharp.Port | 0.8.8 | MIT; a port of Zstandard, BSD-3-Clause ([text](#zstdsharpport-and-zstandard)) | Copyright (c) 2021 Oleg Stepanischev; Zstandard: Copyright (c) Meta Platforms, Inc. and affiliates | https://github.com/oleg-st/ZstdSharp |
 | SQLitePCLRaw.core, SQLitePCLRaw.provider.e_sqlite3 | 3.0.5 | Apache-2.0 | Copyright 2014-2025 SourceGear, LLC | https://github.com/ericsink/SQLitePCL.raw |
 | SQLitePCLRaw.bundle_e_sqlite3, SQLitePCLRaw.config.e_sqlite3 | 3.0.5 | Apache-2.0 | Copyright 2014-2026 SourceGear, LLC | https://github.com/ericsink/SQLitePCL.raw |
 | SQLite (native `e_sqlite3`, NuGet package `SQLite` built by SourceGear) | 3.53.4 | Public domain | SQLite is in the public domain; package Copyright 2014-2026 SourceGear, LLC | https://sqlite.org/copyright.html |
@@ -92,6 +93,44 @@ third-party notices are published with their source:
 - .NET runtime: https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT
 - ASP.NET Core: https://github.com/dotnet/aspnetcore/blob/main/THIRD-PARTY-NOTICES.txt
 
+## ZstdSharp.Port and Zstandard
+
+ZstdSharp.Port (used to read Figma `.fig` design files) is MIT-licensed — see the MIT
+License section below. It is a C# port of the Zstandard library, whose license follows:
+
+```
+BSD License
+
+For Zstandard software
+
+Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+ * Neither the name Facebook, nor Meta, nor the names of its contributors may
+   be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
 ## SQLite
 
 The native `e_sqlite3` library is SQLite as built and packaged by SourceGear (the
@@ -111,13 +150,14 @@ version and may change the driver's sidecar license files.
 
 Applies to Microsoft.Playwright, Microsoft.EntityFrameworkCore (and its .Abstractions,
 .Relational, .Sqlite and .Sqlite.Core packages), Microsoft.Data.Sqlite.Core,
-Microsoft.Extensions.DependencyModel and Microsoft.Bcl.AsyncInterfaces; in the npm
+Microsoft.Extensions.DependencyModel, Microsoft.Bcl.AsyncInterfaces and ZstdSharp.Port; in the npm
 platform packages also the .NET runtime and ASP.NET Core; in the NuGet package also
 Node.js (whose complete license file is described above).
 
 Copyright holders:
 
 - © Microsoft Corporation. All rights reserved. (as declared by the Microsoft packages above)
+- Copyright (c) 2021 Oleg Stepanischev (ZstdSharp.Port)
 - Copyright (c) .NET Foundation and Contributors (the .NET runtime and ASP.NET Core in the npm platform packages, and the `LICENSE.TXT` in Microsoft.Bcl.AsyncInterfaces)
 - Copyright Node.js contributors. All rights reserved. (Node.js, NuGet package only)
 - Copyright Joyent, Inc. and other Node contributors. All rights reserved. (Node.js, NuGet package only)

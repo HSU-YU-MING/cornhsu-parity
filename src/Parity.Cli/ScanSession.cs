@@ -70,7 +70,7 @@ public sealed class ScanSession : IAsyncDisposable
         var mapSelectors = LoadMapFile();
         // snapshot 基準若帶「穩定 id 白名單」(連拍實測的產物),擷取現場頁面時只拿名單內的
         // id 當錨點——名單外的(現場新長出的隨機 id)走結構路徑,與快照端的 selector 才對得上
-        var allowedIdAnchors = Config.DesignFile is { } designFile
+        var allowedIdAnchors = Config.DesignFile is { } designFile && !Config.DesignFileIsFig
             ? JsonDesignSource.TryReadStableIdAnchors(
                 Path.GetFullPath(Path.Combine(Config.BaseDirectory, designFile)))
             : null;
@@ -169,6 +169,7 @@ public sealed class ScanSession : IAsyncDisposable
     {
         if (Config.DesignImage is { } image) return Path.GetFullPath(Path.Combine(Config.BaseDirectory, image));
         if (Config.DesignFile is not { } file) return null;
+        if (Config.DesignFileIsFig) return null; // .fig 裡沒有 frame 的成品圖(只有設計樹);要比圖片請走 Figma API 或快照
 
         var path = Path.GetFullPath(Path.Combine(Config.BaseDirectory, file));
         var root = await new JsonDesignSource().GetFrameAsync(new DesignRef(path, ""), ct);
@@ -228,6 +229,7 @@ public sealed class ScanSession : IAsyncDisposable
         if (config.DesignImage is { } img)
             return new Parity.Engine.DesignSources.Image.ImageDesignSource(
                 Path.GetFullPath(Path.Combine(config.BaseDirectory, img)));
+        if (config.DesignFileIsFig) return new Parity.Engine.DesignSources.Fig.FigDesignSource();
         if (config.DesignFile is not null) return new JsonDesignSource();
 
         var token = config.ResolveToken()

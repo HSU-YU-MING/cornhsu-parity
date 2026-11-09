@@ -214,6 +214,7 @@ internal static class UsageStats
     {
         if (config.DesignImage is not null) return "image";
         if (config.DesignFile is not { } file) return "figma";
+        if (config.DesignFileIsFig) return "figma"; // .fig 也是 Figma 的設計資料(2.5.0);協定的封閉集不多一個值
         return HasSnapshotEnvelope(Path.GetFullPath(Path.Combine(config.BaseDirectory, file))) ? "snapshot" : "file";
     }
 
