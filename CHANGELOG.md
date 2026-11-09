@@ -261,6 +261,13 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   Figma's own values on 1,977 nodes: structure, text, auto-layout, radii and fills matched; positions 90% exact, 95% within 1px. Known
   limit: layout cached in the file can be stale where components changed after the fact.*
 
+- **文件:README 的定位改寫**(只改文件)。舊的說法「Parity 獨有的是『免費 × 可自動化』」已經不精確:Loupe、figma-audit 也是 MIT,
+  figma-audit 能用腳本跑,DesignLatch 對手寫規則會回非 0 的 exit code。比較表依 2026-11 的查證重寫,差異點改成別人沒有湊在一起的
+  CI 這一整圈:GitHub Action + 原地更新的 PR 留言 + 只擋新增落差的 baseline + 跟 Figma 自動配對;每一塊各是誰也有,照實寫在下面。
+  「成果一覽」的設計來源改成 5 種(加 `.fig`),比對維度補上軟落差。
+  *Docs: the README's positioning no longer claims "free × automatable" is unique. The comparison was re-checked in 2026-11; what no
+  other tool combines is the CI loop — GitHub Action, in-place PR comment, a baseline that gates only new gaps, automatic Figma matching.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

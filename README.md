@@ -28,22 +28,25 @@ comment that updates in place instead of piling up.
 
 **Other tools help you *see* design drift. Parity *blocks* it.**
 
-Most comparable tools (Uiprobe, Loupe, OverlayQA, Floto Design Diff, PixelProof…) do numeric
-comparison these days. The real difference is not "numbers vs. overlays" — it is **whether the
-whole thing can be automated**:
+Plenty of tools compare a page with its Figma design now (Uiprobe, Loupe, OverlayQA, figma-audit,
+Visualign, DesignLatch, Applitools…), most of them with real numbers, and some read Figma files offline
+or take requests from AI agents. What they do not do is close the loop **inside CI, on every pull request**:
 
-|  | Manual spot-check tools<br>(Uiprobe / OverlayQA / Loupe …) | **Parity** |
+|  | Comparable tools (checked 2026-11) | **Parity** |
 |---|---|---|
-| Who runs it | A person opens the tool, clicks around, reads a report | **CI runs it**, nobody has to be present |
-| After a gap is found | File a ticket yourself, or paste the result into the PR | **Exit code blocks the PR** + a bot comment that updates in place |
-| Regression gating | None | **A baseline gates only new/worsened gaps** — projects with existing debt can adopt it today |
-| When there is no Figma file | Unusable | **Snapshot mode**: freeze today's rendering as the baseline so refactors cannot drift |
-| Desktop apps | Not supported | **Electron** (attaches to the live window over CDP) |
-| Price | $39–249 / month (Loupe is free but is a desktop GUI — not automatable) | **Free, MIT** |
+| Who runs it | A person: a browser extension, a Figma plugin or a desktop app (Uiprobe, Loupe, OverlayQA). figma-audit runs from a script but has no pass/fail gate | **CI runs it**; the exit code blocks the PR |
+| Matching the design to the page | Hand-written selector rules (DesignLatch) or position overlap (Figma Validator) | **Automatic and content-based**: text, layer names, containers — explicit anchors only where you want them |
+| On the pull request | Paste the result in yourself | **A bot comment that updates in place**: identical gaps on one row, knock-on shifts folded under their likely cause |
+| A project with existing gaps | No gate, so nothing to baseline | **A baseline gates only new or worse gaps**; a single gap can be accepted with a written reason |
+| No Figma file, or no API quota | A Figma file is required (figma-audit can read a `.fig` without the API) | **Snapshot mode** (freeze today's page), a **`.fig` file** (no API), or an exported image |
+| Beyond a public page | Varies | Pages behind a **login**, menus and tabs opened by **steps**, **Electron** apps, and an **MCP server** so a coding agent can check its own UI work |
+| Price | $39–249 / month for the hosted tools; Applitools checks against Figma in automated tests but is paid and compares images | **Free, MIT** |
 
-> Being honest about the boundaries: localhost and authenticated pages are **no longer a
-> differentiator** — Uiprobe and OverlayQA support them too. Neither is "free and open source" —
-> Loupe is also MIT. **What is unique to Parity is the intersection: free × automatable.**
+> Honest boundaries: each piece exists somewhere else — numeric comparison is common, localhost and
+> signed-in pages work in Uiprobe and OverlayQA, figma-audit reads `.fig` files, Uiprobe and DesignLatch
+> have MCP servers, Loupe and figma-audit are MIT, and DesignLatch exits non-zero for hand-written rules.
+> **What no other tool puts together is the CI loop: GitHub Action + an in-place PR comment + a baseline
+> that gates only new gaps + automatic matching against Figma.**
 
 ## Screenshots
 
@@ -64,8 +67,8 @@ PR comment, updating the same comment rather than adding new ones.
 | | |
 |---|---|
 | Releases | 33 on NuGet (v0.1.0 → v2.4.0). Pushing a tag publishes via OIDC Trusted Publishing — zero long-lived keys in the repo |
-| Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
-| Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
+| Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) — plus soft hints that never gate: text, fonts, borders, outlines, shadows, gradients, image content and color, and text that slips out of its container |
+| Design sources | 5: the Figma API, a Figma `.fig` file (no API), a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
 | Tests | **1767**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |

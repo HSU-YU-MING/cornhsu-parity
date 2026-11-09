@@ -30,20 +30,22 @@
 
 **別人幫你「看見」設計落差,Parity 幫你「擋住」它。**
 
-同類工具(Uiprobe、Loupe、OverlayQA、Floto Design Diff、PixelProof…)現在大多都做數值比對了,
-真正的差別不在「數值 vs 疊圖」,而在**這件事能不能自動化**:
+拿網頁對 Figma 設計稿比的工具現在不少(Uiprobe、Loupe、OverlayQA、figma-audit、Visualign、DesignLatch、Applitools…),
+大多也比真實數值,有的能離線讀 Figma 檔、有的能接 AI agent。它們沒做的是把整件事放進 **CI、每一個 PR 都跑**:
 
-|  | 手動抽查型<br>(Uiprobe / OverlayQA / Loupe …) | **Parity** |
+|  | 同類工具(2026-11 查證) | **Parity** |
 |---|---|---|
-| 誰來跑 | 人打開工具、點一點、看報告 | **CI 自動跑**,人不用在場 |
-| 發現落差之後 | 自己開 ticket、或把結果複製貼到 PR | **exit code 擋 PR** + 機器人自動留言(原地更新不洗版) |
-| 回歸把關 | 無 | **baseline 只擋「新增/惡化」**——有舊債的專案也能今天上車 |
-| 沒有 Figma 檔時 | 不能用 | **快照模式**:把現在的畫面凍結成基準,重構不跑版 |
-| 桌面 app | 不支援 | **Electron**(CDP attach 活視窗) |
-| 價格 | $39–249 / 月(Loupe 免費但為桌面 GUI,無法自動化) | **MIT 免費** |
+| 誰來跑 | 人:瀏覽器擴充、Figma 外掛或桌面 app(Uiprobe、Loupe、OverlayQA)。figma-audit 能用腳本跑,但沒有過/不過的 gate | **CI 自動跑**;exit code 擋 PR |
+| 設計對到頁面 | 手寫 selector 規則(DesignLatch)或比位置重疊(Figma Validator) | **自動、看內容**:文字、圖層名、容器——只在你想要的地方手動指定 |
+| PR 上 | 自己把結果貼上去 | **機器人留言原地更新**:相同落差併成一列,連帶的位移收在可能原因底下 |
+| 已經有一堆落差的專案 | 沒有 gate,也就沒有基準 | **baseline 只擋「新增/惡化」**;單一條落差可以寫明原因收下 |
+| 沒有 Figma 檔、或 API 額度用完 | 需要 Figma 檔(figma-audit 可讀 `.fig`、不走 API) | **快照模式**(凍結現在的畫面)、**`.fig` 檔**(不走 API)、或匯出的圖片 |
+| 公開頁面以外 | 各家不一 | **要登入的頁面**、用**步驟**打開的選單與分頁、**Electron** app,以及給寫程式的 agent 自己驗收的 **MCP server** |
+| 價格 | 託管型 $39–249 / 月;Applitools 能在自動化測試裡對 Figma,但要付費、比的是圖 | **MIT 免費** |
 
-> 誠實說明:localhost 與登入後頁面**不再是差異點**——Uiprobe、OverlayQA 也支援。
-> 「免費開源」也不是獨有——Loupe 同為 MIT。**Parity 獨有的是「免費 × 可自動化」的交集。**
+> 誠實說明:每一塊別人都有——數值比對很普遍,localhost 與登入後頁面 Uiprobe、OverlayQA 也支援,figma-audit 讀得了 `.fig`,
+> Uiprobe 與 DesignLatch 有 MCP server,Loupe 與 figma-audit 同為 MIT,DesignLatch 對手寫規則也會回非 0 的 exit code。
+> **別人沒有湊在一起的是 CI 這一整圈:GitHub Action + 原地更新的 PR 留言 + 只擋新增落差的 baseline + 跟 Figma 自動配對。**
 
 ## 畫面
 
@@ -60,8 +62,8 @@
 | | |
 |---|---|
 | 發佈 | NuGet 共 33 版(v0.1.0 → v2.4.0),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
-| 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
-| 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
+| 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報)——另有只提醒、不擋的軟落差:文字、字型、邊框、外框、陰影、漸層、圖片內容與顏色、文字跑出容器 |
+| 設計來源 | 5 種:Figma API、Figma `.fig` 檔(不走 API)、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
 | 測試 | **1767 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
