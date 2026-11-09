@@ -259,7 +259,8 @@ internal static class CaptureScript
               hasBackgroundImage: s.backgroundImage.includes('url('),
               imageBroken: el.tagName === 'IMG' && el.complete && el.naturalWidth === 0,
               domId: el.id || null,
-              classes: (typeof el.className === 'string' && el.className) ? el.className : null,
+              // 讀 class 屬性,不讀 className:SVG 元素的 className 是 SVGAnimatedString,以前一律收成 null,圖示靠名字永遠配不上(2.5.0)
+              classes: el.getAttribute('class') || null,
               ariaLabel: el.getAttribute('aria-label') || el.getAttribute('data-testid') || null,
               box: { x: r.x / csx + ctx.ox, y: r.y / csy + ctx.oy, w: r.width / (csx * esx), h: r.height / (csy * esy) },
               color: s.color,
