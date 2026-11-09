@@ -18,10 +18,17 @@ public sealed class ParityConfig
     /// 時沒刪掉的話,designId 是 CSS selector,拿它組 figma.com 連結點了就壞。
     /// </summary>
     [JsonIgnore]
-    public string? FigmaLinkFileKey => DesignFile is null ? FigmaFileKey : null;
+    public string? FigmaLinkFileKey => DesignFile is null || DesignFileIsFig ? FigmaFileKey : null;
 
-    /// <summary>本機設計 JSON 檔路徑(離線測試/示範/snapshot 基準用)。與 FigmaFileKey 二擇一。</summary>
+    /// <summary>
+    /// 本機設計檔路徑。與 FigmaFileKey 二擇一。副檔名是 .fig(2.5.0)= Figma 桌面版「另存本機副本」的檔案,不走 API;
+    /// 其他 = 設計 JSON(離線測試/示範/snapshot 基準用)。
+    /// </summary>
     public string? DesignFile { get; set; }
+
+    /// <summary>designFile 是 .fig(2.5.0)。節點 id 跟 Figma 一樣,所以同時寫了 figmaFileKey 的話,報告裡的連結照樣連得回 Figma。</summary>
+    [JsonIgnore]
+    public bool DesignFileIsFig => DesignFile?.EndsWith(".fig", StringComparison.OrdinalIgnoreCase) == true;
 
     /// <summary>
     /// 設計圖(PNG/JPG)路徑——搭配 DesignFile(此時 DesignFile 是「標註檔」,同 DesignNode 格式,

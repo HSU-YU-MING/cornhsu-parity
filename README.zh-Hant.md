@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1730 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1767 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -297,6 +297,7 @@ CI 上請在前一個步驟產生 storage state(自己的登入腳本,或測試�
 | 設計來源 | config | 適合誰 |
 |---|---|---|
 | **Figma**(主力) | `figmaFileKey` + `FIGMA_TOKEN` | 有 Figma 檔的正規流程 |
+| **Figma `.fig` 檔** | `designFile` 指向 `.fig` | 同一份 Figma 設計,**不走 API**:免費方案的 API 額度很少,CI 每跑一次都要重抓。在 Figma 用「另存本機副本」存下來——見下面 |
 | **快照**(`parity snapshot`) | `designFile` 指向產出的快照 JSON | **重構/改版守門**:現在的畫面是對的,存成基準,之後 check 保證不跑版(visual regression 的數值版)。配對走 selector 身分,100% 確定性——隨機 id(React `useId`、CSS-in-JS)在擷取時就被偵測、改走結構路徑,重新生成也不受影響;純字母的隨機 id(字元上看不出來的那種)由**連拍實測**抓出:snapshot 載入頁面兩次,兩次不同的 id 不當錨點,實測穩定的 id 白名單存進快照供 check 沿用。舊版拍的基準若把隨機 id 凍進了 selector,會列為未配對(理由 `randomized-id`)——重跑一次 `parity snapshot` 即完成遷移 |
 | **一張圖 + 標註** | `designImage`(PNG/JPG)+ `designFile`(標註) | 只有圖的場景:外包 PNG、老專案只剩截圖。**XD / Sketch / PS 等其他工具匯出圖片就能走這條**(萬用轉接頭)。標註 = DesignNode JSON,`fill` 可省略——顏色由引擎從圖片對應區域取樣(TEXT 字色刻意不取樣:反鋸齒混色取不準,可手填) |
 | 手寫 JSON | `designFile` | 離線示範/測試 |
@@ -307,6 +308,30 @@ parity snapshot            # 1. 凍結現在的畫面(產出 parity.snapshot.jso
 #    config 改 designFile 指向它、target.frame 填 route
 parity check               # 2. 大膽重構;3. check 保證與快照一致
 ```
+
+### 不走 API 的 Figma:`.fig` 檔
+
+免費方案的 Figma API 額度很少(檢視/協作席位一個月只有幾次讀檔),CI 每次都從空的快取開始,每跑一次都再用一次。`.fig` 檔完全不用 API:
+
+1. 在 Figma 選 **檔案 → 另存本機副本**(File → Save local copy,桌面版或瀏覽器都可以)。把 `.fig` commit 進 repo,或放在 CI 拿得到的地方。
+2. 設定檔指向它;frame 照舊填 Figma 網址裡的 node-id(`12-34` 或 `12:34`):
+
+```jsonc
+{ "designFile": "design/app.fig", "figmaFileKey": "abcd1234",   // key 選填:只是讓報告裡的連結還連得回 Figma
+  "targets": [{ "route": "/", "frame": "10-2", "url": "http://localhost:8080/" }] }
+```
+
+Parity 把檔案讀成跟 API 回傳一樣的形狀——節點 id、auto-layout、填色、邊框、文字樣式、元件實例(含覆寫與替換元件)、顏色樣式——
+所以比對規則完全一樣。frame id 寫錯時會列出檔案裡有哪些 frame。
+
+- **拿 Figma 自己的數值實測**(Ant Design 社群檔,77,711 個節點,格式版本 101):四個 75～868 個節點的 frame,每個節點、文字內容與樣式、
+  auto-layout、圓角、填色都跟 Figma 顯示的一致(六段混色文字除外)。位置與大小在 1,977 個節點裡 90% 完全一致、95% 差在 1px 以內。
+- **已知限制:版面快取。** `.fig` 存的是 Figma 最後一次算好的版面。元件在實例排好之後又改了(Ant Design 檔裡有實例被換成比較矮的元件),
+  Figma 開檔時會重新排版,檔案裡存的卻還是舊尺寸——有一個 frame 因此 284 個節點裡 71 個差超過 10px。某一頁出現一整串頁面上其實沒有的位置落差時,
+  到 Figma 看看那一區,或那個 frame 改走 API。
+- 這個格式 Figma 沒有公開,是社群逆向出來的。Parity 讀的是每個檔案自帶的 schema,Figma 加欄位不會讀壞;真的讀不懂時會明講,並提示改用 API 或快照。
+  圖片比對(`compare.images`)需要參考圖,`.fig` 裡沒有。
+- 大檔要讀幾秒(31 MB 的 Ant Design 檔約 10 秒),每次執行讀一次。
 
 ## Figma 檔怎麼挑 frame:野生實測的三個教訓
 
@@ -681,7 +706,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 | `data.score` | `check` 印出的還原度分數(0–100) |
 | `data.gateFailed` | `check` 的 exit code 是不是非 0(所以 `--baseline` 與 exit 3 照你 CI 看到的算) |
 | `data.pages` | 報告涵蓋幾個 target |
-| `data.designSource` | `figma`、`snapshot`(`parity snapshot` 寫出的檔)、`file`(其他設計 JSON)或 `image` |
+| `data.designSource` | `figma`(API 或 `.fig` 檔)、`snapshot`(`parity snapshot` 寫出的檔)、`file`(其他設計 JSON)或 `image` |
 | `data.designNodes`、`data.matched` | 設計節點數與配對到的節點數,所有頁加總 |
 | `data.severity` | 各嚴重度的落差條數:`critical`、`serious`、`medium`、`minor` |
 | `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`borderWidth`、`shadow`、`mainAxisOffset`、`crossAxisOffset`、`outlineWidth` 與長度同區間;`borderColor`、`shadowColor`、`gradient`、`outlineColor`、`imageColor` 與顏色同區間;`opacity`、`image` 以 0–1 的差分 <0.05、0.05–0.1、0.1–0.25、0.25–0.5、≥0.5;`lineCount` 以行數差分 1、2、3–4、5 以上。`fontFamily`、`text`、`childOrder`、`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`relation` 沒有區間,只有條數,不送文字、圖層名稱或值 |

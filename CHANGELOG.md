@@ -242,6 +242,25 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   hair away from a token are near misses and fail (exit 1) with the token to use; other off-token values are listed. Token colors at
   reduced opacity count as the token, and size tokens are matched by kind from their names.*
 
+- **新增:Figma 的 `.fig` 檔當設計來源,完全不走 API**(`designFile` 多收一種檔;六面都沒動,minor)。免費方案的 Figma API 額度很少
+  (檢視/協作席位一個月只有幾次讀檔),CI 每次從空的快取開始、每跑一次都再用一次。在 Figma「另存本機副本」存下 `.fig`,設定檔寫
+  `"designFile": "design.fig"`,frame 照舊用 Figma 網址的 node-id。
+  - 讀法:`.fig` 是 ZIP 裡的 `canvas.fig`(或直接就是它):`fig-kiwi` 標頭、版本、zstd 或 deflate 壓縮的 Kiwi schema 與資料。schema 從檔案本身讀,
+    Figma 加了欄位也讀得出來;格式不是 Figma 公開的(參考了 figma-audit 的逆向結果,MIT)。
+  - 轉成跟 REST 回傳一樣的節點形狀,再走既有的 Figma 解析——兩條來源的比對規則只有一份。元件實例從元件展開,套覆寫(路徑只在穿過巢狀實例時多一段)、
+    替換元件(instance swap)與 Figma 算好的衍生尺寸;填色、邊框、陰影、文字以引用的樣式為準(節點存的是快取,可能是舊的)。
+  - **實測**(Ant Design 社群檔,77,711 個節點,格式版本 101,拿 Figma 外掛 API 讀到的值逐節點比):四個 frame 共 1,977 個節點,節點、文字內容與樣式、
+    auto-layout、圓角、填色全部一致(六段混色文字無法比);位置與大小 90% 完全一致、95% 在 1px 內。校準時修掉的:樣式快取、覆寫範圍、元件屬性繼承、
+    instance swap、沒存的右/下內距是 0、`SPACE_EVENLY` 就是 space-between、Heavy 是 800、四角相同算單一圓角、空的樣式就是沒有填色。
+  - **已知限制**:`.fig` 存的是 Figma 最後一次算好的版面。元件在實例排好之後又改了,Figma 開檔時會重新排版,檔案裡的尺寸卻是舊的——
+    實測一個 frame 284 個節點裡 71 個差超過 10px。README 有說明怎麼認、怎麼避開。
+  - frame id 寫錯時列出檔案裡的 frame;版本太舊、讀不懂時明講並提示改用 API 或快照。統計的 `designSource` 照樣是 `figma`(協定不變)。
+  - 新相依:ZstdSharp.Port 0.8.8(MIT,Zstandard 的 C# 移植;THIRD-PARTY-NOTICES 已補 Zstandard 的 BSD 授權)。
+  *New: a Figma `.fig` file (File → Save local copy) works as `designFile`, with no API calls. It is converted to the same node shape the
+  REST API returns — instances expanded with overrides and swaps, styles resolved — so the comparison rules are shared. Measured against
+  Figma's own values on 1,977 nodes: structure, text, auto-layout, radii and fills matched; positions 90% exact, 95% within 1px. Known
+  limit: layout cached in the file can be stale where components changed after the fact.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、
