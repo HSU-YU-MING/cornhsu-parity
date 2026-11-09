@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1503**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1510**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -413,7 +413,11 @@ unaffected and works as usual).
 1. **Automatic text anchoring**: design TEXT content ↔ page text (matched only when unique;
    when several elements share the text, the layer name disambiguates — and it still refuses to force a match)
 2. **Layer name ↔ id / class / aria-label** (falling back to `data-testid` when there is no
-   aria-label): `CTA Button` matches `class="cta-button"` automatically
+   aria-label): `CTA Button` matches `class="cta-button"` automatically. Matched only when unique:
+   when several plausibly sized elements carry the name, Parity keeps the ones inside the element its
+   nearest matched ancestor got, then the ones holding the most of its already-matched content; if
+   more than one is still left, the node is listed as `ambiguous-name` rather than taking the first one
+   (versions before 2.5.0 took the first in document order)
 3. **Container inference**: an unmatched container is inferred from the lowest common ancestor of
    its already-matched descendants (pure structure — no guessing)
 4. **Manual fallback**: add `data-parity="Layer Name"` in your HTML, or write
@@ -650,7 +654,7 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 
 - **Unknown keys** — consumers must ignore keys they do not recognize. Within 2.x, `report.json` only *gains* fields; existing keys are never removed, renamed or given a different type (that would be 3.0). Closed sets below never gain members within 2.x either.
 - `severity` — **closed set** (spelling and membership frozen): `none` / `minor` / `medium` / `serious` / `critical`. `status`: `mismatch` / `missing`.
-- `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`.
+- `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, `ambiguous-name`.
 - `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`.
 - `extras` (per report, `compare.extras`) — `null` when the list is off (the default, `check --reverse`, and every report written before the field existed); otherwise `{ "total": n, "items": [{ "selector", "tag", "box" }] }`, where `total: 0` with empty `items` means "on, nothing found". `items` is sorted largest first and capped at 20 per page; `total` counts them all. Items carry no element text. Never affects the gate or the score.
 - `direction` (top level, since 2.0.0) — **closed set**: `forward` (a normal `check`) / `reverse` (`check --reverse`: expected and actual swapped, never gated). Always written; files without it read as `forward`. Readers accept exactly the lowercase strings `"forward"` and `"reverse"` — any other value (other casing, a number, `null`) is an error, not a guess. `parity report` does not gate a reverse report, and `parity push` refuses one.
@@ -732,7 +736,7 @@ for, how long it is kept — is **<https://stats.cornhsu.com/>**.
 | `data.designNodes`, `data.matched` | Design nodes and matched nodes, summed over all pages |
 | `data.severity` | Gap counts per severity: `critical`, `serious`, `medium`, `minor` |
 | `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`, `borderWidth`, `shadow`, `mainAxisOffset`, `crossAxisOffset`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`, `background`, `borderColor`, `shadowColor`, `gradient` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300), a 0–1 difference for `opacity` and `image` (<0.05, 0.05–0.1, 0.1–0.25, 0.25–0.5, ≥0.5), and lines for `lineCount` (1, 2, 3–4, 5 or more). `fontFamily`, `text`, `childOrder`, `fontStyle`, `textDecoration`, `textTransform`, `textAlign` have no ranges, only counts: never the text, the layer names or the values |
-| `data.unmatchedBy` | Design nodes that could not be matched, counted per reason: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, or `other` for any reason this version does not list. Only reasons with at least one node; `{}` when everything matched. Never the layer names |
+| `data.unmatchedBy` | Design nodes that could not be matched, counted per reason: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, `ambiguous-name`, or `other` for any reason this version does not list. Only reasons with at least one node; `{}` when everything matched. Never the layer names |
 | `data.extras` | How many extra page elements `compare.extras` found, summed over all pages (the total, before the 20-per-page cap). Only present when the list is on. Never their selectors, tags or boxes |
 
 **Never sent:** URLs, routes, page or layer names, selectors, file names or paths, screenshots, colour

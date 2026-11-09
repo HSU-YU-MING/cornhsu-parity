@@ -366,7 +366,7 @@ public class ConfigSchemaTests
         var config = LoadJson("""{ "gate": { "failOnUnmatched": ["text-not-found", "No-Anchor", "*"] } }""");
 
         Assert.Equal(["text-not-found", "No-Anchor", "*"], config.Gate.FailOnUnmatched);
-        Assert.Equal(["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible"],
+        Assert.Equal(["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "ambiguous-name"],
             Parity.Engine.Comparison.Matcher.UnmatchedReasons);
         foreach (var reason in Parity.Engine.Comparison.Matcher.UnmatchedReasons)
             Assert.Equal([reason], LoadJson($$"""{ "gate": { "failOnUnmatched": ["{{reason}}"] } }""").Gate.FailOnUnmatched);
@@ -385,7 +385,7 @@ public class ConfigSchemaTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => ParityConfig.Load(path));
         Assert.Equal($"config {path}: gate.failOnUnmatched contains \"{value}\", which is not an unmatched reason " +
-            "(use: no-anchor, ambiguous-or-missing-text, text-not-found, randomized-id, size-implausible, or \"*\" for every reason — one per string).",
+            "(use: no-anchor, ambiguous-or-missing-text, text-not-found, randomized-id, size-implausible, ambiguous-name, or \"*\" for every reason — one per string).",
             ex.Message);
     }
 

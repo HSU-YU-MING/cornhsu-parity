@@ -286,6 +286,10 @@ internal static class CheckCommand
                 Console.WriteLine("  \x1b[90mhint: randomized-id = the baseline froze a selector containing a randomly generated id " +
                     "(React useId, CSS-in-JS, …). Newer baselines use structural paths that survive id regeneration — " +
                     "re-run `parity snapshot` once to migrate.\x1b[0m");
+            if (report.Unmatched.Any(u => u.Reason == "ambiguous-name"))
+                Console.WriteLine("  \x1b[90mhint: ambiguous-name = several elements on the page carry this layer's name and " +
+                    "neither where it sits nor what it contains told them apart. Add data-parity=\"<layer name>\" to the right " +
+                    "element, or map it in parity.map.json.\x1b[0m");
         }
 
         // compare.extras = "list" 且有發現才印(沒開是 null、開了沒有是 total 0,兩者都不印)。selector 來自頁面:過 Safe

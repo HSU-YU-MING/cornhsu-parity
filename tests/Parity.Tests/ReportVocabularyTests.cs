@@ -11,7 +11,7 @@ namespace Parity.Tests;
 public class ReportVocabularyTests
 {
     private static readonly string[] KnownReasons =
-        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible"];
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "ambiguous-name"];
 
     private static readonly string[] KnownMatchedBy =
         ["selector", "explicit", "auto-text", "auto-name", "auto-container"];

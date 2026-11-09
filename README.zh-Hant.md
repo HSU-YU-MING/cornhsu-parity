@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1503 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1510 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -313,7 +313,7 @@ route 只是報告上的標籤,取好認的名字就行。frame 尺寸 ≠ 想�
 ## 配對策略(以設計端為錨)
 
 1. **自動文字錨定**:設計 TEXT 文字 ↔ 頁面文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)
-2. **圖層名 ↔ id / class / aria-label**(沒有 aria-label 時改看 `data-testid`):`CTA Button` 自動對上 `class="cta-button"`
+2. **圖層名 ↔ id / class / aria-label**(沒有 aria-label 時改看 `data-testid`):`CTA Button` 自動對上 `class="cta-button"`。唯一才配:同名而且大小合理的元素有好幾個時,先留下在「最近一個已配對祖先」那個元素裡面的,再留下包住最多已配對內容的;還剩不只一個,就列為 `ambiguous-name`,不拿第一個(2.5.0 以前拿文件順序的第一個)
 3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)
 4. **手動補漏**:HTML 加 `data-parity="圖層名"`,或 `parity.map.json` 寫 `{ "圖層名": "CSS selector" }`
 5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)。文字節點的文字整頁都找不到時,原因是 `text-not-found`(元件不見),而不是「分不出來」——`gate.failOnUnmatched` 可以拿它擋 PR
@@ -493,7 +493,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 
 - **未知的 key** — 消費端必須忽略不認得的 key。2.x 之內 `report.json` 只會**新增**欄位,既有的 key 不刪、不改名、不改型別(那是 3.0 的事)。下面的封閉集在 2.x 之內也不會多成員。
 - `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
-- `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`。
+- `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`、`ambiguous-name`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。
 - `extras`(每份報告,`compare.extras`)— 沒開時是 `null`(預設、`check --reverse`、以及這個欄位出現之前寫的所有報告);開了是 `{ "total": n, "items": [{ "selector", "tag", "box" }] }`,`total: 0` 加上空的 `items` 表示「開了、沒有」。`items` 依面積由大到小,每頁最多 20 筆;`total` 是全部的數量。不帶元素文字。永遠不影響 gate 與分數。
 - `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
@@ -561,7 +561,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 | `data.designNodes`、`data.matched` | 設計節點數與配對到的節點數,所有頁加總 |
 | `data.severity` | 各嚴重度的落差條數:`critical`、`serious`、`medium`、`minor` |
 | `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`borderWidth`、`shadow`、`mainAxisOffset`、`crossAxisOffset` 與長度同區間;`borderColor`、`shadowColor`、`gradient` 與顏色同區間;`opacity`、`image` 以 0–1 的差分 <0.05、0.05–0.1、0.1–0.25、0.25–0.5、≥0.5;`lineCount` 以行數差分 1、2、3–4、5 以上。`fontFamily`、`text`、`childOrder`、`fontStyle`、`textDecoration`、`textTransform`、`textAlign` 沒有區間,只有條數,不送文字、圖層名稱或值 |
-| `data.unmatchedBy` | 沒配對到的設計節點,依原因計數:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`,這一版沒列出的原因算 `other`。只列至少有一個節點的原因,全部都配對到是 `{}`。不送圖層名稱 |
+| `data.unmatchedBy` | 沒配對到的設計節點,依原因計數:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`、`ambiguous-name`,這一版沒列出的原因算 `other`。只列至少有一個節點的原因,全部都配對到是 `{}`。不送圖層名稱 |
 | `data.extras` | `compare.extras` 找到幾個多餘的頁面元素,所有頁加總(截斷前的總數,不受每頁 20 筆的上限影響)。只有開了才有這個欄位。不送 selector、標籤名或框 |
 
 **一律不送:** 網址、route、頁面或圖層名稱、selector、檔名或路徑、截圖、顏色值、設計稿內容、頁面或設計稿上的文字、圖片內容或圖片雜湊、token、repo 名稱或 ID、
