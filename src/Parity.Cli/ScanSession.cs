@@ -75,6 +75,7 @@ public sealed class ScanSession : IAsyncDisposable
                 Path.GetFullPath(Path.Combine(Config.BaseDirectory, designFile)))
             : null;
         var scans = new List<TargetScan>();
+        var accepted = new HashSet<int>(); // 這次有對到落差的 accept 條目
 
         foreach (var target in targets)
         {
@@ -99,8 +100,12 @@ public sealed class ScanSession : IAsyncDisposable
             _implSource.Screenshots.TryGetValue(url, out var screenshot);
             if (_compareImages && screenshot is not null)
                 result = await CompareImagesAsync(result, target, screenshot, ct);
+            // 圖片比對之後才套:image / imageColor 也收得下
+            result = result with { Report = Acceptance.Apply(result.Report, Config.Accept, accepted) };
             scans.Add(new TargetScan(target, result, screenshot));
         }
+        foreach (var note in Acceptance.StaleNotes(Config.Accept, accepted, targets.Select(t => t.Route).ToHashSet(StringComparer.Ordinal), routeFilter is null))
+            Console.Error.WriteLine(note);
         return scans;
     }
 

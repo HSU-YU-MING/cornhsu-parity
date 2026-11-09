@@ -184,6 +184,19 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   *In snapshot mode `compare.extras` now searches down to the bottom of the design's content instead of the first screen only.
   Injected extra elements found on the thesis corpus went from 26.4% to 100%, with no new items on the unchanged pages.*
 
+- **新增:設定檔 `accept`,一條一條收下落差、每條寫原因**(設定多一個 key、`report.json` 的落差多一個選填 key,都是加法;minor)。
+  以前只有兩種做法:`ignore` 讓整個元素不比,baseline 一次收下全部落差、也不說為什麼。設計師同意「標題改 18px」這種決定沒地方記。
+  - 每條寫 `layer` + `prop` + `reason`(必填),可以再用 `route`、`selector`、`actual` 收窄。寫了 `actual`,收下的是那個值:頁面又改了,落差就回來。
+  - 收下的落差照樣留在報告裡,標成 soft 並寫原因(`"accepted": "<原因>"`):不擋 gate、不扣分、`--baseline` 不算新增,嚴重度照實留著。
+    `check` 印 `[accepted: <原因>]`;Markdown 報告把它移出主表、收進折疊的「Accepted gaps」一節。
+  - 沒收下的落差不寫 `accepted` 這個 key:沒用 `accept` 的設定檔,`report.json` 一個位元組都不變。
+  - 拼錯的屬性名、沒寫原因,載入時就報錯(exit 2)。掃過的頁面上什麼都沒對到的條目,stderr 說一聲(落差修好了或值變了),免得它之後默默收下別的落差。
+  - `parity bug-report` 的設定摘要多一行條數(`accept rules: n`),不帶圖層名與原因。匿名統計不變。
+  - 舊版 Parity 不認得 `accept`(設定檔多的 key 一律忽略),收下的落差在舊版會照擋。
+  *New `accept` config section: accept single gaps one at a time, each with a required reason, optionally narrowed by route, selector
+  and the exact actual value. Accepted gaps stay in the report as soft gaps with an `accepted` reason — they never gate, cost no points
+  and are not new against a baseline. Entries that match nothing on a scanned page get a note.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

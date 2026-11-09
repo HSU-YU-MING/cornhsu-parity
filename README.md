@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1606**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1639**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -191,6 +191,8 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
+  "accept": [],                              // optional: gaps you accept one by one, each with a reason
+                                             //   (see "Accepting a single gap" below)
   "gate": {
     "failOn": ["critical", "serious"],       // any of minor / medium / serious / critical, one per string
     "failOnUnmatched": [],                   // optional: unmatched reasons that fail the gate (exit 1), e.g.
@@ -241,6 +243,37 @@ not found, so `text-not-found` means "not found anywhere Parity can see". A text
 cannot be pinned to one element (several identical texts, or split across elements) stays
 `ambiguous-or-missing-text`. The page text is used for this decision only: it is never written to
 `report.json`, snapshots, statistics or bug reports.
+
+### Accepting a single gap: `accept`
+
+Sometimes a gap is a decision, not a bug: the designer agreed the plan title can be 18px instead of
+16px. `ignore` would stop checking that element altogether, and a [baseline](#regression-gating-baselines-m5)
+accepts every gap at once without saying why. `accept` takes them one at a time, each with a reason:
+
+```jsonc
+"accept": [
+  { "route": "/pricing", "layer": "Plan title", "prop": "fontSize", "actual": "18",
+    "reason": "Designer approved 18px in review, 2026-11-02" }
+]
+```
+
+- `layer` (the design layer name the report shows), `prop` (e.g. `fontSize`) and `reason` are required;
+  both names must match exactly, case included. A `prop` Parity never reports, or an entry without a
+  reason, is a config error at load (exit 2) — an entry that can never match would leave the gap gating.
+- `route`, `selector` and `actual` are optional and narrow the entry: only that target, only that element
+  (when several layers share a name), only while the page's value is exactly `actual` (as the report
+  writes it). With `actual`, what you accept is "18px", not "any font size": if the page changes again,
+  the gap comes back.
+- An accepted gap **stays in the report**: `report.json` marks it `"soft": true` with `"accepted": "<reason>"`,
+  `check` prints `[accepted: <reason>]`, and the Markdown report moves it out of the main table into a
+  collapsed "Accepted gaps" section with the reason. Like other soft gaps it never gates, costs no
+  fidelity points and is not new in `--baseline` mode. Its severity stays as measured, so the `summary`
+  counts still include it.
+- An entry that matched nothing on a page `check` scanned gets a note on stderr: the gap was fixed, or
+  its value changed. Remove it, or it will quietly accept the next gap in the same place. (An entry
+  without `route` is only judged when every target was scanned, not under `--target`.)
+- Only gaps on matched elements can be accepted; unmatched nodes and extra elements are not gaps of
+  one property.
 
 ## Targets: a web page or an Electron desktop app
 
@@ -699,6 +732,7 @@ Action inputs: `config` / `target` / `working-directory` / `version` / `figma-to
 - `unmatched[].reason` — **open set**: parsers must tolerate unknown values; known spellings never change. Currently: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, `ambiguous-name`.
 - `nodes[].matchedBy` — **open set**, same rule. Currently: `selector`, `explicit`, `auto-text`, `auto-name`, `auto-container`, `auto-shared`.
 - `extras` (per report, `compare.extras`) — `null` when the list is off (the default, `check --reverse`, and every report written before the field existed); otherwise `{ "total": n, "items": [{ "selector", "tag", "box" }] }`, where `total: 0` with empty `items` means "on, nothing found". `items` is sorted largest first and capped at 20 per page; `total` counts them all. Items carry no element text. Never affects the gate or the score.
+- `nodes[].diffs[].accepted` (2.5.0) — the reason from the config's `accept` entry that took this gap; such a gap is always `"soft": true`. The key is **absent** when the gap was not accepted, so reports from configs without `accept` are byte-for-byte what they were.
 - `fontsNotLoaded` (per report, 2.5.0) — web fonts the page uses that did not load, as `"family weight style"` (at most 20), or `null` when everything loaded (and in every report written before the field existed). Capture waits up to 3 s for `document.fonts.ready` first; a face still `loading` after that, or in `error` (wrong URL, blocked, CORS), is listed. Fonts that are declared but never used are not downloaded and never listed. When it is set, text was measured with a fallback font, so `check` and the Markdown report say so: the text gaps on that page may all come from this one cause. Never affects the gate or the score.
 - `direction` (top level, since 2.0.0) — **closed set**: `forward` (a normal `check`) / `reverse` (`check --reverse`: expected and actual swapped, never gated). Always written; files without it read as `forward`. Readers accept exactly the lowercase strings `"forward"` and `"reverse"` — any other value (other casing, a number, `null`) is an error, not a guess. `parity report` does not gate a reverse report, and `parity push` refuses one.
 
@@ -725,6 +759,8 @@ parity baseline list     # Browse snapshot history (the score column is the fide
 - `gate.failOnUnmatched` is not applied in this mode (once a baseline exists); unmatched nodes are listed as usual
 - Ideal for gradual adoption: record reality with `baseline save`, then run `check --baseline` in
   CI, and all the team has to commit to is "do not make fidelity worse"
+- To accept one gap for good, with a reason, use [`accept`](#accepting-a-single-gap-accept) instead:
+  accepted gaps are soft, so `baseline save` does not store them and they never count as new
 
 The storage layer is a separate `Parity.Storage` (EF Core + SQLite, with `Pooling=False` so the
 file is released immediately), and the engine's `BaselineComparer` is a pure, unit-testable function.

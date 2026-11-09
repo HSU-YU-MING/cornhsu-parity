@@ -274,7 +274,8 @@ internal static class CheckCommand
                 var actual = isColor
                     ? $"{diff.Actual}{(diff.Delta is { } de ? $" (ΔE {de})" : "")}"
                     : $"{diff.Actual}{diff.Unit}";
-                var soft = diff.Soft ? " [soft]" : "";
+                // 收下的落差標明原因(設定檔的字串:過 Safe);它也是 soft,不重複標
+                var soft = diff.Accepted is { } why ? $" [90m[accepted: {ConsoleText.Safe(why)}][0m" : diff.Soft ? " [soft]" : "";
                 Console.WriteLine($"      {diff.Prop,-14} expected {ConsoleText.Safe(expected)}  actual {ConsoleText.Safe(actual)}{soft}");
             }
         }
