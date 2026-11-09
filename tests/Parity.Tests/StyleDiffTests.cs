@@ -201,6 +201,34 @@ public class StyleDiffTests
             Rendered("p", "p", text: "Hello") with { BorderWidth = NoBorder })).Prop);
     }
 
+    [Fact]
+    public void A_text_node_whose_page_border_blends_into_its_own_background_is_not_compared()
+    {
+        // 作者網站實測(2026-11-10):格式按鈕「MP3」是快照裡的文字節點,底色與邊框同一個色(只差透明度)。
+        // 設計端的文字節點不套「同色 = 沒有邊框」(它的 Fill 是字色),頁面那一邊套了,同一個元素就報成「1px → 0」
+        var one = new Insets(1, 1, 1, 1);
+        var cream = new Rgba(246, 241, 231, 0.14);
+        var creamBackground = new Rgba(246, 241, 231, 0.06);
+        var accent = new Rgba(176, 58, 34);
+
+        Assert.Empty(Diffs(
+            Design("1", "span", DesignNodeType.Text, fill: new Rgba(246, 241, 231, 0.6), characters: "MP4") with { BorderWidth = one, BorderColor = cream },
+            Rendered("span", text: "MP4", background: creamBackground) with { BorderWidth = one, BorderColor = cream }));
+        Assert.Empty(Diffs(
+            Design("1", "on", DesignNodeType.Text, fill: new Rgba(246, 241, 231), characters: "MP3") with { BorderWidth = one, BorderColor = accent },
+            Rendered("span", text: "MP3", background: accent) with { BorderWidth = one, BorderColor = accent }));
+
+        // 反方向也不比:Figma 的文字節點沒有邊框,配到的頁面元素是邊框與底色同色的按鈕——兩邊看起來一樣
+        Assert.Empty(Diffs(
+            Design("1", "label", DesignNodeType.Text, fill: Black, characters: "OK") with { BorderWidth = NoBorder },
+            Rendered("button", text: "OK", background: accent) with { BorderWidth = one, BorderColor = accent }));
+
+        // 頁面的邊框跟底色不同色,照樣比
+        Assert.Equal("borderWidth", Assert.Single(Diffs(
+            Design("1", "label", DesignNodeType.Text, fill: Black, characters: "OK") with { BorderWidth = NoBorder },
+            Rendered("button", text: "OK", background: accent) with { BorderWidth = one, BorderColor = Black })).Prop);
+    }
+
     // ---------- 陰影 ----------
 
     private static ShadowSpec Shadow(double y, double blur, Rgba? color = null, bool inset = false) => new(0, y, blur, 0, color ?? Black, inset);
