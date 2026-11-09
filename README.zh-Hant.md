@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1578 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1580 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -275,7 +275,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 下面這些跟 font-family 一樣都是**軟落差**:會列在報告裡,但不扣分、永遠不擋、`--baseline` 不算新增。刻意先做成軟的,等真實網站測出各自有多吵再說。
 
 - **文字內容**(`text`):靠圖層名配上、文字卻不一樣的。忽略大小寫、空白、看不見的字元與引號樣式;元素有子元素時,設計稿的文字出現在裡面就算對。手動對應的圖層不比(設計系統常用佔位文字),快照基準不比(動態內容每次都不同)。`compare.text: "gate"` 會變成 serious 落差,快照基準也比;`"none"` 關掉。**兩邊的文字會寫進 `report.json` 與 Markdown 報告,每段最多 120 字元**,報告送到哪裡,這些文字就到哪裡
-- **子元件順序**(`childOrder`):自動排版容器的子元件沿主軸的先後不同。用實際的框比,CSS 的 `order`、`row-reverse` 自然算對。會換行的容器比閱讀順序,在哪裡換行不一樣不算落差。絕對定位的子元件不比
+- **子元件順序**(`childOrder`):自動排版容器的子元件沿主軸的先後不同。用實際的框比,CSS 的 `order`、`row-reverse` 自然算對。會換行的容器比閱讀順序,在哪裡換行不一樣不算落差。絕對定位的子元件不比。有內距的容器也比,所以快照(記 padding、沒有自動排版資訊)和手寫的設計 JSON 也比得到
 - **容器對齊**(`mainAxisOffset`、`crossAxisOffset`):子元件到自動排版父層邊的距離。只比距離應該固定的情況:兩邊尺寸都明確是 FIXED、不是文字節點、也沒有 padding 或尺寸落差能解釋這個位移。主軸只比第一個子元件,而且只在 `MIN`、`CENTER`、`MAX` 時比。順序與對齊都跟著 `compare.position`;target 的視窗寬度與設計稿不同時不比,版面可能合法重排
 - **換行數**(`lineCount`):文字佔幾行,量實際的行框。副標換行、下面全被推開時,這就是根因。設計稿那邊用框高除以行高,固定高度的文字框不比
 - **樣式**:`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`opacity`、`borderWidth`、`borderColor`、`shadow`、`shadowColor`、`gradient`。設計稿有寫才比:Figma 節點都有,手寫的設計 JSON 寫了什麼比什麼(`text.fontStyle`、`opacity`、`borderWidth`、`shadows`、`gradient` 等)。看不見的就不算:隱形的陰影、透明的邊框、跟底色同色的邊框,還有畫面上沒差別的大小寫轉換。透明度比元素自己的,不累積祖先。漸層比種類、方向與頭尾色,不比中間的色標;`to top right` 這種要看框的比例才知道的方向不比
