@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1586**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1595**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -347,6 +347,13 @@ how noisy each one is.
   text nodes, and no padding or size gap that already explains the shift. The main axis is compared for
   the first child under `MIN`, `CENTER` or `MAX`. Order and alignment follow `compare.position`, and are
   skipped when a target's viewport width differs from the design, because the layout may reflow.
+- **Text relations** (`relation`, 2.5.0): text positions are never compared in pixels (a Figma text box
+  is not the browser's), so a moved text used to go unnoticed. Instead, two siblings of which at least one
+  is text are compared on which is above or left of the other: clearly apart in the design (`PositionPx`
+  or more) and clearly the other way round on the page. A text that ends up entirely outside its container
+  counts too. Only in freely positioned containers (auto-layout or padded ones already get `childOrder`),
+  reported on the node that moved more, at most once per node. A move that keeps every relation is still
+  missed; follows `compare.position` like order and alignment.
 - **Line count** (`lineCount`): how many lines a text takes, measured from the real line boxes. This is
   the root cause when a wrapped subtitle pushes everything below it down. The design side is box height
   over line height; fixed-height text boxes are skipped.
@@ -758,7 +765,7 @@ for, how long it is kept — is **<https://stats.cornhsu.com/>**.
 | `data.designSource` | `figma`, `snapshot` (a file written by `parity snapshot`), `file` (any other design JSON) or `image` |
 | `data.designNodes`, `data.matched` | Design nodes and matched nodes, summed over all pages |
 | `data.severity` | Gap counts per severity: `critical`, `serious`, `medium`, `minor` |
-| `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`, `borderWidth`, `shadow`, `mainAxisOffset`, `crossAxisOffset`, `outlineWidth`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`, `background`, `borderColor`, `shadowColor`, `gradient`, `outlineColor` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300), a 0–1 difference for `opacity` and `image` (<0.05, 0.05–0.1, 0.1–0.25, 0.25–0.5, ≥0.5), and lines for `lineCount` (1, 2, 3–4, 5 or more). `fontFamily`, `text`, `childOrder`, `fontStyle`, `textDecoration`, `textTransform`, `textAlign` have no ranges, only counts: never the text, the layer names or the values |
+| `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`, `borderWidth`, `shadow`, `mainAxisOffset`, `crossAxisOffset`, `outlineWidth`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`, `background`, `borderColor`, `shadowColor`, `gradient`, `outlineColor` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300), a 0–1 difference for `opacity` and `image` (<0.05, 0.05–0.1, 0.1–0.25, 0.25–0.5, ≥0.5), and lines for `lineCount` (1, 2, 3–4, 5 or more). `fontFamily`, `text`, `childOrder`, `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `relation` have no ranges, only counts: never the text, the layer names or the values |
 | `data.unmatchedBy` | Design nodes that could not be matched, counted per reason: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, `ambiguous-name`, or `other` for any reason this version does not list. Only reasons with at least one node; `{}` when everything matched. Never the layer names |
 | `data.extras` | How many extra page elements `compare.extras` found, summed over all pages (the total, before the 20-per-page cap). Only present when the list is on. Never their selectors, tags or boxes |
 

@@ -180,6 +180,7 @@ public static class FixHint
         "childOrder" => $"children should be in this order: {d.Expected}",
         "mainAxisOffset" => $"justify-content: the first child should be {d.Expected}px from the container's start",
         "crossAxisOffset" => $"align-items / align-self: this child should be {d.Expected}px from the container's edge",
+        "relation" => $"this text should sit {d.Expected}",
         // 相對位置:沒有單一 CSS 可以給(取決於版面做法),給人話方向提示
         "offsetX" => $"horizontal offset from its sibling/parent should be {d.Expected}px",
         "offsetY" => $"vertical offset from its sibling/parent should be {d.Expected}px",

@@ -255,7 +255,7 @@ public class UsageStatsTests
         { "opacity", 5 }, { "image", 5 },
         { "lineCount", 4 },
         { "fontFamily", 0 }, { "text", 0 }, { "childOrder", 0 },
-        { "fontStyle", 0 }, { "textDecoration", 0 }, { "textTransform", 0 }, { "textAlign", 0 },
+        { "fontStyle", 0 }, { "textDecoration", 0 }, { "textTransform", 0 }, { "textAlign", 0 }, { "relation", 0 },
     };
 
     [Theory]
@@ -612,6 +612,7 @@ internal static class StatsProtocol
         ["textDecoration"] = 0,
         ["textTransform"] = 0,
         ["textAlign"] = 0,
+        ["relation"] = 0,
     };
 
     public static readonly string[] UnmatchedReasons =
