@@ -10,6 +10,9 @@
 *If you use `--baseline`, run `parity check` once after upgrading and look before merging: a layer name now matches only when it is
 unique, so nodes that used to be matched to the wrong element are now unmatched (`ambiguous-name`) and their diffs show as fixed.
 With `gate.failOnUnmatched: ["*"]` those nodes fail the gate; use `["text-not-found"]` to fail only on missing elements.*
+另外,畫成「框包一段字」的按鈕,框現在配得上了:它的背景色、內距、圓角、尺寸開始比,真的不一樣就會報,而且對基準來說是新增的。
+*Frames that hold a single text (buttons drawn as a box around a label) now match, so their background, padding, corner radius and
+size start being compared; real differences there are new to your baseline.*
 
 - **修正:圖層名對到好幾個同名元素時,不再拿第一個**(`report.json` 的 `unmatched[].reason` 多一個值 `ambiguous-name`,開放集合的加法;
   六面都沒動,配對規則演進,所以是 minor)。以前同名而且大小合理的元素有好幾個時,拿文件順序的第一個;配錯一個元素,它的每個屬性都報一條假落差。
@@ -27,6 +30,24 @@ With `gate.failOnUnmatched: ["*"]` those nodes fail the gate; use `["text-not-fo
   *A layer name now matches only when it is unique. When several plausibly sized elements carry the name, Parity keeps the ones inside
   the element its nearest matched ancestor got, then the ones holding the most of its matched content; still more than one → unmatched
   with the new reason `ambiguous-name` instead of the first in document order.*
+
+- **新增:設計稿的「框 + 文字」可以對到網頁上同一個元素**(`nodes[].matchedBy` 多一個值 `auto-shared`,開放集合的加法;minor)。
+  設計稿常把按鈕畫成一個框包一段字,網頁上只有一個 `<button>`:字配上之後框沒有元素可配,背景色、內距、圓角一個都比不到。
+  - 只包一段字的框,從字配到的元素往外找大小對得上框的那一層:元素本身,或外面只包著它的 wrapper(碰到代表別的設計節點、
+    或裡面有別的已配對節點的那層就停)。每一軸差 4px 或 10% 以內才算對得上,挑最接近的。
+  - 挑到字的元素本身 → `auto-shared`,兩個設計節點共用一個元素:框比背景色、內距、圓角、尺寸,字比字體、顏色、內容
+    (文字節點本來就不比尺寸與位置,所以這兩項不會重複報)。挑到 wrapper → `auto-container`。
+  - **不配的情況**:沒有一層對得上;兩層一樣近(`<li><a>` 一樣大);字的元素裡面只有一個子元素、而且那一層也對得上框——
+    代表字本身可能配到外層了,框跟上去只會把錯放大(評估語料實測抓到的:字配到 `<li>`,真正的是裡面一樣大的 `<a>`,
+    沒擋的話會多 24 條假的內距落差)。框裡除了字還有別的東西,這一關不碰。
+  - **報告裡兩個節點可以有同一個 `selector`**,消費端不能假設它唯一。`parity serve` 標成 `shared`。
+  - **實測**(同一份評估語料,跟上一條修正之後比):模擬 Figma 命名的條件下,配對正確 3,742 → 4,125、配錯不變(232),
+    `auto-shared` 359 個全部配對正確,框 + 字這類節點配對正確 636 → 995(共 1,654 個)。植入錯誤的直接回報:背景色 17 → 35、
+    內距 8 → 14、圓角 10 → 18,整體 31.8% → 34.8%。基準頁假硬落差 738 → 739:多的那一條是框配對正確、但它的父容器配錯了
+    (清單 #3 的問題),以前框沒配上,位置根本沒比。照網頁 class 命名的條件下沒有變化(那邊設計稿沒有拆層)。
+  *A frame that holds nothing but one text now matches the element its text matched (`auto-shared`, the two design nodes share it) or
+  the wrapper around it, whichever is closest to the frame's size; ties, no fit, or a single inner layer that fits as well leave it
+  unmatched. Two report nodes can now share a selector.*
 
 ## 2.4.0 — 2026-11-09
 

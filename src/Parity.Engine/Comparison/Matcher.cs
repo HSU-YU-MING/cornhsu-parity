@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Parity.Engine.DesignSources;
 using Parity.Engine.ImplementationSources;
+using Parity.Engine.Model;
 
 namespace Parity.Engine.Comparison;
 
@@ -197,6 +198,22 @@ public static class Matcher
                 : TextNotFound(d) ? "text-not-found"            // 文字整頁都沒有:元件不見,比「分不出來」更有用
                 : "ambiguous-name"));
 
+        // --- 第 3.5 關:框 + 文字,網頁上是同一個元素(2.5.0)---
+        // 設計稿常把按鈕畫成一個框包一段字,網頁上只有一個 <button>:字在第 2 關配上之後,框沒有元素可配,
+        // 背景色、內距、圓角一個都比不到(評估語料模擬 Figma 的條件下,這類框 827 個只配上 10 個)。
+        // 框裡只有這一段字時,從字配到的元素往外找大小對得上框的那一層(TextFrameElement)。
+        // 挑到元素本身 → auto-shared:兩個設計節點共用一個元素,框比框的屬性、字比字的屬性(字不比尺寸與位置,不會重複報)。
+        for (var i = pending.Count - 1; i >= 0; i--)
+        {
+            var frame = pending[i].Node;
+            if (frame.Type == DesignNodeType.Text || frame.Children is not [{ Type: DesignNodeType.Text } text]) continue;
+            if (!matchedByDesign.TryGetValue(text.Id, out var element)) continue;
+            if (TextFrameElement(frame, element, chainOf, taken) is not { } pick) continue;
+
+            Pair(frame, pick, ReferenceEquals(pick, element) ? "auto-shared" : "auto-container");
+            pending.RemoveAt(i);
+        }
+
         // --- 第 4 關:容器推論——已配到 ≥2 個子孫的容器,對應到那些子孫的最近共同祖先 ---
         // 純結構推論(不比對外觀、不猜),把「無文字/名字對不上」但內容配對得上的容器救回來。
         bool progressed = true;
@@ -296,6 +313,58 @@ public static class Matcher
         var held = options.Select(r => (Node: r, Count: contents.Count(c => Inside(c, r)))).ToList();
         var most = held.Max(h => h.Count);
         return most == 0 ? options : held.Where(h => h.Count == most).Select(h => h.Node).ToList();
+    }
+
+    /// <summary>
+    /// 只包一段字的框(第 3.5 關)該配哪個元素:字配到的元素本身,或外面一層層「只包著它」的 wrapper,挑大小最接近框的。
+    /// 評估語料裡兩種情況分得很開:框和字真的是同一個元素時,元素跟框一樣大、跟字差一截(內距);
+    /// 不是同一個元素時,元素跟字一樣大,框是外面大一圈的那層。所以要對得上框,不是對得上字。
+    /// 不配的情況:沒有一層對得上(每一軸差超過 4px 或 10%);兩層一樣近(<c>&lt;li&gt;&lt;a&gt;</c> 一樣大),分不出來,不猜。
+    /// wrapper 只往外走到「裡面有別的已配對節點」或「本身已經代表別的設計節點」為止,根不算。
+    /// </summary>
+    private static RenderedNode? TextFrameElement(
+        DesignNode frame, RenderedNode element,
+        Dictionary<RenderedNode, IReadOnlyList<RenderedNode>> chainOf, HashSet<RenderedNode> taken)
+    {
+        static double Slack(double size) => Math.Max(4, size * 0.1);
+        bool Fits(Box b) => Math.Abs(b.W - frame.Box.W) <= Slack(frame.Box.W) && Math.Abs(b.H - frame.Box.H) <= Slack(frame.Box.H);
+        double Distance(Box b) => Math.Abs(b.W - frame.Box.W) + Math.Abs(b.H - frame.Box.H);
+
+        var options = new List<RenderedNode> { element };
+        var chain = chainOf[element];
+        for (var i = chain.Count - 2; i >= 1; i--) // chain[0] 是根,chain[^1] 是元素本身
+        {
+            var wrapper = chain[i];
+            if (taken.Contains(wrapper) || HoldsOtherMatch(wrapper, chain[i + 1], taken)) break;
+            options.Add(wrapper);
+            // 往外只會更大:兩軸都已經大過框的容許範圍,再外面的層不可能對得上
+            if (wrapper.Box.W > frame.Box.W + Slack(frame.Box.W) && wrapper.Box.H > frame.Box.H + Slack(frame.Box.H)) break;
+        }
+
+        var fitting = options.Where(o => Fits(o.Box)).OrderBy(o => Distance(o.Box)).ToList();
+        if (fitting.Count == 0) return null;
+        if (fitting.Count > 1 && Distance(fitting[1].Box) - Distance(fitting[0].Box) < 0.5) return null;
+
+        // 往內也看一眼:字配到的元素裡面,只有一個子元素而且那一層也對得上框(一樣近或更近),代表字本身可能配到外層了
+        // (評估語料實測:字配到 <li>,真正的元素是裡面一樣大的 <a>)。這時框跟著配上去只會把字的錯再放大成內距落差,不配
+        var best = Distance(fitting[0].Box);
+        for (var inner = element; inner.Children is [var only];)
+        {
+            inner = only;
+            if (Fits(inner.Box) && Distance(inner.Box) < best + 0.5) return null;
+        }
+        return fitting[0];
+    }
+
+    /// <summary>wrapper 的子樹裡,除了 inner 那一支之外,有沒有已配對的節點。</summary>
+    private static bool HoldsOtherMatch(RenderedNode wrapper, RenderedNode inner, HashSet<RenderedNode> taken)
+    {
+        foreach (var child in wrapper.Children ?? [])
+        {
+            if (ReferenceEquals(child, inner)) continue;
+            if (child.DescendantsAndSelf().Any(taken.Contains)) return true;
+        }
+        return false;
     }
 
     /// <summary>每個實作節點 → 從 root 到自己的祖先鏈(含自己),供算 LCA。</summary>
