@@ -2,6 +2,26 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 未發佈
+
+### 修正
+
+- **`parity snapshot --target <route>` 不再把整份快照換成那一頁。** 以前多頁快照只重拍一頁,寫出來的檔案就只剩那一頁,
+  其他頁從此沒有基準(作者網站 26 頁的基準變成 1 頁,靠 git 還原)。現在只換掉那一頁的 frame 和它的參考截圖(`x.{n}.png`),
+  其他頁逐字不動;快照裡還沒有這個 route 就加在最後;既有檔是別頁的單頁快照,就變成兩頁(原本的 `x.png` 改名成 `x.0.png`)。
+  穩定 id 白名單取聯集。合不了的情況在開瀏覽器之前就 exit 2,既有檔不動:
+  - 2.5.0 以前拍的快照:記錄樣式的方式不同(沒寫的欄位是「沒量過」還是「預設值」,信封只有一個標記),混在一起舊頁面會憑空冒出落差。
+    訊息請你不帶 `--target` 整份重拍一次。
+  - 不是 `parity snapshot` 1.0 以後寫的檔(沒有 `schemaVersion` 的裸樹)。
+  - 這頁現在測到每次載入都變的 id,而舊快照沒有白名單:名單要涵蓋每一頁,別頁沒重拍量不到(這個在擷取之後才知道)。
+  - 同一個 route 有兩個以上的 target。
+
+  沒有既有檔、或既有檔就是同一頁的單頁快照時,行為跟以前一樣。
+  *`parity snapshot --target <route>` now refreezes only that page and keeps the other pages of an existing snapshot (and their
+  reference screenshots) unchanged; previously it replaced the whole snapshot with the one page. Snapshots written before 2.5.0,
+  bare design trees, and a page that newly has per-load random ids when the snapshot has no allowlist are refused with exit 2
+  before anything is written; run `parity snapshot` without `--target` once.*
+
 ## 2.5.0 — 2026-11-09
 
 > **配對更準、抓得更多、報告更好讀,另外多了五個新能力:AI agent 用的 MCP server、要登入的頁面與頁面狀態、`.fig` 檔(不走 Figma API)、

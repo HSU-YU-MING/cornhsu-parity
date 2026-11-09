@@ -70,7 +70,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) — plus soft hints that never gate: text, fonts, borders, outlines, shadows, gradients, image content and color, and text that slips out of its container |
 | Design sources | 5: the Figma API, a Figma `.fig` file (no API), a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1767**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1780**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -370,6 +370,10 @@ parity snapshot            # 1. Freeze the current rendering (writes parity.snap
 #    Point designFile at it in the config, and set each target.frame to its route
 parity check               # 2. Refactor fearlessly; 3. check proves it still matches the snapshot
 ```
+
+After a deliberate change to one page, `parity snapshot --target <route>` refreezes just that page: the other pages
+in the snapshot and their reference screenshots stay as they were. A snapshot written by an older Parity is refused
+(it records styles differently, so the pages cannot be mixed): run `parity snapshot` without `--target` once.
 
 ### Figma without the API: a `.fig` file
 

@@ -102,6 +102,30 @@ public sealed class JsonDesignSource : IDesignSource
     }
 
     /// <summary>
+    /// 讀 snapshot 信封,樹照檔案原樣(<b>不還原</b>樣式預設值)。`parity snapshot --target` 把一頁併回既有快照時用:
+    /// 其他頁要原封不動寫回去,還原之後再寫,「沒寫 = 預設值」的欄位會全部變成明文,檔案無端變大。
+    /// 裸樹舊檔(沒有 schemaVersion,1.0 以前或手寫的 design JSON)回 null。比這版新的格式照 <see cref="GetFrameAsync"/> 的規則報錯。
+    /// </summary>
+    public static Snapshot.SnapshotDocument? ReadSnapshotDocument(string path)
+    {
+        var probe = JsonSerializer.Deserialize<SnapshotEnvelopeProbe>(File.ReadAllText(path), SerializerOptions);
+        if (probe?.SchemaVersion is not { } version) return null;
+        if (version > Snapshot.SnapshotDocument.CurrentSchemaVersion)
+            throw new InvalidOperationException(
+                $"snapshot {path} has schemaVersion {version}, which this Parity " +
+                $"(schemaVersion {Snapshot.SnapshotDocument.CurrentSchemaVersion}) does not understand — " +
+                "it was probably produced by a newer Parity. Upgrade the tool.");
+        var root = probe.Root
+            ?? throw new InvalidOperationException($"snapshot {path} has a schemaVersion but no \"root\" node.");
+        return new Snapshot.SnapshotDocument(version, FillDefaults(root))
+        {
+            StableIdAnchors = probe.StableIdAnchors,
+            StyleDefaultsOmitted = probe.StyleDefaultsOmitted,
+            StyleDefaultsVersion = probe.StyleDefaultsVersion,
+        };
+    }
+
+    /// <summary>
     /// 頂層形狀嗅探用:裸 DesignNode 也能安全反序列化進來(欄位皆 null),
     /// 有 SchemaVersion 才走信封路徑。
     /// </summary>
