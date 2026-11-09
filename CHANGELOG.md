@@ -13,6 +13,10 @@ With `gate.failOnUnmatched: ["*"]` those nodes fail the gate; use `["text-not-fo
 另外,畫成「框包一段字」的按鈕,框現在配得上了:它的背景色、內距、圓角、尺寸開始比,真的不一樣就會報,而且對基準來說是新增的。
 *Frames that hold a single text (buttons drawn as a box around a label) now match, so their background, padding, corner radius and
 size start being compared; real differences there are new to your baseline.*
+用快照當設計來源、又用 `--baseline` 的專案:重拍快照之後,SVG 圖示節點的名字會從 `svg` 變成它的第一個 class,
+基準的鍵含圖層名,所以這些列會算成「修好 + 新增」,重存基準就好。不重拍不受影響。
+*Snapshot users with `--baseline`: after re-taking the snapshot, SVG icon nodes are named after their first class instead of `svg`;
+baseline keys include the layer name, so re-save the baseline. Existing snapshots are unaffected.*
 
 - **修正:圖層名對到好幾個同名元素時,不再拿第一個**(`report.json` 的 `unmatched[].reason` 多一個值 `ambiguous-name`,開放集合的加法;
   六面都沒動,配對規則演進,所以是 minor)。以前同名而且大小合理的元素有好幾個時,拿文件順序的第一個;配錯一個元素,它的每個屬性都報一條假落差。
@@ -63,6 +67,18 @@ size start being compared; real differences there are new to your baseline.*
   *Container inference no longer stops at the lowest common ancestor: it walks outward and takes the layer closest to the design
   frame's size, stopping at a layer that stands for another design node or holds other matched content; ties keep the inner layer, and
   no plausibly sized layer leaves the container unmatched.*
+
+- **修正:SVG 圖示的 class 讀得到了**(六面都沒動;擷取多讀到一個值,minor)。擷取端以前讀 `className`,
+  SVG 元素的 `className` 不是字串(`SVGAnimatedString`),所以一律收成空的:行內 `<svg class="icon-search">` 這種圖示,
+  圖層名永遠配不上。現在讀 `class` 屬性,HTML 元素讀到的值跟以前一樣;SVG 仍是葉子,裡面的 path/g 不展開。
+  - 同名的圖示很常見(一整排 `icon`),所以這一項排在「唯一才配」之後:分不出來的照樣列 `ambiguous-name`,不會配錯。
+  - 用快照當設計來源時,新拍的快照裡 SVG 節點的名字是第一個 class(以前是 `svg`);配對走 selector,不受影響。
+  - **驗證**:真瀏覽器測試(`SvgLeafCaptureTests`)讀到兩顆圖示的 class,設計稿的 `icon-save` 配上那一顆、`icon-close` 不會搶。
+    **論文評估語料量不到這一項**:語料的設計稿當初是用同一個寫法產生的(`02-base.mjs` 讀 `className`),所以 SVG 圖層一律叫 `svg`,
+    頁面上沒有任何元素的 class 是 `svg`,修前修後都配不上;跑下來數字完全沒變。
+  *SVG classes are now captured (the capture read `className`, which is an `SVGAnimatedString` on SVG elements, so inline icons could
+  never match a layer name). Same-named icons stay `ambiguous-name` instead of being guessed. In new snapshots, SVG nodes are named after
+  their first class instead of `svg`.*
 
 ## 2.4.0 — 2026-11-09
 
