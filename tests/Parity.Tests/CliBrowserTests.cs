@@ -603,6 +603,36 @@ public class CliBrowserTests
             n => n.GetProperty("selector").GetString() == "#app > div:nth-of-type(1)");
     }
 
+    [Fact]
+    public async Task An_outline_added_after_the_snapshot_is_a_soft_hint()
+    {
+        // 清單 #6 的驗收(論文評估快照模式:加外框 0/22)。快照時沒有外框,之後加了 2px 紅框:
+        // 報 outlineWidth 軟落差,只提醒、不擋(exit 0)
+        using var dir = new TempDir();
+        const string css = "#card { width: 160px; height: 60px; background: #eef; }";
+        dir.Write("page.html", Page("""<div id="card">Pay</div>""", css));
+        var snapConfig = dir.Write("snap.config.json", """{ "targets": [{ "route": "/", "url": "./page.html" }] }""");
+
+        var snap = await Cli.RunAsync("snapshot", "--config", snapConfig);
+        if (Cli.BrowserMissing(snap)) { Console.WriteLine(Skipped); return; }
+        Assert.Equal(0, snap.ExitCode);
+        Assert.Equal(2, Root(dir.File("parity.snapshot.json")).GetProperty("styleDefaultsVersion").GetInt32());
+
+        dir.Write("page.html", Page("""<div id="card">Pay</div>""", css + " #card { outline: 2px solid red; }"));
+        var checkConfig = dir.Write("parity.config.json", """
+            { "designFile": "parity.snapshot.json", "targets": [{ "route": "/", "frame": "/", "url": "./page.html" }] }
+            """);
+        var check = await Cli.RunAsync("check", "--config", checkConfig);
+
+        Assert.Equal(0, check.ExitCode);
+        using var report = JsonDocument.Parse(File.ReadAllText(dir.File(".parity", "report.json")));
+        var diffs = report.RootElement.GetProperty("reports")[0].GetProperty("nodes").EnumerateArray()
+            .SelectMany(n => n.GetProperty("diffs").EnumerateArray()).ToList();
+        var outline = Assert.Single(diffs, d => d.GetProperty("prop").GetString() == "outlineWidth");
+        Assert.Equal(("0", "2"), (outline.GetProperty("expected").GetString(), outline.GetProperty("actual").GetString()));
+        Assert.True(outline.GetProperty("soft").GetBoolean());
+    }
+
     // ---------- serve:只綁 loopback + Host / Origin 防線 ----------
 
     [Fact]

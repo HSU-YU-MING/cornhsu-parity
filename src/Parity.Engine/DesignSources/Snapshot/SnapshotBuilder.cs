@@ -52,6 +52,8 @@ public static class SnapshotBuilder
             Opacity = r.Opacity == DefaultOpacity ? null : r.Opacity,
             BorderWidth = r.BorderWidth == NoBorder ? null : r.BorderWidth,
             BorderColor = r.BorderColor,
+            OutlineWidth = r.OutlineWidth is > 0 ? r.OutlineWidth : null, // 沒有外框不寫(StyleDefaultsVersion 2 起還原成 0)
+            OutlineColor = r.OutlineColor,
             Shadows = (isText ? r.TextShadows : r.Shadows) is { Count: > 0 } shadows ? shadows : null,
             Gradient = r.Gradient,
             LineCount = isText ? r.LineCount : null,
@@ -74,11 +76,14 @@ public static class SnapshotBuilder
     /// <summary>
     /// 把只記非預設值的快照(<see cref="SnapshotDocument.StyleDefaultsOmitted"/>)還原:沒寫的就是預設值,不是不知道。
     /// TextAlign 不還原:它是 null 代表對齊沒有視覺意義。
+    /// <paramref name="version"/> 是快照的 <see cref="SnapshotDocument.StyleDefaultsVersion"/>(沒寫是 1):只還原那一版量過的欄位,
+    /// 2.3、2.4 的快照沒量外框,外框維持 null(不比),不會被當成「沒有外框」。
     /// </summary>
-    public static DesignNode ExpandStyleDefaults(DesignNode node) => node with
+    public static DesignNode ExpandStyleDefaults(DesignNode node, int version = 1) => node with
     {
         Opacity = node.Opacity ?? DefaultOpacity,
         BorderWidth = node.BorderWidth ?? NoBorder,
+        OutlineWidth = node.OutlineWidth ?? (version >= 2 ? 0 : null),
         Shadows = node.Shadows ?? [],
         Text = node.Text is { } t && node.Type == DesignNodeType.Text
             ? t with
@@ -88,7 +93,7 @@ public static class SnapshotBuilder
                 TextTransform = t.TextTransform ?? NoTextEffect,
             }
             : node.Text,
-        Children = (node.Children ?? []).Select(ExpandStyleDefaults).ToList(),
+        Children = (node.Children ?? []).Select(c => ExpandStyleDefaults(c, version)).ToList(),
     };
 
     /// <summary>

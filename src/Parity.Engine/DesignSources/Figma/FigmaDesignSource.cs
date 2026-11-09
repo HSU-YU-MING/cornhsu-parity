@@ -200,6 +200,7 @@ public static class FigmaNodeParser
             Opacity = GetDouble(node, "opacity") ?? 1.0, // Figma 在 1 時會省略
             BorderWidth = ParseBorderWidth(node),
             BorderColor = ParseBorderColor(node),
+            OutlineWidth = ParseOutlineWidth(node),
             Shadows = ParseShadows(node["effects"] as JsonArray),
             Gradient = ParseGradient(node["fills"] as JsonArray, box),
             TextAutoResize = type == DesignNodeType.Text
@@ -223,6 +224,14 @@ public static class FigmaNodeParser
         var weight = GetDouble(node, "strokeWeight") ?? 0;
         return new Insets(weight, weight, weight, weight);
     }
+
+    /// <summary>
+    /// 外框(CSS outline,2.5.0)。Figma 沒有獨立的「外框」:最接近的是 strokeAlign OUTSIDE 的 stroke,
+    /// 但開發者會寫成 border、outline 或 box-shadow,各家轉碼工具也不一致(Dev Mode 顯示 border,有的工具轉成 box-shadow)。
+    /// 所以只在「方框沒有任何看得見的 stroke」時說「設計上沒有外框」(0);有 stroke 就是不知道(null,不比)。
+    /// </summary>
+    private static double? ParseOutlineWidth(JsonNode node)
+        => ParseBorderWidth(node) is { Top: 0, Right: 0, Bottom: 0, Left: 0 } ? 0 : null;
 
     private static Rgba? ParseBorderColor(JsonNode node)
         => ParseBorderWidth(node) is { } width && (width.Top > 0 || width.Right > 0 || width.Bottom > 0 || width.Left > 0)

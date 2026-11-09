@@ -63,6 +63,16 @@ public sealed record DesignNode(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Rgba? BorderColor { get; init; }
 
+    /// <summary>
+    /// 外框(CSS outline)粗細(2.5.0)。null = 不知道(不比);0 = 設計上沒有外框。
+    /// 快照照實記錄;Figma 只在「方框沒有任何 stroke」時給 0——有 stroke 時,開發者可能寫成 border、outline 或 box-shadow,不猜。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? OutlineWidth { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Rgba? OutlineColor { get; init; }
+
     /// <summary>陰影。null = 不知道(不比);空清單 = 設計上沒有陰影。文字節點是 text-shadow,其他是 box-shadow。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<ShadowSpec>? Shadows { get; init; }

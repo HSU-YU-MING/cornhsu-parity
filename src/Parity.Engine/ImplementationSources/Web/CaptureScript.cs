@@ -172,6 +172,9 @@ internal static class CaptureScript
             return null;
           };
 
+          // 外框(CSS outline,2.5.0):不佔版面,所以以前完全沒比。style 是 none 或顏色透明 → 0,看不見的外框不算
+          const outlineWidthOf = (s) => (s.outlineStyle === 'none' || isTransparent(s.outlineColor)) ? '0px' : s.outlineWidth;
+
           // ctx = { ox, oy(座標平移), stop(路徑的 root), prefix, rootLabel }
           const walk = (el, ctx) => {
             if (SKIP.has(el.tagName) || ignored.has(el)) return null;
@@ -253,6 +256,8 @@ internal static class CaptureScript
               borderTopWidth: borderWidthOf(s, 'Top'), borderRightWidth: borderWidthOf(s, 'Right'),
               borderBottomWidth: borderWidthOf(s, 'Bottom'), borderLeftWidth: borderWidthOf(s, 'Left'),
               borderColor: borderColorOf(s),
+              outlineWidth: outlineWidthOf(s),
+              outlineColor: parseFloat(outlineWidthOf(s)) > 0 ? s.outlineColor : null,
               boxShadow: s.boxShadow,
               textShadow: hasText ? s.textShadow : null,
               backgroundImage: s.backgroundImage.includes('gradient(') ? s.backgroundImage : null,

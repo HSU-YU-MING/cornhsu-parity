@@ -99,6 +99,22 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   treated as transparent, and `check` says how many on stderr. On the thesis corpus's Tailwind home page, nodes with a readable color
   went from 38 to 822 of 1,708.*
 
+- **新增:外框(CSS `outline`)的比對**(`diffs[].prop` 多 `outlineWidth`、`outlineColor`,都是軟落差:不扣分、不擋、`--baseline` 不算新增;
+  快照信封多 `styleDefaultsVersion`;minor)。外框不佔版面,以前完全沒比:論文評估的快照模式在 22 個元素上加外框,一個都沒發現。
+  - 照邊框的形狀:先比粗細(沒有外框 = 0),一樣粗才比顏色。擷取端 `outline-style: none` 或顏色透明算 0。
+  - **快照**照實記錄頁面上的外框。2.5.0 以前拍的快照根本沒量過外框,不能把「沒寫」當成「沒有外框」,否則頁面上本來就有的外框
+    會被報成新增——所以快照信封多一欄 `styleDefaultsVersion`(這一版寫 2):沒有這欄的舊快照,外框是「不知道」,不比。
+    重拍一次快照就會開始比。
+  - **Figma 沒有獨立的外框**:外側 stroke 被寫成 `border`、`outline`、`box-shadow` 都有(Dev Mode 顯示 border,也有轉碼工具轉成 box-shadow)。
+    所以 Figma 節點只在「方框沒有任何看得見的 stroke」時說「沒有外框」,頁面上卻有外框才提醒;有 stroke 的不比,不猜它被寫成什麼。
+  - **實測**(論文評估語料的快照模式,22 頁、植入錯誤照舊):加外框的 22 個案例 **22 個都報 `outlineWidth`**(以前 0 個);
+    「其他樣式」這一類的直接回報 69.7% → 91.9%。沒有植入錯誤的基準頁沒有任何外框的提醒。
+  - 匿名統計:`outlineWidth` 進長度家族、`outlineColor` 進顏色家族(收集站要先上線才能發這一版)。
+  *CSS `outline` is now compared (soft: `outlineWidth`, then `outlineColor` when the widths match). Snapshots record it; snapshots taken
+  before 2.5.0 never measured it, so the new `styleDefaultsVersion` envelope field keeps it unknown for them instead of reading "no
+  outline". A Figma node only says "no outline" when it is a box with no visible stroke. On the thesis corpus in snapshot mode, injected
+  outlines went from 0/22 to 22/22 reported.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

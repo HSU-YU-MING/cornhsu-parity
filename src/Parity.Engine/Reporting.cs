@@ -171,6 +171,8 @@ public static class FixHint
         "opacity" => $"opacity: {d.Expected}",
         "borderWidth" => $"border-width: {d.Expected} (px, top right bottom left when they differ)",
         "borderColor" => $"border-color: {d.Expected}",
+        "outlineWidth" => d.Expected == "0" ? "outline: none" : $"outline-width: {d.Expected}px",
+        "outlineColor" => $"outline-color: {d.Expected}",
         "shadow" => $"box-shadow / text-shadow: {d.Expected}",
         "shadowColor" => $"shadow color: {d.Expected}",
         "gradient" => $"background-image: {d.Expected}",

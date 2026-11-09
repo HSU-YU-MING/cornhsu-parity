@@ -30,10 +30,23 @@ public sealed record SnapshotDocument(int SchemaVersion, DesignNode Root)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? StyleDefaultsOmitted { get; init; }
 
+    /// <summary>
+    /// 「沒寫的就是預設值」涵蓋到哪些欄位(2.5.0)。之後新增的樣式欄位,舊快照根本沒量過,沒寫不代表預設值:
+    /// 2.3、2.4 拍的快照沒有外框資料,當成「沒有外框」的話,頁面上本來就有的外框會被報成新增。
+    /// 1(沒寫這欄)= 透明度、邊框、陰影、文字樣式;2 = 再加外框(outline)。
+    /// 新增會省略預設值的欄位時遞增,並在 <see cref="SnapshotBuilder.ExpandStyleDefaults"/> 照版本還原。選填欄位,同 schemaVersion 1。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StyleDefaultsVersion { get; init; }
+
+    /// <summary>這一版寫出去的 <see cref="StyleDefaultsVersion"/>。</summary>
+    public const int CurrentStyleDefaultsVersion = 2;
+
     public static SnapshotDocument Of(DesignNode root, IReadOnlyList<string>? stableIdAnchors = null, bool styleDefaultsOmitted = false)
         => new(CurrentSchemaVersion, root)
         {
             StableIdAnchors = stableIdAnchors,
             StyleDefaultsOmitted = styleDefaultsOmitted ? true : null,
+            StyleDefaultsVersion = styleDefaultsOmitted ? CurrentStyleDefaultsVersion : null,
         };
 }
