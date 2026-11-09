@@ -2,7 +2,23 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.5.0 — 2026-11-09
+
+> **配對更準、抓得更多、報告更好讀,另外多了五個新能力:AI agent 用的 MCP server、要登入的頁面與頁面狀態、`.fig` 檔(不走 Figma API)、
+> 單筆落差寫原因收下、頁面端的 token 合規檢查。**
+> - 配對:同名不再拿第一個、「框 + 字」對得到同一個元素、容器不停在太裡面、SVG 的 class 讀得到。論文評估語料(22 個非作者網站頁面)上,
+>   照網頁 class 命名的設計稿,沒植入錯誤的頁面假落差 1,700 條 → 0;模擬 Figma 命名的,假落差 739 條 → 128 條。
+> - 抓得更多:外框、文字相對關係、圖片變色、`lab()` 系列顏色、web font 沒載到、快照模式看整頁的多餘元件。
+>   快照模式的移位直接抓到 8.5% → 51.9%、圖片變色 5.9% → 70.6%、多餘元件 26.4% → 100%。
+> - 報告:相同落差併成一列、連帶的位移收在可能原因底下(元件不見那張表 1,596 列 → 374 列)。
+> - 新能力:`parity mcp`(實驗性)、`auth` + `targets[].steps` + `parity login`、`designFile` 收 `.fig`、`accept`、`parity lint --page`。
+>
+> 設定檔不用改,六個凍結面都只有加法。用 `--baseline` 的專案請看下面的「升級必做」。
+> *Matching is more accurate (false gaps on unmodified pages fell from 1,700 to 0 with class-named designs on the thesis corpus), more
+> kinds of drift are caught (outlines, text relations, image colour shifts, `lab()` colours, unloaded web fonts, extras below the fold),
+> the Markdown report groups identical gaps and folds knock-on shifts, and there are five new capabilities: an MCP server for AI agents,
+> signed-in pages and page steps, Figma `.fig` files without the API, accepting single gaps with a reason, and `parity lint --page`.
+> No config changes; every frozen interface only gained additions. `--baseline` users: see "upgrade required" below.*
 
 **升級必做 (upgrade required):用 `--baseline` 的專案,升級後先跑一次 `parity check`,看結果再合併。** 圖層名配對改成唯一才配:
 以前配錯的節點不再配,它們身上的落差會消失(算成修好了),節點改列進未配對清單(原因 `ambiguous-name`)。
