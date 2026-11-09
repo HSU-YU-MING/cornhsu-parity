@@ -120,6 +120,10 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
         {
             await page.WaitForTimeoutAsync(100); // 讓凍結後的最終版面套用完
 
+            // 等字型、記下沒載到的(2.5.0)。字型載不到時瀏覽器改用系統字型,文字寬度、換行、位置全跟著變,
+            // 整頁的落差都是這一個原因(作品集的守門就這樣整批誤報過)。要在定案之前等:字型換掉版面就會動
+            var fontsNotLoaded = await page.EvaluateAsync<string[]>(FontsScript);
+
             // 凍結之後還要讓版面「定案」——凍結 transition 只保證不再動,不保證停在最終狀態。
             // 見 SettleScript 的說明(含走過的兩條彎路)。
             await SettleLayoutAsync(page, reference);
@@ -143,7 +147,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                     new PageScreenshotOptions { FullPage = true });
 
             // 整頁文字只掛在根節點(見 RenderedNode.PageText:只給配對用,不外流)
-            var root = ParseNode(json);
+            var root = ParseNode(json) with { FontsNotLoaded = fontsNotLoaded is { Length: > 0 } ? fontsNotLoaded : null };
             return json.TryGetProperty("pageText", out var pageText) && pageText.ValueKind == JsonValueKind.String
                 ? root with { PageText = pageText.GetString() }
                 : root;
@@ -154,6 +158,23 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             await freezeStyle.DisposeAsync();
         }
     }
+
+    /// <summary>
+    /// 等 web font 載完(最多 3 秒),回傳沒載到的:status 是 error(網址錯、被擋、CORS),或等完還是 loading。
+    /// 瀏覽器只下載頁面用到的字型,所以這裡列出的都是「頁面要、但拿不到」的。unloaded(宣告了沒用到)不算。
+    /// 回傳「字型名 粗細 樣式」,去重,最多 20 個。
+    /// </summary>
+    private const string FontsScript = """
+        async () => {
+          if (!document.fonts) return [];
+          await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 3000))]);
+          const out = new Set();
+          for (const f of document.fonts)
+            if (f.status === 'error' || f.status === 'loading')
+              out.add(`${f.family.replace(/^["']|["']$/g, '')} ${f.weight} ${f.style}`);
+          return [...out].slice(0, 20);
+        }
+        """;
 
     /// 撐高視窗時的上限。真實網站整頁高多在數千 px;設上限是防呆(無限捲動、異常長頁),
     /// 免得為了觸發進場效果去配置一張過大的 layout viewport。

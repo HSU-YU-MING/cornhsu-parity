@@ -48,6 +48,7 @@ public sealed record ReportSummary(
 /// <summary>
 /// 引擎輸出:可序列化成 JSON / 餵給 UI / 決定 exit code(規畫書 4.1)。
 /// <see cref="Extras"/> 是 2.x 的加法(compare.extras),放在最後、有預設值:舊報告沒有這個 key,讀起來是 null。
+/// <see cref="FontsNotLoaded"/>(2.5.0)同樣的加法:頁面要用、卻沒載到的 web font(「字型名 粗細 樣式」);null = 都載到了或擷取端沒給。
 /// </summary>
 public sealed record FidelityReport(
     string Route,
@@ -56,7 +57,8 @@ public sealed record FidelityReport(
     IReadOnlyList<NodeResult> Nodes,
     IReadOnlyList<UnmatchedNode> Unmatched,
     ReportSummary Summary,
-    ExtraElements? Extras = null);
+    ExtraElements? Extras = null,
+    IReadOnlyList<string>? FontsNotLoaded = null);
 
 /// <summary>
 /// 實作端多出來的元件(<c>compare.extras: "list"</c>)。**null = 沒開**(預設、<c>check --reverse</c>、

@@ -122,6 +122,17 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   *Docs: snapshots do report `childOrder` for containers with padding (child order is compared for auto-layout or padded containers);
   only alignment needs auto-layout and never appears in snapshot mode.*
 
+- **新增:web font 沒載到時會說**(`report.json` 每份報告多 `fontsNotLoaded`,null 照樣寫出;minor)。字型載不到時瀏覽器改用系統字型,
+  文字寬度、換行、位置全跟著變,一頁的落差可能全是這一個原因——作品集的守門就這樣整批誤報過。以前完全看不出來。
+  - 擷取前先等 `document.fonts.ready`(最多 3 秒,也順便讓還在載的字型載完),列出頁面要用、卻是 `error` 或還在 `loading` 的字型
+    (「字型名 粗細 樣式」,最多 20 個)。宣告了沒用到的不會下載,不列。
+  - `check` 每頁多一行黃字 ⚠、Markdown 報告(PR 留言)最上面多一行 ⚠,字型名來自頁面的 CSS,一律包進程式碼區段。**不影響 gate 與分數**:
+    字型沒載到是量測條件壞了,不是設計落差,混進 gate 只會讓兩件事分不開。
+  - **實測**:把作品集建置產物裡的字型資料夾暫時改名,重現當年的事故:守門照樣 GATE FAIL(99/100),但 26 頁每一頁都印出沒載到的字型
+    (Noto Sans TC、Noto Serif TC、Fraunces、Space Mono),一眼就知道原因。
+  *`fontsNotLoaded` lists web fonts the page uses that failed to load (capture waits up to 3 s for `document.fonts.ready`). `check` and
+  the Markdown report warn that text was measured with a fallback font. It never affects the gate or the score.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

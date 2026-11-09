@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1580 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1586 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -497,6 +497,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 - `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`、`ambiguous-name`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`、`auto-shared`。
 - `extras`(每份報告,`compare.extras`)— 沒開時是 `null`(預設、`check --reverse`、以及這個欄位出現之前寫的所有報告);開了是 `{ "total": n, "items": [{ "selector", "tag", "box" }] }`,`total: 0` 加上空的 `items` 表示「開了、沒有」。`items` 依面積由大到小,每頁最多 20 筆;`total` 是全部的數量。不帶元素文字。永遠不影響 gate 與分數。
+- `fontsNotLoaded`(每份報告,2.5.0)— 頁面要用、卻沒載到的 web font,寫成 `"字型名 粗細 樣式"`(最多 20 個);都載到了是 `null`(這個欄位出現之前寫的報告也是)。擷取前先等 `document.fonts.ready` 最多 3 秒,之後還是 `loading`、或是 `error`(網址錯、被擋、CORS)的就列出;宣告了沒用到的字型不會下載,不列。有值時文字是用替代字型量的,`check` 與 Markdown 報告會明講:這一頁的文字落差可能全是這一個原因。永遠不影響 gate 與分數。
 - `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
 
 ## 回歸把關:baseline(M5)
