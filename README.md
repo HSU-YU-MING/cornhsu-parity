@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1595**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1601**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -384,6 +384,13 @@ A snapshot taken by an older version has none of the style values, so nothing ne
 > `check --md` or re-rendered by `parity report`, and the local UI) **link back to that node in
 > Figma** — a designer clicks once and lands on the layer. When `designFile` is set it wins over
 > `figmaFileKey`, so a snapshot- or JSON-based report carries no Figma links.
+
+> The Markdown report keeps the root cause on top (2.5.0; presentation only, `report.json` and the
+> gate are unchanged). The same gap on several elements (one wrong token) is one row, "3 elements:
+> A, B, C". When a page has a likely cause — an element whose text is nowhere on the page, a change in
+> size, line count, font size or padding, or a text pushed out of its container — its position shifts
+> move into a collapsed "knock-on effects" group listed after those causes. Pages without such a cause
+> keep their shifts in the main table, because then they may be real moves.
 
 ## Two workflows for designers
 
