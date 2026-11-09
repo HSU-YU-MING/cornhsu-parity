@@ -251,6 +251,28 @@ public class CliEntryPointTests
         Assert.DoesNotContain("Object reference", r.Err);
     }
 
+    [Theory]
+    [InlineData("""{ "schemaVersion": 1, "styleDefaultsOmitted": true, "root": { "id": "snapshot", "name": "snapshot", "type": "frame", "box": { "x": 0, "y": 0, "width": 0, "height": 0 }, "children": [] } }""",
+        "written by an older Parity")] // 2.3、2.4 拍的:外框沒量過,跟新拍的頁面混寫會變成「沒有外框」
+    [InlineData("""{ "id": "/", "name": "/", "type": "frame", "box": { "x": 0, "y": 0, "width": 10, "height": 10 } }""",
+        "is not a snapshot written by `parity snapshot` 1.0 or later")]
+    public async Task Snapshot_target_refuses_a_baseline_it_cannot_merge_before_opening_a_browser(string existing, string expected)
+    {
+        // 擋在開瀏覽器之前(沒有瀏覽器也看得到這個訊息),而且既有基準一個位元組都不動
+        using var dir = new TempDir();
+        using var noBrowsers = new TempDir();
+        using var env = new EnvScope().Set("PLAYWRIGHT_BROWSERS_PATH", noBrowsers.Path);
+        var snapshot = dir.Write("parity.snapshot.json", existing);
+        var config = WriteConfig(dir, """{ "targets": [{ "route": "/a", "url": "./a.html" }] }""");
+
+        var r = await Cli.RunAsync("snapshot", "--config", config, "--target", "/a");
+
+        Assert.Equal(2, r.ExitCode);
+        Assert.Contains(expected, r.Err);
+        Assert.Equal(existing, File.ReadAllText(snapshot));
+        Assert.False(Directory.Exists(dir.File(".parity")));
+    }
+
     [Fact]
     public async Task A_target_with_height_but_no_width_is_no_longer_warned_about()
     {

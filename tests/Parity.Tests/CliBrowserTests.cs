@@ -31,6 +31,10 @@ public class CliBrowserTests
         Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, File.ReadAllBytes(path)[..4]);
     }
 
+    /// <summary>PNG 的 IHDR 寬度(第 16～19 位元組,big-endian)——分得出截圖是哪個視窗寬拍的。</summary>
+    private static int PngWidth(string path)
+        => System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(File.ReadAllBytes(path).AsSpan(16, 4));
+
     private static JsonElement Root(string snapshotPath)
     {
         using var doc = JsonDocument.Parse(File.ReadAllText(snapshotPath));
@@ -74,14 +78,34 @@ public class CliBrowserTests
         Assert.False(File.Exists(dir.File(".parity", "snapshot.bak.json"))); // 第一次拍,沒有舊基準可備份
 
         var before = File.ReadAllText(snapshot);
+        var frameB = frames[1].GetRawText();
+        var shotB = File.ReadAllBytes(dir.File("parity.snapshot.1.png"));
         var second = await Cli.RunAsync("snapshot", "--config", config, "--target", "/a", "--width", "640", "--height", "480");
 
         Assert.Equal(0, second.ExitCode);
         Assert.Equal(before, File.ReadAllText(dir.File(".parity", "snapshot.bak.json"))); // 覆寫前先備份
-        var single = Root(snapshot).GetProperty("root");
-        Assert.Equal("/a", single.GetProperty("id").GetString()); // 單 target:frame 直接當根
-        Assert.Equal((640, 480), BoxSize(single));
-        AssertPng(dir.File("parity.snapshot.png"));
+        // --target 只重拍 /a,/b 原封不動(2.5.0 以前整份快照換成 /a 一頁)
+        Assert.Contains("updated /a in the existing snapshot; the other 1 page(s) were kept", second.Out);
+        var merged = Root(snapshot).GetProperty("root");
+        Assert.Equal("snapshot", merged.GetProperty("id").GetString());
+        var mergedFrames = merged.GetProperty("children").EnumerateArray().ToList();
+        Assert.Equal(["/a", "/b"], mergedFrames.Select(f => f.GetProperty("id").GetString()));
+        Assert.Equal((640, 480), BoxSize(mergedFrames[0]));
+        Assert.Equal(frameB, mergedFrames[1].GetRawText()); // 讀回再寫逐字相同:沒被還原預設值、沒有數字格式漂移
+        Assert.Equal(640, PngWidth(dir.File("parity.snapshot.0.png"))); // /a 的參考圖換成新拍的
+        Assert.Equal(shotB, File.ReadAllBytes(dir.File("parity.snapshot.1.png")));
+        Assert.False(File.Exists(dir.File("parity.snapshot.png")));
+
+        // 單頁快照(--out 到另一個檔、只拍 /a)再拍別頁:變成兩頁,原本的 x.png 改名成 x.0.png
+        var lone = dir.File("lone.json");
+        Assert.Equal(0, (await Cli.RunAsync("snapshot", "--config", config, "--target", "/a", "--out", lone)).ExitCode);
+        Assert.Equal("/a", Root(lone).GetProperty("root").GetProperty("id").GetString()); // 沒有既有檔:單 target 的 frame 直接當根
+        Assert.Equal(0, (await Cli.RunAsync("snapshot", "--config", config, "--target", "/b", "--out", lone)).ExitCode);
+        var grown = Root(lone).GetProperty("root");
+        Assert.Equal(["/a", "/b"], grown.GetProperty("children").EnumerateArray().Select(f => f.GetProperty("id").GetString()));
+        Assert.Equal(1280, PngWidth(dir.File("lone.0.png")));
+        Assert.Equal(375, PngWidth(dir.File("lone.1.png")));
+        Assert.False(File.Exists(dir.File("lone.png")));
 
         // --stabilize:連拍找出會變的區塊,給一行可以直接貼進 config 的 ignore 建議。
         // selector 帶反斜線,建議必須是合法 JSON(手拼字串的版本貼了就爆)

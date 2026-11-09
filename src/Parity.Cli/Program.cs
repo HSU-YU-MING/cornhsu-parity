@@ -599,11 +599,30 @@ internal static class SnapshotCommand
         if (config.Targets.Count == 0)
             throw new InvalidOperationException("the config file declares no targets.");
 
-        var targets = opts.GetValueOrDefault("--target") is { } route
+        var route = opts.GetValueOrDefault("--target");
+        var targets = route is not null
             ? config.Targets.Where(t => t.Route == route).ToList()
             : config.Targets;
         if (targets.Count == 0)
             throw new InvalidOperationException("no target matches the requested route.");
+        if (route is not null && targets.Count > 1)
+            throw new InvalidOperationException(
+                $"{targets.Count} targets share the route {route} — a snapshot keeps one page per route, so routes must be unique.");
+
+        var outPath = Path.GetFullPath(opts.GetValueOrDefault("--out")
+            ?? Path.Combine(config.BaseDirectory, "parity.snapshot.json"));
+
+        // --target 只重拍這一頁,併回既有快照,其他頁原封不動(2.5.0 以前整份換成這一頁)。
+        // 讀不懂的舊檔、合不了的組合在開瀏覽器之前就擋下
+        SnapshotDocument? existing = null;
+        if (route is not null && File.Exists(outPath))
+        {
+            existing = Parity.Engine.DesignSources.Json.JsonDesignSource.ReadSnapshotDocument(outPath)
+                ?? throw new InvalidOperationException(
+                    $"{outPath} is not a snapshot written by `parity snapshot` 1.0 or later, so --target cannot update " +
+                    "one page in it. Run `parity snapshot` without --target, or write to another file with --out.");
+            SnapshotMerge.EnsureMergeable(existing, route);
+        }
 
         Console.WriteLine($"\x1b[1mParity snapshot\x1b[0m — freezing the current rendering as the design baseline ({width}×{height})\n");
 
@@ -611,15 +630,13 @@ internal static class SnapshotCommand
             new Parity.Engine.ImplementationSources.Web.WebCaptureOptions(
                 Headless: !opts.ContainsKey("--headed"), CaptureScreenshot: true));
 
-        var outPath = Path.GetFullPath(opts.GetValueOrDefault("--out")
-            ?? Path.Combine(config.BaseDirectory, "parity.snapshot.json"));
-        var frames = new List<DesignNode>();
+        var pages = new List<(DesignNode Frame, byte[]? Png, IReadOnlyList<string> StableIds, bool RandomIds)>();
         var shotPaths = new List<string>();
 
         var unstableBySelector = new List<string>(); // 建議 ignore 用(跨 target 彙整,保序去重)
         var stableIdUnion = new HashSet<string>(StringComparer.Ordinal); // 全部 target 的穩定 id 聯集
         var anyRandomIds = false; // 任一 target 測到隨機 id → 白名單才需要存進快照
-        foreach (var (t, i) in targets.Select((t, i) => (t, i)))
+        foreach (var t in targets)
         {
             var url = ScanSession.ResolveUrl(t.Url, config.BaseDirectory);
             // 登入態與步驟跟 check 一樣套:快照要拍到 check 之後會量的那個狀態
@@ -672,26 +689,53 @@ internal static class SnapshotCommand
                     Console.WriteLine($"  \x1b[32m✓ {ConsoleText.Safe(t.Route)}: stable across 3 captures\x1b[0m");
                 }
             }
-            frames.Add(SnapshotBuilder.ToFrame(tree, t.Route, t.Width ?? width, t.Height ?? height));
-
-            if (impl.Screenshots.TryGetValue(url, out var png))
-            {
-                var shot = targets.Count == 1
-                    ? Path.ChangeExtension(outPath, ".png")
-                    : Path.ChangeExtension(outPath, $".{i}.png");
-                // --out 可以指到還不存在的目錄(與 check 的 --out 一致);擷取成功才建,失敗不留空目錄
-                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-                await File.WriteAllBytesAsync(shot, png);
-                shotPaths.Add(shot);
-            }
+            pages.Add((SnapshotBuilder.ToFrame(tree, t.Route, t.Width ?? width, t.Height ?? height),
+                impl.Screenshots.GetValueOrDefault(url), stableIds, unstableIdCount > 0));
             Console.WriteLine($"  ✓ {ConsoleText.Safe(t.Route)} → {tree.DescendantsAndSelf().Count()} node(s)");
         }
 
-        // 單 target:frame 直接當根;多 target:包一層,frame id = route(對 config 的 target.frame)
-        var root = frames.Count == 1
-            ? frames[0]
-            : new DesignNode("snapshot", "snapshot", DesignNodeType.Frame, default,
-                null, null, null, null, null, frames);
+        // 擷取全部做完才動檔案:中途失敗不留半套截圖。--out 可以指到還不存在的目錄(與 check 的 --out 一致)
+        Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+        DesignNode root;
+        IReadOnlyList<string>? anchors;
+        // 截圖編號 = frame 在多頁根底下的位置(check 照這個找參考圖);-1 = 單頁快照的 x.png
+        string ShotPath(int index) => index < 0
+            ? Path.ChangeExtension(outPath, ".png")
+            : Path.ChangeExtension(outPath, $".{index}.png");
+        async Task WriteShotAsync(int index, byte[]? png)
+        {
+            var shot = ShotPath(index);
+            if (png is null)
+            {
+                File.Delete(shot); // 沒拍到就別留著舊的:那是別次載入、甚至別頁的畫面,疊框會對不齊
+                return;
+            }
+            await File.WriteAllBytesAsync(shot, png);
+            shotPaths.Add(shot);
+        }
+
+        if (existing is not null)
+        {
+            var page = pages.Single();
+            var merged = SnapshotMerge.Merge(existing, page.Frame, page.StableIds, page.RandomIds);
+            root = merged.Root;
+            anchors = merged.StableIdAnchors;
+            if (merged.SingleBecameMulti && File.Exists(ShotPath(-1)))
+                File.Move(ShotPath(-1), ShotPath(0), overwrite: true);
+            await WriteShotAsync(merged.FrameIndex, page.Png);
+            if (merged.FrameIndex >= 0)
+                Console.WriteLine($"\nupdated {ConsoleText.Safe(route!)} in the existing snapshot; the other " +
+                    $"{root.Children.Count - 1} page(s) were kept as they were.");
+        }
+        else
+        {
+            // 單 target:frame 直接當根;多 target:包一層,frame id = route(對 config 的 target.frame)
+            root = pages.Count == 1 ? pages[0].Frame : SnapshotMerge.MultiRoot(pages.Select(p => p.Frame).ToList());
+            // 白名單只在真的測到隨機 id 時才存(anyRandomIds):沒有隨機 id 的站,快照與 1.0 逐位元同形
+            anchors = anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null;
+            foreach (var (page, i) in pages.Select((p, i) => (p, i)))
+                await WriteShotAsync(pages.Count == 1 ? -1 : i, page.Png);
+        }
 
         // 基準是「對的樣子」的唯一紀錄——覆寫前先備份到 .parity/(慣例上不進版控),
         // 在站台壞掉時誤拍也有無摩擦的後悔藥(不用 --force 是刻意的:重拍本來就是日常動作)。
@@ -703,10 +747,7 @@ internal static class SnapshotCommand
             File.Copy(outPath, bak, overwrite: true);
             Console.WriteLine($"previous baseline backed up: {bak} (use it to recover from a bad snapshot)");
         }
-        // 白名單只在真的測到隨機 id 時才存(anyRandomIds):沒有隨機 id 的站,快照與 1.0 逐位元同形
-        Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-        await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(
-            root, anyRandomIds ? stableIdUnion.Order(StringComparer.Ordinal).ToList() : null, styleDefaultsOmitted: true));
+        await File.WriteAllTextAsync(outPath, ReportJson.SerializeSnapshotTree(root, anchors, styleDefaultsOmitted: true));
 
         Console.WriteLine($"\nwritten: {outPath}");
         foreach (var s in shotPaths) Console.WriteLine($"reference screenshot: {s}");
@@ -720,6 +761,7 @@ internal static class SnapshotCommand
             Console.WriteLine("  \"ignore\": [" + string.Join(", ",
                 unstableBySelector.Select(s => JsonSerializer.Serialize(s))) + "]");
         }
+        if (existing is not null) return 0; // 併回既有快照:設定早就接好了,不用再教一次
         Console.WriteLine($"""
 
             Next steps (use the snapshot as the design baseline so refactors cannot drift):
@@ -897,7 +939,8 @@ internal static class Usage
           parity snapshot [--config <path>] [--target <route>] [--out <path>] [--width <n>] [--height <n>] [--headed] [--stabilize]
               Freeze the currently running implementation into a design baseline (JSON + reference screenshot)
               — a refactor/redesign guard: today's rendering is correct, and later checks prove it has not drifted.
-              No Figma required. Overwrites an existing baseline (backed up to .parity/snapshot.bak.json first).
+              No Figma required. Overwrites an existing baseline (backed up to .parity/snapshot.bak.json first);
+              with --target, only that page is refrozen and the other pages in the snapshot are kept.
               --stabilize   Capture 3 times and report regions that changed between captures (rotating ads,
                             animations, lazy media) with a ready-to-paste "ignore" suggestion — freeze only
                             what is actually stable.
