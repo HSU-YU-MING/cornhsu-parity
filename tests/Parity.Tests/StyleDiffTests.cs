@@ -459,7 +459,9 @@ public class StyleDiffTests
     public void The_first_gradient_layer_is_used_and_unreadable_colors_still_count_as_a_gradient()
     {
         Assert.Equal(new Rgba(1, 2, 3), CssEffects.ParseGradient("url(x.png), linear-gradient(rgb(1, 2, 3), rgb(4, 5, 6)), linear-gradient(rgb(7, 8, 9), rgb(0, 0, 0))")!.Start);
-        Assert.Null(CssEffects.ParseGradient("linear-gradient(lab(50 0 0), lab(60 0 0))")!.Start);
+        // 讀不懂的色域照樣算有漸層,只是沒有頭尾色(lab() 2.5.0 起讀得懂,換成 rec2020)
+        Assert.Null(CssEffects.ParseGradient("linear-gradient(color(rec2020 0.5 0 0), color(rec2020 0.6 0 0))")!.Start);
+        Assert.NotNull(CssEffects.ParseGradient("linear-gradient(lab(50 0 0), lab(60 0 0))")!.Start);
     }
 
     // ---------- Figma ----------

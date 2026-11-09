@@ -17,6 +17,10 @@ size start being compared; real differences there are new to your baseline.*
 基準的鍵含圖層名,所以這些列會算成「修好 + 新增」,重存基準就好。不重拍不受影響。
 *Snapshot users with `--baseline`: after re-taking the snapshot, SVG icon nodes are named after their first class instead of `svg`;
 baseline keys include the layer name, so re-save the baseline. Existing snapshots are unaffected.*
+用 Tailwind v4 這類寫法的網站:顏色現在讀得懂了,文字色與背景色開始比,真的不一樣就會報(以前整頁幾乎都沒比);
+以前讀不懂而報的「背景 (transparent)」會消失。
+*Sites built with Tailwind v4 and similar: their colors are now readable, so text and background colors start being compared
+(almost none were before), and the old false "background (transparent)" rows disappear.*
 
 - **修正:圖層名對到好幾個同名元素時,不再拿第一個**(`report.json` 的 `unmatched[].reason` 多一個值 `ambiguous-name`,開放集合的加法;
   六面都沒動,配對規則演進,所以是 minor)。以前同名而且大小合理的元素有好幾個時,拿文件順序的第一個;配錯一個元素,它的每個屬性都報一條假落差。
@@ -79,6 +83,21 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   *SVG classes are now captured (the capture read `className`, which is an `SVGAnimatedString` on SVG elements, so inline icons could
   never match a layer name). Same-named icons stay `ambiguous-name` instead of being guessed. In new snapshots, SVG nodes are named after
   their first class instead of `svg`.*
+
+- **修正:`oklab()`、`lab()`、`lch()` 的顏色讀得懂了;真的讀不懂的不再當成透明,而且會說一聲**(六面都沒動;量測語意演進,minor)。
+  Chromium 的計算值保留原本的色彩空間:Tailwind v4 的文字色、背景色常是 `lab()`,半透明色與 `color-mix()` 是 `oklab(… / 0.5)`。
+  以前這些一律讀不懂,顏色就當成沒有:字色不比,背景則落到「(transparent)」報成一條假落差,陰影與漸層被當成不存在。
+  - 多讀 `oklab()`、`lab()`、`lch()`、`none` 分量(CSS Color 4:這個分量沒有值,算 0)、`color(srgb-linear | xyz | xyz-d65 | xyz-d50 …)`。
+    換算照 CSS Color 4 的參考矩陣(lab 用 D50 白點,Bradford 轉 D65);期望值是 Chromium 156 自己換算的結果,每個頻道差 1 以內。
+  - 還讀不懂的(`color(rec2020 …)`、`color(a98-rgb …)`、`color(prophoto-rgb …)`):擷取端記下來,比對跳過那一項——背景不報透明、
+    陰影與漸層整項不比——`check` 在 stderr 印一行:配上的元素裡有幾個顏色沒比、舉一個例子。
+  - **實測**:論文評估語料裡的 Tailwind 首頁(1,708 個節點),用這一版拍快照,讀得到顏色的節點從 38 個變 822 個;Bootstrap 首頁
+    (用 rgb)兩版一樣。**評估語料的分數量不到這一項**:語料的設計稿當初也讀不懂這些顏色(`03-cases.mjs` 的 `parseBg`),那些元素沒有填色、
+    也沒被拿來植入背景色錯誤,所以修前修後分數完全一樣。正確性靠真瀏覽器測試(`ColorCaptureTests`)與換算測試驗。
+  *`oklab()`, `lab()`, `lch()`, `none` components and `color(srgb-linear | xyz …)` are now read (Chromium keeps the authored color
+  space, so Tailwind v4 colors arrive as `lab()` and `oklab(… / 0.5)`). Colors that still cannot be read are skipped instead of being
+  treated as transparent, and `check` says how many on stderr. On the thesis corpus's Tailwind home page, nodes with a readable color
+  went from 38 to 822 of 1,708.*
 
 ## 2.4.0 — 2026-11-09
 

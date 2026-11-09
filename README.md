@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1526**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1563**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -319,7 +319,11 @@ Only the things that should hold no matter how the layout flows:
   reported (severity `minor`, marked soft) but costs no fidelity points and **never gates** —
   not even when `failOn` includes `minor`, and `--baseline` mode does not count it as new.
 - **Color**: thresholded on CIEDE2000 (ΔE), not hex equality. Parsing covers modern syntax
-  (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `color(display-p3 …)`).
+  (`rgb(37 99 235 / .5)`, `color(srgb …)`, `oklch()`, `oklab()`, `lab()`, `lch()`, `color(display-p3 …)`,
+  `color(xyz …)`, `color(srgb-linear …)`). Chromium keeps the authored color space in computed styles, so
+  Tailwind v4's translucent colors and `color-mix()` arrive as `oklab(… / 0.5)`. A color Parity cannot
+  read (`color(rec2020 …)`, `color(a98-rgb …)`, `color(prophoto-rgb …)`) is not compared, never treated as
+  transparent, and `check` says how many were skipped on stderr (2.5.0).
 - **Absolute x/y is deliberately never compared**: it legitimately differs in a flexible layout,
   so comparing it means false positives, which means losing trust.
 

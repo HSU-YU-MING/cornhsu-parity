@@ -173,6 +173,21 @@ public static partial class CssEffects
     [GeneratedRegex(@"^(-?[0-9.]+)(deg|turn|rad|grad)$")]
     private static partial Regex AngleToken();
 
-    [GeneratedRegex(@"(?:rgba?|oklch|color)\([^()]*\)|#[0-9a-fA-F]{3,8}\b", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?:rgba?|oklch|oklab|lch|lab|color)\([^()]*\)|#[0-9a-fA-F]{3,8}\b", RegexOptions.IgnoreCase)]
     private static partial Regex ColorToken();
+
+    /// <summary>
+    /// 計算值裡 <see cref="Rgba.TryParseCss"/> 讀不懂的顏色(例如 <c>color(rec2020 …)</c>),原樣回傳。
+    /// 讀不懂的顏色不能當成「沒有」:背景會被報成透明、陰影會被報成不見(2.5.0 以前就是這樣)。擷取端把它記下來,比對跳過、主控台明講。
+    /// </summary>
+    public static IEnumerable<string> UnreadableColors(string? css)
+    {
+        if (string.IsNullOrEmpty(css)) yield break;
+        foreach (Match m in AnyColorFunction().Matches(css))
+            if (!Rgba.TryParseCss(m.Value, out _)) yield return m.Value;
+    }
+
+    // 比 ColorToken 寬:任何顏色函式都抓,讀不讀得懂交給 TryParseCss 判斷。hsl()、hwb() 的計算值 Chromium 會轉成 rgb(),寫進來是保險
+    [GeneratedRegex(@"\b(?:rgba?|hsla?|hwb|oklch|oklab|lch|lab|color)\([^()]*\)", RegexOptions.IgnoreCase)]
+    private static partial Regex AnyColorFunction();
 }
