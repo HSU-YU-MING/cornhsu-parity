@@ -177,6 +177,7 @@ public static class FixHint
         "shadowColor" => $"shadow color: {d.Expected}",
         "gradient" => $"background-image: {d.Expected}",
         "image" => "use the same image as the reference",
+        "imageColor" => "the image looks right but its colors are off: check the file, a CSS filter or the color profile",
         "childOrder" => $"children should be in this order: {d.Expected}",
         "mainAxisOffset" => $"justify-content: the first child should be {d.Expected}px from the container's start",
         "crossAxisOffset" => $"align-items / align-self: this child should be {d.Expected}px from the container's edge",

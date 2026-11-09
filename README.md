@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1601**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1605**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -370,10 +370,14 @@ how noisy each one is.
   outline" when it is a box with no visible stroke at all, and anything with a stroke is not compared.
   Snapshots record the page's outline; snapshots taken before 2.5.0 never measured it, so it is not
   compared against them (`styleDefaultsVersion` in the snapshot envelope tells them apart).
-- **Image content** (`image`, off by default): `"compare": { "images": "soft" }` crops each `img`, `svg`,
+- **Image content and color** (`image`, `imageColor`, off by default): `"compare": { "images": "soft" }` crops each `img`, `svg`,
   `picture` and background image out of a full-page screenshot and compares it with the same box in the
   reference image: the screenshot next to a `parity snapshot` baseline, `designImage`, or the frame exported
-  from Figma. Recompressing or rescaling an image does not count. It takes one extra screenshot per page.
+  from Figma. Two separate checks (2.5.0; they used to share one score and one 10% threshold, so a color
+  shift rarely got through): `image` when the content changed (the light/dark structure differs by more
+  than 10%), otherwise `imageColor` when the colors shifted (the average CIEDE2000 over an 8×8 grid is above
+  3 — a 10° hue shift is about 3.6, while recompressing to JPEG quality 30 stays near 0.5). A solid image
+  that only changed color is `imageColor`. Recompressing or rescaling an image does not count. It takes one extra screenshot per page.
   With Figma it also spends API quota, one export per frame, kept in `.parity/cache` until you pass
   `--refresh`. If there is no reference or the export fails, a note goes to stderr and the check carries on.
 
@@ -772,7 +776,7 @@ for, how long it is kept — is **<https://stats.cornhsu.com/>**.
 | `data.designSource` | `figma`, `snapshot` (a file written by `parity snapshot`), `file` (any other design JSON) or `image` |
 | `data.designNodes`, `data.matched` | Design nodes and matched nodes, summed over all pages |
 | `data.severity` | Gap counts per severity: `critical`, `serious`, `medium`, `minor` |
-| `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`, `borderWidth`, `shadow`, `mainAxisOffset`, `crossAxisOffset`, `outlineWidth`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`, `background`, `borderColor`, `shadowColor`, `gradient`, `outlineColor` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300), a 0–1 difference for `opacity` and `image` (<0.05, 0.05–0.1, 0.1–0.25, 0.25–0.5, ≥0.5), and lines for `lineCount` (1, 2, 3–4, 5 or more). `fontFamily`, `text`, `childOrder`, `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `relation` have no ranges, only counts: never the text, the layer names or the values |
+| `data.props` | For each property with at least one gap: how many gaps, how many were `missing`, and how many fall in each range of `abs(delta)` — px for lengths (`offsetX`/`offsetY`, size, padding, `itemSpacing`, `cornerRadius`, `fontSize`, `lineHeight`, `letterSpacing`, `borderWidth`, `shadow`, `mainAxisOffset`, `crossAxisOffset`, `outlineWidth`: <1, 1–2, 2–4, 4–8, 8–16, 16–32, ≥32), ΔE for `color`, `background`, `borderColor`, `shadowColor`, `gradient`, `outlineColor`, `imageColor` (<1, 1–2, 2–5, 5–10, 10–20, ≥20), weight steps for `fontWeight` (<100, 100–200, 200–300, ≥300), a 0–1 difference for `opacity` and `image` (<0.05, 0.05–0.1, 0.1–0.25, 0.25–0.5, ≥0.5), and lines for `lineCount` (1, 2, 3–4, 5 or more). `fontFamily`, `text`, `childOrder`, `fontStyle`, `textDecoration`, `textTransform`, `textAlign`, `relation` have no ranges, only counts: never the text, the layer names or the values |
 | `data.unmatchedBy` | Design nodes that could not be matched, counted per reason: `no-anchor`, `ambiguous-or-missing-text`, `text-not-found`, `randomized-id`, `size-implausible`, `ambiguous-name`, or `other` for any reason this version does not list. Only reasons with at least one node; `{}` when everything matched. Never the layer names |
 | `data.extras` | How many extra page elements `compare.extras` found, summed over all pages (the total, before the 20-per-page cap). Only present when the list is on. Never their selectors, tags or boxes |
 

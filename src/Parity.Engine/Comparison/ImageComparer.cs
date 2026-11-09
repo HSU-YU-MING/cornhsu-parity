@@ -19,8 +19,11 @@ namespace Parity.Engine.Comparison;
 /// </summary>
 public static class ImageComparer
 {
-    /// <summary>差異比例超過這個才算落差。</summary>
+    /// <summary>內容:結構差(0–1)超過這個才算換了。</summary>
     public const double Tolerance = 0.1;
+
+    /// <summary>顏色:8×8 格平均色差(CIEDE2000)超過這個才算偏掉(2.5.0,見 Compare)。</summary>
+    public const double ColorTolerance = 3.0;
 
     /// <summary>元素的邊至少幾 px 才比:太小的圖示縮完沒有資訊,全是誤報。</summary>
     private const int MinSide = 8;
@@ -77,18 +80,31 @@ public static class ImageComparer
         };
     }
 
+    /// <summary>
+    /// 兩種落差分開判斷、分開回報(清單 #10,2.5.0)。以前內容與顏色合成一個分數共用 10% 門檻,
+    /// 圖片顏色偏掉(色相轉 30°)多半過不了門檻(論文評估 5.9%)。
+    ///   - 內容換了(<c>image</c>):結構差超過 <see cref="Tolerance"/>。內容都換了,顏色不另外報。
+    ///   - 顏色偏了(<c>imageColor</c>):結構一樣、8×8 格平均色差(CIEDE2000)超過 <see cref="ColorTolerance"/>。
+    /// </summary>
     private static PropDiff? Compare(Image<Rgba32> reference, Box referenceBox, Image<Rgba32> current, Box currentBox, bool broken)
     {
-        if (Difference(reference, referenceBox, current, currentBox) is not { } difference || difference <= Tolerance) return null;
+        if (Measure(reference, referenceBox, current, currentBox) is not { } m) return null;
+        var content = m.Structure > Tolerance;
+        if (!content && m.Color <= ColorTolerance) return null;
         if (broken)
             return new PropDiff("image", "same as the reference image", "(image not loaded)", null, null, Tolerance, Severity.Minor, DiffStatus.Missing, Soft: true);
-        var percent = Math.Round(difference * 100);
-        return new PropDiff("image", "same as the reference image", $"{percent:0}% different", null,
-            Math.Round(difference, 2), Tolerance, Severity.Minor, Soft: true);
+        if (content)
+            return new PropDiff("image", "same as the reference image", $"{Math.Round(m.Structure * 100):0}% different", null,
+                Math.Round(m.Structure, 2), Tolerance, Severity.Minor, Soft: true);
+        return new PropDiff("imageColor", "same colors as the reference image", $"ΔE {m.Color:0.#} on average", null,
+            Math.Round(m.Color, 2), ColorTolerance, Severity.Minor, Soft: true);
     }
 
-    /// <summary>兩張圖上兩個區域的差異比例(0–1)。區域太小或大半在圖外是 null:比不出結果。</summary>
-    internal static double? Difference(Image<Rgba32> a, Box boxA, Image<Rgba32> b, Box boxB)
+    /// <summary>結構差(0–1,相鄰格明暗方向不同的比例)與顏色差(8×8 格的平均 CIEDE2000)。</summary>
+    internal readonly record struct ImageDifference(double Structure, double Color);
+
+    /// <summary>兩張圖上兩個區域的差異。區域太小或大半在圖外是 null:比不出結果。</summary>
+    internal static ImageDifference? Measure(Image<Rgba32> a, Box boxA, Image<Rgba32> b, Box boxB)
     {
         if (Clip(a, boxA) is not { } ra || Clip(b, boxB) is not { } rb) return null;
 
@@ -101,13 +117,15 @@ public static class ImageComparer
 
         using var colorA = Shrink(a, ra, 8, 8);
         using var colorB = Shrink(b, rb, 8, 8);
-        var colorSum = 0.0;
+        var deltaSum = 0.0;
         for (var y = 0; y < 8; y++)
             for (var x = 0; x < 8; x++)
-                colorSum += ColorDistance(Flatten(colorA[x, y]), Flatten(colorB[x, y]));
+                deltaSum += ColorDelta.Ciede2000(ToRgba(Flatten(colorA[x, y])), ToRgba(Flatten(colorB[x, y])));
 
-        return Math.Max(differentDirections / 64.0, colorSum / 64.0);
+        return new ImageDifference(differentDirections / 64.0, deltaSum / 64.0);
     }
+
+    private static Rgba ToRgba(Rgba32 p) => new(p.R, p.G, p.B);
 
     private static Box Shift(Box b, Box origin) => new(b.X + origin.X, b.Y + origin.Y, b.W, b.H);
 
@@ -150,10 +168,6 @@ public static class ImageComparer
     }
 
     private static double Luma(Rgba32 p) => 0.299 * p.R + 0.587 * p.G + 0.114 * p.B;
-
-    /// <summary>三個色版差的平均,0–1。</summary>
-    private static double ColorDistance(Rgba32 a, Rgba32 b)
-        => (Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B)) / (3.0 * 255);
 
     /// <summary>半透明合成到白底:設計圖可能有透明區域,截圖沒有。</summary>
     private static Rgba32 Flatten(Rgba32 p)

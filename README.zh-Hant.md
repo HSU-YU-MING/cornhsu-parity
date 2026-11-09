@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1601 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1605 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -281,7 +281,7 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 - **換行數**(`lineCount`):文字佔幾行,量實際的行框。副標換行、下面全被推開時,這就是根因。設計稿那邊用框高除以行高,固定高度的文字框不比
 - **樣式**:`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`opacity`、`borderWidth`、`borderColor`、`shadow`、`shadowColor`、`gradient`。設計稿有寫才比:Figma 節點都有,手寫的設計 JSON 寫了什麼比什麼(`text.fontStyle`、`opacity`、`borderWidth`、`shadows`、`gradient` 等)。看不見的就不算:隱形的陰影、透明的邊框、跟底色同色的邊框,還有畫面上沒差別的大小寫轉換。透明度比元素自己的,不累積祖先。漸層比種類、方向與頭尾色,不比中間的色標;`to top right` 這種要看框的比例才知道的方向不比
 - **外框**(`outlineWidth`、`outlineColor`,2.5.0):CSS 的 `outline` 不佔版面,以前完全沒比。先比粗細,一樣粗才比顏色。Figma 沒有獨立的外框:外側 stroke 可能被寫成 `border`、`outline` 或 `box-shadow`,所以 Figma 節點只在「方框沒有任何看得見的 stroke」時說「沒有外框」,有 stroke 的不比。快照照實記錄頁面上的外框;2.5.0 以前拍的快照沒量過外框,拿它們比時不比外框(快照信封的 `styleDefaultsVersion` 用來分辨)
-- **圖片內容**(`image`,預設關閉):`"compare": { "images": "soft" }` 會從整頁截圖裁出每個 `img`、`svg`、`picture` 與背景圖片,跟參考圖的同一個位置比。參考圖是 `parity snapshot` 基準旁邊的截圖、`designImage`,或從 Figma 匯出的 frame。換壓縮格式或縮放不算落差。每頁要多拍一張截圖;Figma 來源另外會用掉 API 配額,每個 frame 匯出一次,存在 `.parity/cache`,`--refresh` 才重抓。沒有參考圖或匯出失敗時,只在 stderr 說一聲,check 照常
+- **圖片內容與顏色**(`image`、`imageColor`,預設關閉):`"compare": { "images": "soft" }` 會從整頁截圖裁出每個 `img`、`svg`、`picture` 與背景圖片,跟參考圖的同一個位置比。參考圖是 `parity snapshot` 基準旁邊的截圖、`designImage`,或從 Figma 匯出的 frame。分成兩項判斷(2.5.0;以前合成一個分數、共用 10% 門檻,顏色偏掉多半過不了):內容換了(明暗結構差超過 10%)報 `image`;內容沒換、顏色偏了(8×8 格的平均 CIEDE2000 超過 3——色相轉 10° 約 3.6,壓成 JPEG 品質 30 只有 0.5 左右)報 `imageColor`。純色圖只換了顏色算 `imageColor`。換壓縮格式或縮放不算落差。每頁要多拍一張截圖;Figma 來源另外會用掉 API 配額,每個 frame 匯出一次,存在 `.parity/cache`,`--refresh` 才重抓。沒有參考圖或匯出失敗時,只在 stderr 說一聲,check 照常
 
 舊版拍的快照沒有這些樣式值,重新跑一次 `parity snapshot` 之前不會多出任何落差。
 
@@ -565,7 +565,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 | `data.designSource` | `figma`、`snapshot`(`parity snapshot` 寫出的檔)、`file`(其他設計 JSON)或 `image` |
 | `data.designNodes`、`data.matched` | 設計節點數與配對到的節點數,所有頁加總 |
 | `data.severity` | 各嚴重度的落差條數:`critical`、`serious`、`medium`、`minor` |
-| `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`borderWidth`、`shadow`、`mainAxisOffset`、`crossAxisOffset`、`outlineWidth` 與長度同區間;`borderColor`、`shadowColor`、`gradient`、`outlineColor` 與顏色同區間;`opacity`、`image` 以 0–1 的差分 <0.05、0.05–0.1、0.1–0.25、0.25–0.5、≥0.5;`lineCount` 以行數差分 1、2、3–4、5 以上。`fontFamily`、`text`、`childOrder`、`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`relation` 沒有區間,只有條數,不送文字、圖層名稱或值 |
+| `data.props` | 每個至少有一條落差的屬性:幾條落差、其中幾條是 `missing`、`abs(delta)` 落在各區間的條數——長度(`offsetX`/`offsetY`、尺寸、內距、`itemSpacing`、`cornerRadius`、`fontSize`、`lineHeight`、`letterSpacing`)以 px 分 <1、1–2、2–4、4–8、8–16、16–32、≥32;`color`/`background` 以 ΔE 分 <1、1–2、2–5、5–10、10–20、≥20;`fontWeight` 以字重分 <100、100–200、200–300、≥300。`borderWidth`、`shadow`、`mainAxisOffset`、`crossAxisOffset`、`outlineWidth` 與長度同區間;`borderColor`、`shadowColor`、`gradient`、`outlineColor`、`imageColor` 與顏色同區間;`opacity`、`image` 以 0–1 的差分 <0.05、0.05–0.1、0.1–0.25、0.25–0.5、≥0.5;`lineCount` 以行數差分 1、2、3–4、5 以上。`fontFamily`、`text`、`childOrder`、`fontStyle`、`textDecoration`、`textTransform`、`textAlign`、`relation` 沒有區間,只有條數,不送文字、圖層名稱或值 |
 | `data.unmatchedBy` | 沒配對到的設計節點,依原因計數:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`、`ambiguous-name`,這一版沒列出的原因算 `other`。只列至少有一個節點的原因,全部都配對到是 `{}`。不送圖層名稱 |
 | `data.extras` | `compare.extras` 找到幾個多餘的頁面元素,所有頁加總(截斷前的總數,不受每頁 20 筆的上限影響)。只有開了才有這個欄位。不送 selector、標籤名或框 |
 
