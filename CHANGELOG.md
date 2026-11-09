@@ -175,6 +175,15 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   `imageColor` diff (average CIEDE2000 over an 8×8 grid above 3; JPEG recompression stays near 0.5). Injected 30° hue shifts reported on
   the thesis corpus went from 5.9% to 70.6%.*
 
+- **修正:快照模式的 `compare.extras` 看整頁,不只第一個畫面**(六面都沒動;`extras` 找得更完整,minor)。以前只找渲染視窗裡的元素,
+  快照的 frame 高度是拍照當時的視窗,往下捲才看得到的多餘元件幾乎全漏(論文評估:落在第一個畫面以下的 82 個只抓到 1 個)。
+  - 現在搜尋範圍往下延伸到設計稿最下面那個節點的底部。快照拍的是整頁,所以整頁都找;只畫一個螢幕的 Figma frame 照舊只找那個螢幕——
+    設計稿沒畫到的地方沒有東西可對照,全列成「多餘」只會淹沒報告。
+  - **實測**(論文評估語料的快照模式):植入的多餘元件 110 案 **26.4% → 100%**;沒植入錯誤的基準頁仍是 0 個;良性變化(換字型、改行高、
+    改視窗寬度等)列出的數量跟以前一樣,只有「頁面頂端加一條橫幅」那組照常列出那條橫幅。
+  *In snapshot mode `compare.extras` now searches down to the bottom of the design's content instead of the first screen only.
+  Injected extra elements found on the thesis corpus went from 26.4% to 100%, with no new items on the unchanged pages.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

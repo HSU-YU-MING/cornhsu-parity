@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1605**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1606**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -486,9 +486,11 @@ An element on the page is listed when all of these hold:
   same gap twice);
 - it is visible: it has text of its own, is an `img` or `svg`, or has a background that is not
   fully transparent;
-- at least **64×64 = 4,096 px²** of it lies inside the viewport the page was rendered at (by
-  default the design frame's size). The threshold is deliberately conservative — icons, hairlines
-  and a single short word stay below it — and not configurable in this first version.
+- at least **64×64 = 4,096 px²** of it lies inside the search area: the viewport the page was
+  rendered at (by default the design frame's size), extended down to the bottom of the lowest design
+  node. A snapshot covers the whole page, so the whole page is searched; a Figma frame that draws
+  one screen is searched one screen deep (below it the design has nothing to compare against). The threshold is deliberately conservative — icons,
+  hairlines and a single short word stay below it — and not configurable in this first version.
 
 Nested elements are listed once, at the outermost one that qualifies. `ignore` selectors apply as
 usual, and `check --reverse` never computes the list. `check` prints the list and `--md` / `parity

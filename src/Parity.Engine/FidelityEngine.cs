@@ -73,11 +73,16 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
         // 6. 實作端多出來的元件(選用,只列出):放在彙總之後,summary 與 gate 看不到它。
         // 視窗換到正規化後的座標系:擷取端的座標是「頁面座標 + 捲動」,正規化再減掉 body 原點。
         // 沒有高度的話(只有引擎直接被呼叫、給了寬沒給高才會發生)那一軸不設限
+        // 往下延伸到設計稿有內容的地方(清單 #11,2.5.0):快照的 frame 高度是拍照當時的視窗,只看第一個畫面的話,
+        // 往下捲才看得到的多餘元件幾乎都漏掉(論文評估 1/82)。快照的內容涵蓋整頁,所以就看整頁;只畫一個螢幕的 Figma 照舊只看那個螢幕——
+        // 設計稿沒畫到的地方沒有東西可對照,全列成「多餘」只會淹沒報告
         ExtraElements? extras = null;
         if (_opts.ListExtras)
         {
-            var viewport = new Model.Box(-renderedOrigin.X, -renderedOrigin.Y,
-                implRef.ViewportWidth!.Value, implRef.ViewportHeight ?? double.PositiveInfinity);
+            var top = -renderedOrigin.Y;
+            var designBottom = designTree.DescendantsAndSelf().Skip(1).Select(n => n.Box.Y + n.Box.H).DefaultIfEmpty(0).Max();
+            var height = Math.Max(implRef.ViewportHeight ?? double.PositiveInfinity, designBottom - top);
+            var viewport = new Model.Box(-renderedOrigin.X, top, implRef.ViewportWidth!.Value, height);
             extras = ExtrasFinder.Find(renderedTree, match.Pairs, viewport);
         }
 
