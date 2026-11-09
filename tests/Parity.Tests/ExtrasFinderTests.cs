@@ -209,6 +209,22 @@ public class ExtrasFinderTests
     }
 
     [Fact]
+    public async Task A_design_that_reaches_down_the_page_is_searched_as_far_as_its_content()
+    {
+        // 清單 #11:快照的 frame 高度是拍照當時的視窗(600),但內容涵蓋整頁(頁尾在 y = 1800)。
+        // 以前只看第一個畫面,往下捲才看得到的多餘元件幾乎都漏掉(論文評估 1/82);現在看到設計稿內容的最底
+        var design = TitleOnlyDesign(Design("f", "Footer", DesignNodeType.Text, box: new Box(0, 1800, 200, 40), characters: "Contact"));
+        var body = Rendered("body", "body", box: new Box(0, 0, 800, 2000), children:
+        [
+            Title,
+            Rendered("body > aside.promo", background: Red, box: new Box(0, 1200, 800, 300)), // 第一個畫面以外的多餘橫幅
+            Rendered("body > footer", "footer", "Contact", new Box(0, 1800, 200, 40)),
+        ]);
+
+        Assert.Equal(["body > aside.promo"], Listed(await Run(design, body)));
+    }
+
+    [Fact]
     public async Task The_viewport_is_placed_in_body_relative_coordinates()
     {
         // body 有 8px margin(擷取座標是頁面座標):頁面 y = 600 起的元素在 800×600 的視窗外。
