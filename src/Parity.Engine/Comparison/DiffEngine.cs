@@ -550,6 +550,17 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
                 CompareColorSoft(diffs, "borderColor", color, actualColor);
         }
 
+        // 外框(CSS outline,2.5.0):不佔版面,以前完全沒比。跟邊框同一個形狀:先比粗細,一樣粗才比顏色;0 = 沒有外框。
+        // 設計端不知道(Figma 的方框有 stroke、舊快照沒量過)就不比,見 DesignNode.OutlineWidth
+        if (d.OutlineWidth is { } designedOutline && r.OutlineWidth is { } renderedOutline)
+        {
+            var delta = Math.Abs(designedOutline - renderedOutline);
+            if (delta > BorderTolerance)
+                SoftDiff(diffs, "outlineWidth", Fmt(designedOutline), Fmt(renderedOutline), "px", Math.Round(delta, 2), BorderTolerance);
+            else if (designedOutline > 0 && d.OutlineColor is { } color && r.OutlineColor is { } actualColor)
+                CompareColorSoft(diffs, "outlineColor", color, actualColor);
+        }
+
         // 陰影或漸層裡有讀不懂的顏色:那一層會被當成不存在,比了就是假的「陰影不見」「漸層不見」,所以整項不比(2.5.0)
         var shadowField = d.Type == DesignNodeType.Text ? "textShadow" : "boxShadow";
         if (!r.HasUnreadColor(shadowField))

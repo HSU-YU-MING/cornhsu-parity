@@ -239,6 +239,8 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                 ? new Insets(borderTop, Px(el, "borderRightWidth") ?? 0, Px(el, "borderBottomWidth") ?? 0, Px(el, "borderLeftWidth") ?? 0)
                 : null,
             BorderColor = Color(el, "borderColor"),
+            OutlineWidth = Px(el, "outlineWidth"),
+            OutlineColor = Color(el, "outlineColor"),
             Shadows = CssEffects.ParseShadows(Str(el, "boxShadow")),
             TextShadows = CssEffects.ParseShadows(Str(el, "textShadow")),
             Gradient = CssEffects.ParseGradient(Str(el, "backgroundImage")),
@@ -265,7 +267,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
 
     /// <summary>擷取結果裡帶顏色的欄位(CaptureScript 的鍵名)。</summary>
     private static readonly string[] ColorFields =
-        ["color", "background", "effectiveBackground", "borderColor", "boxShadow", "textShadow", "backgroundImage"];
+        ["color", "background", "effectiveBackground", "borderColor", "outlineColor", "boxShadow", "textShadow", "backgroundImage"];
 
     /// <summary>
     /// any 與 linux-musl-*(Alpine)的平台包不帶 Playwright driver:Playwright 沒有那些平台的 Node。

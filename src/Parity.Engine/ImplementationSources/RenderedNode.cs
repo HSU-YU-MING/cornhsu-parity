@@ -55,6 +55,12 @@ public sealed record RenderedNode(
     /// <summary>第一條有粗細的邊的顏色;沒有邊框是 null。</summary>
     public Rgba? BorderColor { get; init; }
 
+    /// <summary>外框(CSS outline)粗細;沒有外框(style none、顏色透明)是 0;擷取端沒給是 null(2.5.0)。</summary>
+    public double? OutlineWidth { get; init; }
+
+    /// <summary>外框顏色;沒有外框是 null。</summary>
+    public Rgba? OutlineColor { get; init; }
+
     /// <summary>box-shadow。看不見的陰影不算(<see cref="CssEffects.ParseShadows"/>)。</summary>
     public IReadOnlyList<ShadowSpec>? Shadows { get; init; }
 

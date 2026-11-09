@@ -44,7 +44,7 @@ public sealed class JsonDesignSource : IDesignSource
                 root = probe.Root
                     ?? throw new InvalidOperationException($"design JSON {path} has a schemaVersion but no \"root\" node.");
                 if (probe.StyleDefaultsOmitted == true)
-                    root = Snapshot.SnapshotBuilder.ExpandStyleDefaults(root);
+                    root = Snapshot.SnapshotBuilder.ExpandStyleDefaults(root, probe.StyleDefaultsVersion ?? 1);
             }
             else
             {
@@ -106,5 +106,6 @@ public sealed class JsonDesignSource : IDesignSource
     /// 有 SchemaVersion 才走信封路徑。
     /// </summary>
     private sealed record SnapshotEnvelopeProbe(
-        int? SchemaVersion, DesignNode? Root, IReadOnlyList<string>? StableIdAnchors, bool? StyleDefaultsOmitted = null);
+        int? SchemaVersion, DesignNode? Root, IReadOnlyList<string>? StableIdAnchors, bool? StyleDefaultsOmitted = null,
+        int? StyleDefaultsVersion = null);
 }
