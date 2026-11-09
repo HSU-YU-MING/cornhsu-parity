@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1519**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1525**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -418,8 +418,12 @@ unaffected and works as usual).
    nearest matched ancestor got, then the ones holding the most of its already-matched content; if
    more than one is still left, the node is listed as `ambiguous-name` rather than taking the first one
    (versions before 2.5.0 took the first in document order)
-3. **Container inference**: an unmatched container is inferred from the lowest common ancestor of
-   its already-matched descendants (pure structure — no guessing). A frame that holds nothing but one
+3. **Container inference**: an unmatched container is inferred from its already-matched descendants
+   (pure structure — no guessing): starting at their lowest common ancestor and moving outward, Parity
+   takes the layer whose size is closest to the design frame. The walk stops at a layer that already
+   stands for another design node or holds other matched content; a tie keeps the inner layer; no
+   plausibly sized layer leaves the container unmatched (2.5.0; earlier versions always took the lowest
+   common ancestor, which is often a padded inner wrapper). A frame that holds nothing but one
    text — a button drawn as a box around a label — takes the element its text matched, or the wrapper
    around it, whichever is closest to the frame's size (each axis within 4px or 10%; a tie, or a single
    layer inside the text's element that fits as well, is left unmatched). When it is the text's own

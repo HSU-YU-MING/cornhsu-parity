@@ -214,8 +214,10 @@ public static class Matcher
             pending.RemoveAt(i);
         }
 
-        // --- 第 4 關:容器推論——已配到 ≥2 個子孫的容器,對應到那些子孫的最近共同祖先 ---
+        // --- 第 4 關:容器推論——已配到 ≥2 個子孫的容器,從那些子孫的最近共同祖先往外挑大小最接近的一層 ---
         // 純結構推論(不比對外觀、不猜),把「無文字/名字對不上」但內容配對得上的容器救回來。
+        // 最近共同祖先常常停在太裡面那層(評估語料:配錯的容器 235 個裡 229 個是「答案在外面」,多半就外面一層),
+        // 所以往外挑大小最接近設計框的(ClosestContainer,2.5.0)。
         bool progressed = true;
         while (progressed)
         {
@@ -232,8 +234,9 @@ public static class Matcher
 
                 var lca = LowestCommonAncestor(matchedDesc, chainOf);
                 if (lca is null || ReferenceEquals(lca, renderedRoot) || taken.Contains(lca)) continue;
+                if (ClosestContainer(d, lca, chainOf, taken) is not { } container) continue;
 
-                Pair(d, lca, "auto-container");
+                Pair(d, container, "auto-container");
                 pending.RemoveAt(i);
                 progressed = true;
             }
@@ -354,6 +357,32 @@ public static class Matcher
             if (Fits(inner.Box) && Distance(inner.Box) < best + 0.5) return null;
         }
         return fitting[0];
+    }
+
+    /// <summary>
+    /// 容器推論(第 4 關)該配哪一層:最近共同祖先本身,或外面一層層的祖先,挑大小最接近設計框的。
+    /// 往外走到「本身已經代表別的設計節點」或「裡面有別的已配對節點」(那就是更大的容器了)為止,根不算。
+    /// 只收過尺寸防線的(<see cref="SizePlausible"/>);一層都沒有就不配——評估語料裡這種全是原本就配錯的。
+    /// 一樣近時留裡面那層:巢狀的同尺寸 wrapper 很常見,評估語料裡這時答案多半是裡面那層,也就是 2.4 以前的行為。
+    /// </summary>
+    private static RenderedNode? ClosestContainer(
+        DesignNode d, RenderedNode lca,
+        Dictionary<RenderedNode, IReadOnlyList<RenderedNode>> chainOf, HashSet<RenderedNode> taken)
+    {
+        // 設計框沒有大小(手寫 JSON 可以不寫 box):沒有東西可比,照 2.4 以前配最近共同祖先
+        if (d.Box.W <= 0 || d.Box.H <= 0) return lca;
+        double Distance(Box b) => Math.Abs(b.W - d.Box.W) + Math.Abs(b.H - d.Box.H);
+
+        RenderedNode? best = SizePlausible(d, lca) ? lca : null;
+        var chain = chainOf[lca];
+        for (var i = chain.Count - 2; i >= 1; i--) // chain[0] 是根,chain[^1] 是最近共同祖先本身
+        {
+            var outer = chain[i];
+            if (taken.Contains(outer) || HoldsOtherMatch(outer, chain[i + 1], taken)) break;
+            if (SizePlausible(d, outer) && (best is null || Distance(outer.Box) < Distance(best.Box) - 0.5))
+                best = outer;
+        }
+        return best;
     }
 
     /// <summary>wrapper 的子樹裡,除了 inner 那一支之外,有沒有已配對的節點。</summary>

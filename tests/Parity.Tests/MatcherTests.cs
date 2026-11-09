@@ -136,8 +136,8 @@ public class MatcherTests
                     Design("3", "card-title", DesignNodeType.Text, characters: "Widget"),
                     Design("4", "card-price", DesignNodeType.Text, characters: "$9.99"),
                 ]));
-        var rendered = Rendered("body",
-            children: Rendered("body > div", "div", classes: "sc-1a2b3c",
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900),
+            children: Rendered("body > div", "div", classes: "sc-1a2b3c", box: new Box(0, 0, 200, 120),
                 children:
                 [
                     Rendered("body > div > h3", "h3", text: "Widget"),
