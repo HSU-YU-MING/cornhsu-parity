@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1707 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1730 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -130,6 +130,7 @@ parity snapshot            # 把「現在跑著的畫面」凍結成設計基準
                            #   (--stabilize 連拍 3 次,把「會動」的區域——廣告輪播、動畫、
                            #   lazy 媒體——列出來並給可貼進 config 的 ignore 建議)
 parity lint                # design lint:設計稿的值是否落在 design token 允許集合(只看設計,不比實作)
+parity lint --page         # 同一個問題問做出來的頁面:頁面實際用了哪些不在 token 裡的顏色與尺寸
 parity check --reverse     # 反向檢視:設計師照現有頁面重畫時,看自己的稿跟現況差在哪(不做把關)
 parity bug-report          # (實驗性)整理版本/作業系統/Node/Chromium 資訊並印出,附預填好的 GitHub issue 連結。
                            #   bug-report 本身不連網;打開連結時遮罩過的報告會跟著網址送到 github.com,按送出才會建立 issue。
@@ -358,7 +359,29 @@ parity check               # 2. 大膽重構;3. check 保證與快照一致
 
 ## 給設計師的兩個方向
 
-**新頁面守設計系統:`parity lint`**——只看設計稿這一邊,驗每個節點的值是否落在 `tokensFile` 的允許集合:顏色(ΔE 容差內命中即過)、fontSize / padding / itemSpacing / cornerRadius(等於任一尺寸 token 即過;間距/字級/圓角共用同一份 scale)。違規附「最近的 token」——訊息是「改成這個」,不是只有「你錯了」。有違規 exit 1,可進 CI。沒定義某維度的 token 就不 lint 該維度。
+**新頁面守設計系統:`parity lint`**——只看設計稿這一邊,驗每個節點的值是否落在 `tokensFile` 的允許集合:顏色(ΔE 容差內命中即過)、fontSize / padding / itemSpacing / cornerRadius(等於任一尺寸 token 即過;間距/字級/圓角共用同一份 scale)。違規附「最近的 token」——訊息是「改成這個」,不是只有「你錯了」。有違規 exit 1,可進 CI。沒定義某維度的 token 就不 lint 該維度。離 token 只差一點的違規會標 `[near miss]`(跟下面 `--page` 同一個判準)。
+
+**頁面本身也守設計系統:`parity lint --page`**——設計稿用對了 token,頁面照樣可能在旁邊手寫一個色碼。`--page` 開每個 target(視窗、`auth`、
+`steps` 跟 `check` 一樣),拿頁面**實際用到的值**對 `tokensFile`——不需要配對,看每個看得見的元素:文字色、背景、邊框色、字級、內距、圓角。
+同一個不在 token 裡的值只報一次,附用到的元素數與最多三個例子:
+
+```text
+target /: 12 elements, 1 near miss(es), 12 off-token value(s)
+  ✘ near miss fontSize 30px on 1 element(s) — use font-size-2xl = 32px (off by 2)
+      e.g. ‹body > h1:nth-of-type(1)›
+  · off token background #F3F4F6 on 3 element(s) — nearest color-primary = #2563EB (ΔE 46.13)
+      e.g. ‹#feature-card-1›, ‹#feature-card-2›, ‹#feature-card-3›
+```
+
+- **near miss**——離某個顏色 token ΔE 6 以內(`tolerances.colorDeltaE` 之外),或離某個尺寸 token 2px 以內且不超過值的四分之一:
+  幾乎一定是手滑,所以**會擋**(exit 1),並說該用哪個 token。
+- **off token**——附近沒有 token:故意的、第三方元件,或 token 檔少收的值。只列出、不擋——真實頁面這種值很多,一直紅的檢查會被關掉。
+- token 色降透明度(分隔線用的 `rgba(<ink>, .14)`)算用了那個 token。
+- token 檔是平面的「名稱 → 值」,所以尺寸 token 看名字分種類:`font`/`text`/`type` → 字級,`radius`/`rounded`/`corner` → 圓角,
+  `space`/`spacing`/`gap`/`pad`/`margin`/`inset`/`gutter` → 內距;看不出種類的每一類都算。某一類一個 token 都沒有就不檢查那一類。
+  (設計 lint 維持原本的做法,每個尺寸對全部的尺寸 token。)
+- 拿這個專案自己的作品集網站、以它的 CSS 變數當 token 實測:三頁 616 個元素,兩個 near miss(同一個寫死的程式碼卡片標題列,
+  `#2B271F`,在 `ink` 旁邊)與十二個 off token,全是直接寫在頁面 CSS 裡的顏色。
 
 **照現況重畫/改版:`parity check --reverse`**——方向反過來:「期望」= 現況(實作)、「實際」= 你的設計稿。給設計師一張「我的稿跟現在線上差在哪」的清單;不做把關,永遠 exit 0。
 

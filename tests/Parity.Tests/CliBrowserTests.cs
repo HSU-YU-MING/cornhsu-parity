@@ -676,6 +676,28 @@ public class CliBrowserTests
             .ToList();
     }
 
+    // ---------- lint --page:頁面用到的值對 token ----------
+
+    [Fact]
+    public async Task Lint_page_flags_the_demo_heading_as_a_near_miss_of_its_font_token()
+    {
+        // 2.5.0:離線示範的標題刻意做成 30px,token 檔有 font-size-2xl = 32px → near miss、exit 1。
+        // 18px 的卡片標題離 space-5(20)也只差 2,但那是間距 token:不能說成「改用 space-5」
+        using var dir = new TempDir();
+        foreach (var f in new[] { "design.json", "index.html", "parity.config.json", "tokens.json" })
+            File.Copy(Repo.PathOf("samples", "demo", f), dir.File(f));
+
+        var r = await Cli.RunAsync("lint", "--config", dir.File("parity.config.json"), "--page");
+        if (Cli.BrowserMissing(r)) { Console.WriteLine(Skipped); return; }
+
+        Assert.Equal(1, r.ExitCode);
+        var plain = Regex.Replace(r.Out, @"\x1b\[[0-9;]*m", "");
+        Assert.Contains("✘ near miss fontSize 30px on 1 element(s) — use font-size-2xl = 32px (off by 2)", plain);
+        Assert.Contains("1 near miss(es)", plain);
+        Assert.DoesNotContain("use space-5", plain);
+        Assert.Contains("· off token fontSize 18px", plain);
+    }
+
     // ---------- 頁面狀態:snapshot 與 check 套同一組步驟 ----------
 
     [Fact]
