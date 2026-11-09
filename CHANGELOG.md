@@ -2,7 +2,10 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.5.1 — 2026-11-10
+
+> **修正 `parity snapshot --target`:只重拍那一頁,不再把整份多頁快照換成那一頁。** 其他沒變,設定檔不用改。
+> *Fix: `parity snapshot --target` refreezes just that page instead of replacing the whole multi-page snapshot. Nothing else changed.*
 
 ### 修正
 
