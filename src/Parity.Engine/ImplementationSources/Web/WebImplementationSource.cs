@@ -243,8 +243,18 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             TextShadows = CssEffects.ParseShadows(Str(el, "textShadow")),
             Gradient = CssEffects.ParseGradient(Str(el, "backgroundImage")),
             LineCount = el.TryGetProperty("lineCount", out var lineCount) && lineCount.ValueKind == JsonValueKind.Number ? lineCount.GetInt32() : null,
+            UnreadColors = Unread(el),
         };
 
+        // 讀不懂的顏色記下來(2.5.0):比對跳過、主控台明講,不要當成「沒有」
+        static IReadOnlyList<UnreadColor>? Unread(JsonElement e)
+        {
+            List<UnreadColor>? list = null;
+            foreach (var field in ColorFields)
+                foreach (var value in CssEffects.UnreadableColors(Str(e, field)))
+                    (list ??= []).Add(new UnreadColor(field, value));
+            return list;
+        }
         static string? Str(JsonElement e, string prop)
             => e.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
         static double? Px(JsonElement e, string prop)
@@ -252,6 +262,10 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
         static Rgba? Color(JsonElement e, string prop)
             => Rgba.TryParseCss(Str(e, prop), out var c) ? c : null;
     }
+
+    /// <summary>擷取結果裡帶顏色的欄位(CaptureScript 的鍵名)。</summary>
+    private static readonly string[] ColorFields =
+        ["color", "background", "effectiveBackground", "borderColor", "boxShadow", "textShadow", "backgroundImage"];
 
     /// <summary>
     /// any 與 linux-musl-*(Alpine)的平台包不帶 Playwright driver:Playwright 沒有那些平台的 Node。

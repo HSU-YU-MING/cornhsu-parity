@@ -118,12 +118,15 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
             {
                 if (r.Color is { } textColor) CompareColor(diffs, "color", fill, textColor);
             }
-            else
+            else if (r.Background is { IsTransparent: false } own)
+                CompareColor(diffs, "background", fill, own);
+            // 讀不懂的顏色不是透明(2.5.0):以前會落到下面報「(transparent)」,是假落差。不比,主控台另外說有幾個顏色沒比
+            else if (!r.HasUnreadColor("background"))
             {
-                var bg = r.Background is { IsTransparent: false } b ? b : r.EffectiveBackground;
-                if (bg is { } actualBg) CompareColor(diffs, "background", fill, actualBg);
-                else diffs.Add(new PropDiff("background", fill.ToHex(), "(transparent)", null,
-                    null, _tol.ColorDeltaE, Severity.Medium, DiffStatus.Missing));
+                if (r.EffectiveBackground is { } inherited) CompareColor(diffs, "background", fill, inherited);
+                else if (!r.HasUnreadColor("effectiveBackground"))
+                    diffs.Add(new PropDiff("background", fill.ToHex(), "(transparent)", null,
+                        null, _tol.ColorDeltaE, Severity.Medium, DiffStatus.Missing));
             }
         }
 
@@ -547,8 +550,12 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
                 CompareColorSoft(diffs, "borderColor", color, actualColor);
         }
 
-        CompareShadows(diffs, d.Shadows, d.Type == DesignNodeType.Text ? r.TextShadows : r.Shadows);
-        CompareGradient(diffs, pair);
+        // 陰影或漸層裡有讀不懂的顏色:那一層會被當成不存在,比了就是假的「陰影不見」「漸層不見」,所以整項不比(2.5.0)
+        var shadowField = d.Type == DesignNodeType.Text ? "textShadow" : "boxShadow";
+        if (!r.HasUnreadColor(shadowField))
+            CompareShadows(diffs, d.Shadows, d.Type == DesignNodeType.Text ? r.TextShadows : r.Shadows);
+        if (!r.HasUnreadColor("backgroundImage"))
+            CompareGradient(diffs, pair);
     }
 
     private static readonly Insets NoBorder = new(0, 0, 0, 0);

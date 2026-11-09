@@ -95,12 +95,36 @@ public sealed class ScanSession : IAsyncDisposable
             };
 
             var result = await _engine.RunDetailedAsync(new ScanRequest(designRef, implRef, target.Route), ct);
+            NoteUnreadColors(result, target);
             _implSource.Screenshots.TryGetValue(url, out var screenshot);
             if (_compareImages && screenshot is not null)
                 result = await CompareImagesAsync(result, target, screenshot, ct);
             scans.Add(new TargetScan(target, result, screenshot));
         }
         return scans;
+    }
+
+    /// <summary>
+    /// 配上的元素裡有讀不懂的顏色(例如 <c>color(rec2020 …)</c>)時說一聲:那些顏色沒比(2.5.0)。
+    /// 以前讀不懂就當成沒有,背景會被報成透明;現在比對跳過,這裡明講,不讓「沒報」被讀成「一樣」。
+    /// 只算配上的元素:沒配上的本來就不比。頁面上的字串一律過 <see cref="ConsoleText.Safe"/>。
+    /// </summary>
+    internal static string? UnreadColorsNote(ScanResult result, string route)
+    {
+        var matched = result.Report.Nodes.Select(n => n.Selector).ToHashSet(StringComparer.Ordinal);
+        var unread = result.RenderedTree.DescendantsAndSelf()
+            .Where(n => n.UnreadColors is not null && matched.Contains(n.Selector))
+            .SelectMany(n => n.UnreadColors!.Select(u => (n.Selector, u.Value)))
+            .ToList();
+        if (unread.Count == 0) return null;
+        var (selector, value) = unread[0];
+        return $"note: {unread.Count} color value(s) on matched elements of target {ConsoleText.Safe(route)} could not be read, " +
+            $"so those colors were not compared (e.g. {ConsoleText.Safe(value)} on ‹{ConsoleText.Safe(selector)}›).";
+    }
+
+    private static void NoteUnreadColors(ScanResult result, TargetConfig target)
+    {
+        if (UnreadColorsNote(result, target.Route) is { } note) Console.Error.WriteLine(note);
     }
 
     /// <summary>

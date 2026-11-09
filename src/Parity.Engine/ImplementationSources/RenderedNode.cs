@@ -21,6 +21,17 @@ public sealed record RenderedNode(
     /// <summary>沿祖先鏈找到的第一個不透明背景(避免 transparent 誤報)。</summary>
     public Rgba? EffectiveBackground { get; init; }
 
+    /// <summary>
+    /// 這個元素上讀不懂的顏色(擷取端的計算值,例如 <c>color(rec2020 …)</c>),依擷取欄位列出(2.5.0)。
+    /// 讀不懂不等於沒有:比對跳過這些屬性,不報「透明」「陰影不見」這種假落差;主控台會說有幾個顏色沒比。
+    /// 沒有讀不懂的就是 null。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<UnreadColor>? UnreadColors { get; init; }
+
+    /// <summary>這個擷取欄位(<c>background</c>、<c>boxShadow</c>…)有讀不懂的顏色。</summary>
+    public bool HasUnreadColor(string field) => UnreadColors?.Any(u => u.Field == field) == true;
+
     public string? DomId { get; init; }
     public string? Classes { get; init; }
     public string? AriaLabel { get; init; }
@@ -125,6 +136,9 @@ public sealed record ImplRef(
     /// </summary>
     public bool CaptureScreenshot { get; init; } = true;
 }
+
+/// <summary>讀不懂的顏色:哪一個擷取欄位、原本的計算值。</summary>
+public sealed record UnreadColor(string Field, string Value);
 
 /// <summary>實作來源抽象——留給 WPF/桌面的門(規畫書 4.5)。</summary>
 public interface IImplementationSource

@@ -105,6 +105,7 @@ public class ReportingTests
             "explicit", "selector", // NodePair.MatchedBy 的值
             "none", // 沒有陰影時報告上顯示的值
             "linear", // GradientSpec.Kind 的值:線性是預設,報告上不顯示
+            "effectiveBackground", "backgroundImage", "boxShadow", "textShadow", // HasUnreadColor 的擷取欄位名(讀不懂的顏色),不是 prop
             // NoTextTags:這些元素的文字不在子節點裡
             "input", "textarea", "select", "img", "svg", "canvas", "video", "audio", "iframe", "object", "embed", "picture",
         ];

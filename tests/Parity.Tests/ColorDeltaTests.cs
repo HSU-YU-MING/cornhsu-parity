@@ -151,8 +151,64 @@ public class RgbaParseTests
     [InlineData("color(display-p3 1 x 0)")]
     [InlineData("color(display-p3 1 0 0 / x)")]
     [InlineData("rgb 1 2 3")]                    // 沒有括號
+    [InlineData("color(a98-rgb 0.4 0.5 0.6)")]   // 還不支援的色域:擷取端會記成「讀不懂」,不比、明講
+    [InlineData("color(prophoto-rgb 0.5 0.4 0.3)")]
+    [InlineData("oklab(0.5 0.1)")]               // 分量不足
+    [InlineData("lab(50 x 0)")]
+    [InlineData("lch(50 30 banana)")]
     public void Rejects_unparsable_colors(string? css)
         => Assert.False(Rgba.TryParseCss(css, out _));
+
+    // oklab / lab / lch / xyz / srgb-linear(2.5.0)。期望值是 Chromium 156 自己換算的結果:
+    // getComputedStyle(color-mix(in srgb, X 100%, black 0%)) 得到 color(srgb …),再乘 255 四捨五入、超出色域的夾到 0–255。
+    // 字串都是 Chromium 計算值實際長的樣子(lab 的 L 是 0–100 的數字、oklab 的 L 是 0–1)。允許 ±1/頻道的捨入
+    [Theory]
+    [InlineData("oklab(0.6 0.1 -0.1)", 159, 99, 186)]
+    [InlineData("oklab(0.4 0.05 0.02)", 98, 60, 59)]
+    [InlineData("oklab(0.623 -0.0378409 -0.210628)", 43, 127, 255)] // Tailwind 的 blue-500 混一半透明(超出 sRGB → 夾)
+    [InlineData("lab(50 40 -20)", 171, 90, 154)]
+    [InlineData("lab(30 10 10)", 89, 65, 56)]
+    [InlineData("lab(90 -20 60)", 216, 236, 104)]
+    [InlineData("lch(60 50 120)", 118, 156, 62)]
+    [InlineData("lch(20 30 270)", 8, 50, 93)]
+    [InlineData("lch(75 40 30)", 252, 159, 150)]
+    [InlineData("oklch(0.7 none 120)", 158, 158, 158)]                 // none = 0(Chromium 原樣回 none)
+    [InlineData("color(xyz-d65 0.2 0.3 0.4)", 0, 167, 164)]
+    [InlineData("color(xyz 0.2 0.3 0.4)", 0, 167, 164)]               // xyz = xyz-d65
+    [InlineData("color(xyz-d50 0.2 0.3 0.4)", 0, 168, 189)]
+    [InlineData("color(srgb-linear 0.2 0.5 0.8)", 124, 188, 231)]
+    public void Parses_lab_family_like_chromium(string css, int r, int g, int b)
+    {
+        Assert.True(Rgba.TryParseCss(css, out var c));
+        Assert.InRange(c.R, Math.Max(0, r - 1), Math.Min(255, r + 1));
+        Assert.InRange(c.G, Math.Max(0, g - 1), Math.Min(255, g + 1));
+        Assert.InRange(c.B, Math.Max(0, b - 1), Math.Min(255, b + 1));
+        Assert.Equal(1.0, c.A, 3);
+    }
+
+    [Theory]
+    [InlineData("oklab(0.4 0.05 0.02 / 0.5)", 0.5)]   // Chromium 的半透明寫法
+    [InlineData("lab(30 10 10 / 0.5)", 0.5)]
+    [InlineData("lab(30 10 10 / 50%)", 0.5)]
+    [InlineData("lch(20 30 270 / 0.25)", 0.25)]
+    [InlineData("color(xyz-d65 0.2 0.3 0.4 / 0.75)", 0.75)]
+    public void Lab_family_alpha(string css, double alpha)
+    {
+        Assert.True(Rgba.TryParseCss(css, out var c));
+        Assert.Equal(alpha, c.A, 3);
+    }
+
+    [Theory]
+    [InlineData("lab(50% 40 -20)", "lab(50 40 -20)")]          // L 的 % 以 100 為 100%
+    [InlineData("lab(50 32% -16%)", "lab(50 40 -20)")]         // a、b 的 % 以 125 為 100%
+    [InlineData("lch(60 33.3333% 120deg)", "lch(60 50 120)")]  // C 的 % 以 150 為 100%,色相可帶 deg
+    [InlineData("oklab(60% 25% -25%)", "oklab(0.6 0.1 -0.1)")] // a、b 的 % 以 0.4 為 100%
+    public void Lab_family_percentages(string percent, string plain)
+    {
+        Assert.True(Rgba.TryParseCss(percent, out var a));
+        Assert.True(Rgba.TryParseCss(plain, out var b));
+        Assert.Equal(b, a);
+    }
 
     [Fact]
     public void Hex_carries_alpha_only_when_translucent()

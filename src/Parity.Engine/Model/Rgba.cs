@@ -13,7 +13,7 @@ public readonly record struct Rgba(byte R, byte G, byte B, double A = 1.0)
 
     public override string ToString() => ToHex();
 
-    /// <summary>解析 CSS 顏色字串:#rgb/#rrggbb/#rrggbbaa、rgb()、rgba()。</summary>
+    /// <summary>解析 CSS 顏色字串:#rgb/#rrggbb/#rrggbbaa、rgb()、rgba()、oklch()、oklab()、lab()、lch()、color(srgb / display-p3 / srgb-linear / xyz …)。</summary>
     public static bool TryParseCss(string? s, out Rgba color)
     {
         color = default;
@@ -45,17 +45,130 @@ public readonly record struct Rgba(byte R, byte G, byte B, double A = 1.0)
             return TryParseComponents(inner, srgb01: false, out color);
         if (head == "oklch")
             return TryParseOklch(inner, out color);
+        // Chromium 的計算值保留原本的色彩空間:Tailwind v4 的半透明色與 color-mix() 都會變成 oklab(… / 0.5)(2.5.0)
+        if (head == "oklab")
+            return TryParseOklab(inner, out color);
+        if (head is "lab" or "lch")
+            return TryParseLab(inner, polar: head == "lch", out color);
         if (head == "color")
         {
             inner = inner.TrimStart();
-            if (inner.StartsWith("srgb ", StringComparison.OrdinalIgnoreCase) ||
-                inner.Equals("srgb", StringComparison.OrdinalIgnoreCase))
-                return TryParseComponents(inner[4..], srgb01: true, out color);
-            if (inner.StartsWith("display-p3", StringComparison.OrdinalIgnoreCase))
-                return TryParseDisplayP3(inner[10..], out color);
-            return false; // lab / lch / rec2020 等其餘色域暫不支援
+            var space = inner.Split(' ', 2)[0].ToLowerInvariant();
+            var rest = inner[space.Length..];
+            return space switch
+            {
+                "srgb" => TryParseComponents(rest, srgb01: true, out color),
+                "display-p3" => TryParseDisplayP3(rest, out color),
+                "srgb-linear" => TryParseLinear(rest, LinearSrgbFrom.Identity, out color),
+                "xyz" or "xyz-d65" => TryParseLinear(rest, LinearSrgbFrom.XyzD65, out color),
+                "xyz-d50" => TryParseLinear(rest, LinearSrgbFrom.XyzD50, out color),
+                _ => false, // rec2020、a98-rgb、prophoto-rgb 暫不支援:擷取端會記下來,不比、明講(UnreadColor)
+            };
         }
         return false;
+    }
+
+    /// <summary>
+    /// 函式式顏色的分量:空白或斜線分隔,3 個加選填的 alpha。<c>none</c>(CSS Color 4:這個分量沒有值)算 0,
+    /// 跟瀏覽器畫出來的一樣。
+    /// </summary>
+    private static string[]? Tokens(string inner)
+    {
+        var tok = inner.Replace('/', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return tok.Length is 3 or 4 ? tok : null;
+    }
+
+    /// <summary>"62.8%" → 0.628 × percentScale;純數字原樣;none → 0。</summary>
+    private static bool Number(string t, double percentScale, out double v)
+    {
+        if (t.Equals("none", StringComparison.OrdinalIgnoreCase)) { v = 0; return true; }
+        if (t.EndsWith('%') && double.TryParse(t[..^1], CultureInfo.InvariantCulture, out var p))
+        { v = p / 100.0 * percentScale; return true; }
+        return double.TryParse(t, CultureInfo.InvariantCulture, out v);
+    }
+
+    /// <summary>色相:角度,可帶 deg;none → 0。</summary>
+    private static bool Hue(string t, out double degrees)
+        => Number(t.EndsWith("deg", StringComparison.OrdinalIgnoreCase) ? t[..^3] : t, percentScale: 1, out degrees);
+
+    private static bool Alpha(string[] tok, out double alpha)
+    {
+        alpha = 1.0;
+        return tok.Length == 3 || Number(tok[3], percentScale: 1.0, out alpha);
+    }
+
+    /// <summary>oklab(L a b [/ alpha]):L 是 0–1 或 %;a、b 的 % 以 0.4 為 100%(CSS Color 4)。</summary>
+    private static bool TryParseOklab(string inner, out Rgba color)
+    {
+        color = default;
+        if (Tokens(inner) is not { } tok) return false;
+        if (!Number(tok[0], 1.0, out var l) || !Number(tok[1], 0.4, out var a) || !Number(tok[2], 0.4, out var b) || !Alpha(tok, out var alpha))
+            return false;
+        var (r, g, bl) = OklabToLinearSrgb(l, a, b);
+        color = FromLinear(r, g, bl, alpha);
+        return true;
+    }
+
+    /// <summary>
+    /// lab(L a b) 與 lch(L C H):CIE Lab,D50 白點(CSS Color 4)。L 是 0–100(% 以 100 為 100%);
+    /// a、b 的 % 以 125 為 100%,C 的 % 以 150 為 100%。轉成 XYZ D50 → Bradford 轉 D65 → 線性 sRGB。
+    /// </summary>
+    private static bool TryParseLab(string inner, bool polar, out Rgba color)
+    {
+        color = default;
+        if (Tokens(inner) is not { } tok) return false;
+        if (!Number(tok[0], 100.0, out var l) || !Alpha(tok, out var alpha)) return false;
+        double a, b;
+        if (polar)
+        {
+            if (!Number(tok[1], 150.0, out var c) || !Hue(tok[2], out var h)) return false;
+            a = c * Math.Cos(h * Math.PI / 180.0);
+            b = c * Math.Sin(h * Math.PI / 180.0);
+        }
+        else if (!Number(tok[1], 125.0, out a) || !Number(tok[2], 125.0, out b)) return false;
+
+        const double kappa = 24389.0 / 27, epsilon = 216.0 / 24389;
+        var f1 = (l + 16) / 116;
+        var f0 = a / 500 + f1;
+        var f2 = f1 - b / 200;
+        var x = Math.Pow(f0, 3) > epsilon ? Math.Pow(f0, 3) : (116 * f0 - 16) / kappa;
+        var y = l > kappa * epsilon ? Math.Pow(f1, 3) : l / kappa;
+        var z = Math.Pow(f2, 3) > epsilon ? Math.Pow(f2, 3) : (116 * f2 - 16) / kappa;
+        var (r, g, bl) = LinearSrgbFrom.XyzD50(x * D50White[0], y * D50White[1], z * D50White[2]);
+        color = FromLinear(r, g, bl, alpha);
+        return true;
+    }
+
+    /// <summary>D50 白點的 XYZ(CSS Color 4 用 x = 0.3457、y = 0.3585 算的)。</summary>
+    private static readonly double[] D50White = [0.3457 / 0.3585, 1.0, (1.0 - 0.3457 - 0.3585) / 0.3585];
+
+    /// <summary>color(srgb-linear …)、color(xyz …) 這類:三個分量線性轉成線性 sRGB。</summary>
+    private static bool TryParseLinear(string inner, Func<double, double, double, (double, double, double)> toLinearSrgb, out Rgba color)
+    {
+        color = default;
+        if (Tokens(inner) is not { } tok) return false;
+        if (!Number(tok[0], 1.0, out var c0) || !Number(tok[1], 1.0, out var c1) || !Number(tok[2], 1.0, out var c2) || !Alpha(tok, out var alpha))
+            return false;
+        var (r, g, b) = toLinearSrgb(c0, c1, c2);
+        color = FromLinear(r, g, b, alpha);
+        return true;
+    }
+
+    /// <summary>轉到線性 sRGB 的矩陣(CSS Color 4 的參考實作)。</summary>
+    private static class LinearSrgbFrom
+    {
+        public static (double, double, double) Identity(double r, double g, double b) => (r, g, b);
+
+        public static (double, double, double) XyzD65(double x, double y, double z) => (
+            3.2409699419045226 * x - 1.537383177570094 * y - 0.4986107602930034 * z,
+            -0.9692436362808796 * x + 1.8759675015077202 * y + 0.04155505740717559 * z,
+            0.05563007969699366 * x - 0.20397695888897652 * y + 1.0569715142428786 * z);
+
+        // Bradford 色適應:D50 → D65,再轉線性 sRGB
+        public static (double, double, double) XyzD50(double x, double y, double z) => XyzD65(
+            0.955473421488075 * x - 0.02309845494876471 * y + 0.06325924320057072 * z,
+            -0.0283697093338637 * x + 1.0099953980813041 * y + 0.021041441191917323 * z,
+            0.012314014864481998 * x - 0.020507649298898964 * y + 1.330365926242124 * z);
     }
 
     /// <summary>
@@ -66,28 +179,14 @@ public readonly record struct Rgba(byte R, byte G, byte B, double A = 1.0)
     private static bool TryParseOklch(string inner, out Rgba color)
     {
         color = default;
-        var tok = inner.Replace('/', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (tok.Length is not (3 or 4)) return false;
-
-        if (!Frac(tok[0], percentScale: 1.0, out var l)) return false;
-        if (!Frac(tok[1], percentScale: 0.4, out var c)) return false;
-        var hTok = tok[2].EndsWith("deg", StringComparison.OrdinalIgnoreCase) ? tok[2][..^3] : tok[2];
-        if (!double.TryParse(hTok, CultureInfo.InvariantCulture, out var hDeg)) return false;
-        var alpha = 1.0;
-        if (tok.Length == 4 && !Frac(tok[3], percentScale: 1.0, out alpha)) return false;
+        if (Tokens(inner) is not { } tok) return false;
+        if (!Number(tok[0], 1.0, out var l) || !Number(tok[1], 0.4, out var c) || !Hue(tok[2], out var hDeg) || !Alpha(tok, out var alpha))
+            return false;
 
         var hRad = hDeg * Math.PI / 180.0;
         var (r, g, b) = OklabToLinearSrgb(l, c * Math.Cos(hRad), c * Math.Sin(hRad));
         color = FromLinear(r, g, b, alpha);
         return true;
-
-        // "62.8%" → 0.628×scale基準;純數字原樣
-        static bool Frac(string t, double percentScale, out double v)
-        {
-            if (t.EndsWith('%') && double.TryParse(t[..^1], CultureInfo.InvariantCulture, out var p))
-            { v = p / 100.0 * percentScale; return true; }
-            return double.TryParse(t, CultureInfo.InvariantCulture, out v);
-        }
     }
 
     /// <summary>color(display-p3 r g b [/ a]) → sRGB(分量 0–1 或 %)。超出 sRGB 的 clamp 進來。</summary>
