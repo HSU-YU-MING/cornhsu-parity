@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1510 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1519 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -314,7 +314,7 @@ route 只是報告上的標籤,取好認的名字就行。frame 尺寸 ≠ 想�
 
 1. **自動文字錨定**:設計 TEXT 文字 ↔ 頁面文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)
 2. **圖層名 ↔ id / class / aria-label**(沒有 aria-label 時改看 `data-testid`):`CTA Button` 自動對上 `class="cta-button"`。唯一才配:同名而且大小合理的元素有好幾個時,先留下在「最近一個已配對祖先」那個元素裡面的,再留下包住最多已配對內容的;還剩不只一個,就列為 `ambiguous-name`,不拿第一個(2.5.0 以前拿文件順序的第一個)
-3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)
+3. **容器推論**:配不到的容器,用「已配對子孫的最近共同祖先」反推(純結構,不猜)。只包一段字的框(設計稿把按鈕畫成框包字),配到字所在的元素或外面那層 wrapper,挑大小最接近框的(每一軸差 4px 或 10% 以內;兩層一樣近、或字的元素裡面只有一層而且那層也對得上時不配)。挑到字的元素本身時,兩個設計節點共用它(`auto-shared`):框比背景色、內距、圓角、尺寸,字比字體、顏色、內容(文字節點本來就不比尺寸與位置,這兩項不會重複報)(2.5.0)
 4. **手動補漏**:HTML 加 `data-parity="圖層名"`,或 `parity.map.json` 寫 `{ "圖層名": "CSS selector" }`
 5. 配不到 → **誠實列進未配對清單**(真正需要人補的才補)。文字節點的文字整頁都找不到時,原因是 `text-not-found`(元件不見),而不是「分不出來」——`gate.failOnUnmatched` 可以拿它擋 PR
 
@@ -494,7 +494,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 - **未知的 key** — 消費端必須忽略不認得的 key。2.x 之內 `report.json` 只會**新增**欄位,既有的 key 不刪、不改名、不改型別(那是 3.0 的事)。下面的封閉集在 2.x 之內也不會多成員。
 - `severity` — **封閉集**(拼寫與成員都凍結):`none` / `minor` / `medium` / `serious` / `critical`;`status`:`mismatch` / `missing`。
 - `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`、`ambiguous-name`。
-- `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`。
+- `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`、`auto-shared`。
 - `extras`(每份報告,`compare.extras`)— 沒開時是 `null`(預設、`check --reverse`、以及這個欄位出現之前寫的所有報告);開了是 `{ "total": n, "items": [{ "selector", "tag", "box" }] }`,`total: 0` 加上空的 `items` 表示「開了、沒有」。`items` 依面積由大到小,每頁最多 20 筆;`total` 是全部的數量。不帶元素文字。永遠不影響 gate 與分數。
 - `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
 

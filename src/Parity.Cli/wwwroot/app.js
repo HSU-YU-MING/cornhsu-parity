@@ -17,7 +17,7 @@ const state = {
 };
 
 const sevRank = { critical: 4, serious: 3, medium: 2, minor: 1, none: 0 };
-const matchedByLabel = { selector: 'snapshot', explicit: 'manual', 'auto-text': 'text', 'auto-name': 'name', 'auto-container': 'container' };
+const matchedByLabel = { selector: 'snapshot', explicit: 'manual', 'auto-text': 'text', 'auto-name': 'name', 'auto-container': 'container', 'auto-shared': 'shared' };
 
 // ---------- 資料 ----------
 

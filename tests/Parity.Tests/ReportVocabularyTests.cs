@@ -14,7 +14,7 @@ public class ReportVocabularyTests
         ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "ambiguous-name"];
 
     private static readonly string[] KnownMatchedBy =
-        ["selector", "explicit", "auto-text", "auto-name", "auto-container"];
+        ["selector", "explicit", "auto-text", "auto-name", "auto-container", "auto-shared"];
 
     /// <summary>README 那一行裡反引號包住的值。</summary>
     private static List<string> BacktickedValuesOnLine(string readme, string linePattern)
