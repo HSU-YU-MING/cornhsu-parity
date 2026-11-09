@@ -18,7 +18,11 @@ public sealed record PropDiff(
     double Tolerance,
     Severity Severity,
     DiffStatus Status = DiffStatus.Mismatch,
-    bool Soft = false);
+    bool Soft = false,
+    // 設定檔 accept 收下的落差(2.5.0):值是原因。被收下的落差同時是 soft——gate、分數、baseline 本來就都看 soft,
+    // 每個消費端不必各自再認一次。沒收下的不寫這個 key:沒用 accept 的人,report.json 一個位元組都不變
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? Accepted = null);
 
 /// <summary>一個配對成功的設計節點的比對結果。兩個框給疊圖視圖用(M3)。</summary>
 public sealed record NodeResult(

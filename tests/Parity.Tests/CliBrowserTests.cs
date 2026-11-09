@@ -633,6 +633,49 @@ public class CliBrowserTests
         Assert.True(outline.GetProperty("soft").GetBoolean());
     }
 
+    [Fact]
+    public async Task An_accepted_gap_lets_the_check_pass_and_a_stale_entry_gets_a_note()
+    {
+        // 單筆落差豁免(2.5.0):設計稿 #box 寬 300、頁面 200 → critical 的 width 落差擋下(exit 1)。
+        // 設定檔收下這一條、寫原因 → 過(exit 0),報告照樣列出它、標 accepted;另一條對不到東西的條目在 stderr 說一聲。
+        // 頁面又改成 250:收下的是「200」,落差回來、照擋
+        using var dir = new TempDir();
+        var config = BoxProject(dir);
+        var before = await Cli.RunAsync("check", "--config", config);
+        if (Cli.BrowserMissing(before)) { Console.WriteLine(Skipped); return; }
+        Assert.Equal(1, before.ExitCode);
+
+        dir.Write("parity.config.json", """
+            { "designFile": "design.json", "targets": [{ "route": "/", "frame": "", "url": "./page.html" }],
+              "accept": [
+                { "layer": "zz", "prop": "width", "actual": "200", "reason": "narrower box approved in review" },
+                { "layer": "Gone", "prop": "color", "reason": "old" } ] }
+            """);
+        var accepted = await Cli.RunAsync("check", "--config", config, "--md", dir.File("a.md"));
+
+        Assert.Equal(0, accepted.ExitCode);
+        var width = Diffs(dir).Single(d => d.Diff.GetProperty("prop").GetString() == "width").Diff;
+        Assert.True(width.GetProperty("soft").GetBoolean());
+        Assert.Equal("narrower box approved in review", width.GetProperty("accepted").GetString());
+        Assert.Contains("[accepted: narrower box approved in review]", accepted.Out);
+        Assert.Contains("note: accept[1] (Gone color) matched no gap", accepted.Err);
+        Assert.DoesNotContain("accept[0]", accepted.Err);
+        Assert.Contains("### Accepted gaps (1)", File.ReadAllText(dir.File("a.md")));
+
+        dir.Write("page.html", Page("<div id=\"box\"></div>", BoxCss.Replace("width: 200px", "width: 250px")));
+        var changed = await Cli.RunAsync("check", "--config", config);
+        Assert.Equal(1, changed.ExitCode);
+        Assert.Contains("note: accept[0] (zz width at 200) matched no gap — it is fixed or the value changed.", changed.Err);
+    }
+
+    private static List<(string Layer, JsonElement Diff)> Diffs(TempDir dir)
+    {
+        using var report = JsonDocument.Parse(File.ReadAllText(dir.File(".parity", "report.json")));
+        return report.RootElement.GetProperty("reports")[0].GetProperty("nodes").EnumerateArray()
+            .SelectMany(n => n.GetProperty("diffs").EnumerateArray().Select(d => (n.GetProperty("designLayer").GetString()!, d.Clone())))
+            .ToList();
+    }
+
     // ---------- serve:只綁 loopback + Host / Origin 防線 ----------
 
     [Fact]

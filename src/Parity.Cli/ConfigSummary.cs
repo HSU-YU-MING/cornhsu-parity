@@ -19,6 +19,7 @@ internal sealed record ConfigSummary(
     bool HasMapFile,
     bool HasCustomBaselineFile,
     int IgnoreRules,
+    int AcceptRules,
     ToleranceConfig Tolerances,
     IReadOnlyList<string> FailOn,
     IReadOnlyList<string> FailOnUnmatched,
@@ -51,6 +52,7 @@ internal sealed record ConfigSummary(
             HasMapFile: config.MapFile is not null,
             HasCustomBaselineFile: config.BaselineFile is not null,
             IgnoreRules: config.Ignore.Count,
+            AcceptRules: config.Accept.Count, // 只取條數:圖層名、selector、原因都可能是內部資訊
             Tolerances: config.Tolerances,
             FailOn: config.Gate.FailOn.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過只有四個等級名
             FailOnUnmatched: config.Gate.FailOnUnmatched.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過:已知原因或 "*"
@@ -80,7 +82,7 @@ internal sealed record ConfigSummary(
         yield return $"design source: {DesignSource}";
         yield return $"designToken: {DesignToken}";
         yield return $"tokensFile: {(HasTokensFile ? "set" : "not set")}; mapFile: {(HasMapFile ? "set" : "not set")}; " +
-            $"baselineFile: {(HasCustomBaselineFile ? "custom" : "default")}; ignore rules: {IgnoreRules}";
+            $"baselineFile: {(HasCustomBaselineFile ? "custom" : "default")}; ignore rules: {IgnoreRules}; accept rules: {AcceptRules}";
         yield return $"tolerances: sizePx {N(Tolerances.SizePx)}, spacingPx {N(Tolerances.SpacingPx)}, " +
             $"colorDeltaE {N(Tolerances.ColorDeltaE)}, fontSizePx {N(Tolerances.FontSizePx)}, positionPx {N(Tolerances.PositionPx)}";
         yield return $"gate.failOn: {(FailOn.Count == 0 ? "(empty)" : string.Join(", ", FailOn))}";

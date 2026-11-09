@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1606 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1639 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -168,6 +168,7 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   },
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
+  "accept": [],                              // 選配:一條一條收下的落差,每條都寫原因(見下面「收下單一條落差」)
   "gate": {
     "failOn": ["critical", "serious"],       // minor / medium / serious / critical 任選,一個字串放一個等級
     "failOnUnmatched": [],                   // 選配:要擋的未配對原因(exit 1),例如 ["text-not-found"],
@@ -202,6 +203,29 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
 畫在 `<canvas>` 上或做成圖片又沒有 `alt` 的字——算「找不到」,所以 `text-not-found` 的意思是「在 Parity 看得到的範圍內找不到」。
 文字在、但對不到單一元素(有多個相同文字,或拆在多個元素裡)時維持 `ambiguous-or-missing-text`。
 整頁文字只用在這個判斷:不會寫進 `report.json`、快照、統計或 bug 回報。
+
+### 收下單一條落差:`accept`
+
+有些落差是決定,不是錯:設計師同意方案標題用 18px、不用 16px。`ignore` 會讓那個元素整個不比,[baseline](#回歸把關baselinem5)
+則是一次收下全部落差、也不說為什麼。`accept` 一條一條收、每條帶原因:
+
+```jsonc
+"accept": [
+  { "route": "/pricing", "layer": "Plan title", "prop": "fontSize", "actual": "18",
+    "reason": "設計師 2026-11-02 review 同意改 18px" }
+]
+```
+
+- `layer`(報告上的設計圖層名)、`prop`(例如 `fontSize`)、`reason` 必填;名字要一字不差,大小寫也是。Parity 不會報的 `prop`,
+  或沒寫原因的條目,載入時就是設定錯誤(exit 2)——永遠對不到的條目會讓落差照擋。
+- `route`、`selector`、`actual` 選填,用來收窄:只收那個 target、只收那個元素(同名圖層有好幾個時)、只在頁面上的值剛好是
+  `actual`(照報告寫的樣子)時才收。寫了 `actual`,收下的是「18px」而不是「字級怎樣都行」:頁面又改了,落差就回來。
+- 收下的落差**照樣留在報告裡**:`report.json` 標 `"soft": true` 與 `"accepted": "<原因>"`,`check` 印 `[accepted: <原因>]`,
+  Markdown 報告把它移出主表、收進折疊的「Accepted gaps」一節並附原因。跟其他軟落差一樣不擋 gate、不扣分、`--baseline` 不算新增。
+  嚴重度照實留著,所以 `summary` 的計數仍然算它。
+- 這次 `check` 掃過的頁面上一條落差都沒對到的條目,stderr 會說一聲:落差修好了,或值變了。請刪掉它,不然同一個地方下次出錯會被它默默收下。
+  (沒寫 `route` 的條目只在掃了全部 target 時才判斷,`--target` 只掃一頁時不判斷。)
+- 只收得下已配對元素的落差;未配對節點與多餘元件不是「某個屬性的落差」。
 
 ## 目標:網頁或 Electron 桌面 app
 
@@ -501,6 +525,7 @@ action 輸入:`config` / `target` / `working-directory` / `version` / `figma-tok
 - `unmatched[].reason` — **開放集合**:解析端必須容忍未知值;已知值拼寫不變。目前:`no-anchor`、`ambiguous-or-missing-text`、`text-not-found`、`randomized-id`、`size-implausible`、`ambiguous-name`。
 - `nodes[].matchedBy` — **開放集合**,同規則。目前:`selector`、`explicit`、`auto-text`、`auto-name`、`auto-container`、`auto-shared`。
 - `extras`(每份報告,`compare.extras`)— 沒開時是 `null`(預設、`check --reverse`、以及這個欄位出現之前寫的所有報告);開了是 `{ "total": n, "items": [{ "selector", "tag", "box" }] }`,`total: 0` 加上空的 `items` 表示「開了、沒有」。`items` 依面積由大到小,每頁最多 20 筆;`total` 是全部的數量。不帶元素文字。永遠不影響 gate 與分數。
+- `nodes[].diffs[].accepted`(2.5.0)— 收下這條落差的 `accept` 條目寫的原因;有這個欄位的落差一定是 `"soft": true`。沒被收下的落差**不寫這個 key**,所以沒用 `accept` 的設定檔,報告一個位元組都不變。
 - `fontsNotLoaded`(每份報告,2.5.0)— 頁面要用、卻沒載到的 web font,寫成 `"字型名 粗細 樣式"`(最多 20 個);都載到了是 `null`(這個欄位出現之前寫的報告也是)。擷取前先等 `document.fonts.ready` 最多 3 秒,之後還是 `loading`、或是 `error`(網址錯、被擋、CORS)的就列出;宣告了沒用到的字型不會下載,不列。有值時文字是用替代字型量的,`check` 與 Markdown 報告會明講:這一頁的文字落差可能全是這一個原因。永遠不影響 gate 與分數。
 - `direction`(頂層,2.0.0 起)— **封閉集**:`forward`(一般的 `check`)/ `reverse`(`check --reverse`:期望與實際對調、不把關)。一律寫出;沒有這個欄位的檔讀成 `forward`。讀端只收小寫字串 `"forward"` 與 `"reverse"`——其他值(大小寫不同、數字、`null`)一律是錯誤,不猜。`parity report` 不對 reverse 報告做 gate,`parity push` 不推 reverse 報告。
 
@@ -520,6 +545,7 @@ parity baseline list     # 看歷史快照(含分數欄 = 還原度走勢,給 PM
 - **修好**(基準有、現在沒了)會列出來鼓勵;**不變**的既有落差不擋
 - 這個模式(已有基準時)不套用 `gate.failOnUnmatched`;未配對節點照常列出
 - 適合漸進導入:先 `baseline save` 記錄現況,之後 CI 用 `check --baseline`,團隊只需「不要讓還原度更差」
+- 要長期收下某一條落差、並寫下原因,改用 [`accept`](#收下單一條落差accept):收下的落差是軟的,`baseline save` 不存它,也永遠不算新增
 
 儲存層是獨立的 `Parity.Storage`(EF Core + SQLite,`Pooling=False` 即時釋放檔案),引擎裡的 `BaselineComparer` 是純函式、可單元測試。
 

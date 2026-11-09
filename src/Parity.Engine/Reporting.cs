@@ -269,7 +269,7 @@ public static class MarkdownReport
         var rows = reports
             .SelectMany(r => r.Nodes.Where(n => n.Diffs.Count > 0).Select(n => (r.Route, Node: n)))
             .OrderByDescending(x => (int)x.Node.Severity).ThenByDescending(x => Impact.Area(x.Node))
-            .SelectMany(x => x.Node.Diffs.Select(d => (x.Route, x.Node, d)))
+            .SelectMany(x => x.Node.Diffs.Where(d => d.Accepted is null).Select(d => (x.Route, x.Node, d)))
             .ToList();
 
         // 清單 #9(2.5.0,只改呈現、不改判定):
@@ -324,6 +324,30 @@ public static class MarkdownReport
             sb.AppendLine(Header());
             foreach (var (route, n, d) in knockOn)
                 sb.AppendLine(Row(route, Layer(n.DesignLayer, n.DesignId), d));
+            sb.AppendLine();
+            sb.AppendLine("</details>");
+            sb.AppendLine();
+        }
+
+        // 設定檔 accept 收下的落差(2.5.0):不進上面的表(收下就是不想每次都看到),收在這裡、附原因,看得到誰收了什麼。
+        // 原因是設定檔寫的字:放進程式碼區段,不讓它變成連結、圖片或提及
+        var acceptedRows = reports
+            .SelectMany(r => r.Nodes.SelectMany(n => n.Diffs.Where(d => d.Accepted is not null).Select(d => (r.Route, Node: n, d))))
+            .ToList();
+        if (acceptedRows.Count > 0)
+        {
+            sb.AppendLine($"### Accepted gaps ({acceptedRows.Count}) — matched an `accept` entry: listed, never gated, no points lost");
+            sb.AppendLine();
+            sb.AppendLine($"<details><summary>Show {acceptedRows.Count} accepted gap(s)</summary>");
+            sb.AppendLine();
+            sb.AppendLine(multi ? "| Route | Element | Property | Expected → Actual | Reason |" : "| Element | Property | Expected → Actual | Reason |");
+            sb.AppendLine(multi ? "|---|---|---|---|---|" : "|---|---|---|---|");
+            foreach (var (route, n, d) in acceptedRows)
+            {
+                var cells = $"{Layer(n.DesignLayer, n.DesignId)} | {Word(d.Prop)} | {Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)} | " +
+                    $"{Code(d.Accepted!, MaxValueCell)} |";
+                sb.AppendLine(multi ? $"| {Word(route)} | {cells}" : $"| {cells}");
+            }
             sb.AppendLine();
             sb.AppendLine("</details>");
             sb.AppendLine();

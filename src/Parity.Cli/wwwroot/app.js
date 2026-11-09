@@ -153,7 +153,8 @@ function nodeItem(n, open) {
     for (const diff of n.diffs) {
       const isColor = ['color', 'background', 'borderColor', 'shadowColor'].includes(diff.prop);
       const row = table.insertRow();
-      row.insertCell().textContent = diff.prop + (diff.soft ? ' ⁽soft⁾' : '');
+      row.insertCell().textContent = diff.prop + (diff.accepted ? ' ⁽accepted⁾' : diff.soft ? ' ⁽soft⁾' : '');
+      if (diff.accepted) row.title = 'accepted: ' + diff.accepted;
       const exp = row.insertCell(); exp.className = 'exp';
       const act = row.insertCell(); act.className = 'act';
       if (isColor) {

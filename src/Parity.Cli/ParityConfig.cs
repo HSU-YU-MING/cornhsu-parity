@@ -79,6 +79,15 @@ public sealed class ParityConfig
 
     public List<string> Ignore { get; set; } = [];
 
+    // accept(2.5.0):一條一條收下的落差,每條都要寫原因。寫成 null 與 targets 一樣在載入時就報錯、指名欄位
+    private List<AcceptConfig>? _accept = [];
+
+    public List<AcceptConfig> Accept
+    {
+        get => _accept ?? throw NullSection("accept", "an array of accepted gaps (use [] for none, or remove the key)");
+        set => _accept = value;
+    }
+
     public GateConfig Gate
     {
         get => _gate ?? throw NullSection("gate", "an object, e.g. { \"failOn\": [\"critical\", \"serious\"] } (or remove the key for the defaults)");
@@ -178,6 +187,22 @@ public sealed class ParityConfig
             throw new InvalidOperationException(
                 $"config {path}: designImage requires a companion designFile (an annotation file in DesignNode format; " +
                 "fill may be omitted and sampled from the image).");
+        // accept:每條要說清楚收下哪一條落差、為什麼。拼錯的屬性名永遠對不到,收下的落差會靜靜地照擋——所以載入時就報錯
+        for (var i = 0; i < Accept.Count; i++)
+        {
+            var entry = Accept[i] ?? throw NullSection($"accept[{i}]", "an object like { \"layer\": \"…\", \"prop\": \"…\", \"reason\": \"…\" }");
+            if (string.IsNullOrWhiteSpace(entry.Layer))
+                throw new InvalidOperationException($"config {path}: accept[{i}] needs a \"layer\" (the design layer name the report shows).");
+            if (string.IsNullOrWhiteSpace(entry.Prop))
+                throw new InvalidOperationException($"config {path}: accept[{i}] needs a \"prop\" (the property the report shows, e.g. fontSize).");
+            if (!AcceptableProps.Contains(entry.Prop))
+                throw new InvalidOperationException(
+                    $"config {path}: accept[{i}].prop is \"{ConsoleText.Safe(entry.Prop)}\", which is not a property Parity reports " +
+                    $"(use one of: {string.Join(", ", UsageStats.PropFamilies.Select(p => p.Prop))}).");
+            if (string.IsNullOrWhiteSpace(entry.Reason))
+                throw new InvalidOperationException(
+                    $"config {path}: accept[{i}] needs a \"reason\" — say why this gap is accepted, so the next person reading the report knows.");
+        }
         // stats.share 只收 true/false:寫成字串 "false" 是最可能的手誤,而它是隱私開關——不能當成「沒表態」照送
         if (Stats.Share.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False))
             throw new InvalidOperationException(
@@ -190,6 +215,9 @@ public sealed class ParityConfig
                 $"(got: \"{ConsoleText.Safe(id)}\", {id.Length} characters). Make one up at random — " +
                 "never derive it from the repository name or anything else that identifies you.");
     }
+
+    /// <summary>accept[].prop 的白名單:引擎報得出來的所有屬性(就是統計協定的封閉集,UsageStatsTests 核對引擎沒有漏)。大小寫要對。</summary>
+    private static readonly HashSet<string> AcceptableProps = UsageStats.PropFamilies.Select(p => p.Prop).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>stats.projectId 的格式(PROTOCOL.md §7.1):16–64 字元,只能有 A-Za-z0-9_-。</summary>
     internal static bool IsValidProjectId(string id)
@@ -379,6 +407,34 @@ public sealed class TargetConfig
     /// </summary>
     public int? Width { get; set; }
     public int? Height { get; set; }
+}
+
+/// <summary>
+/// "accept" 的一條(2.5.0):收下一條落差並寫下原因。收下的落差照樣列在報告裡(標明 accepted 與原因),但跟軟落差一樣
+/// 不擋 gate、不扣分、`--baseline` 不算新增。layer + prop 必填;route、selector、actual 是選填的收窄條件。
+/// </summary>
+public sealed class AcceptConfig
+{
+    /// <summary>只收這個 target 的(選填;沒寫 = 每個 target)。</summary>
+    public string? Route { get; set; }
+
+    /// <summary>設計端的圖層名,跟報告上顯示的一字不差(必填)。</summary>
+    public string Layer { get; set; } = "";
+
+    /// <summary>頁面元素的 selector(選填):同名圖層有好幾個時用來指定是哪一個。</summary>
+    public string? Selector { get; set; }
+
+    /// <summary>屬性名,例如 fontSize(必填)。</summary>
+    public string Prop { get; set; } = "";
+
+    /// <summary>
+    /// 只在頁面上的值剛好是這個時才收(選填,跟報告的 actual 一字不差)。值又變了,落差就回來——
+    /// 收下的是「改成 18px」這個決定,不是「字級以後怎樣都行」。
+    /// </summary>
+    public string? Actual { get; set; }
+
+    /// <summary>為什麼收下(必填)。會寫進報告。</summary>
+    public string Reason { get; set; } = "";
 }
 
 public sealed class CompareConfig
