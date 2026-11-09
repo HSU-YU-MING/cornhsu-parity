@@ -613,7 +613,7 @@ internal static class StatsProtocol
     };
 
     public static readonly string[] UnmatchedReasons =
-        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "other"];
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "ambiguous-name", "other"];
 
     private static void ExactKeys(JsonElement e, params string[] keys)
     {

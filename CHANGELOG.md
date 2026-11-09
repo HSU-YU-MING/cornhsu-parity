@@ -2,6 +2,32 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 未發佈
+
+**升級必做 (upgrade required):用 `--baseline` 的專案,升級後先跑一次 `parity check`,看結果再合併。** 圖層名配對改成唯一才配:
+以前配錯的節點不再配,它們身上的落差會消失(算成修好了),節點改列進未配對清單(原因 `ambiguous-name`)。
+如果設了 `gate.failOnUnmatched: ["*"]`,這些新的未配對節點會擋 gate;只想擋元件不見,改成 `["text-not-found"]`。
+*If you use `--baseline`, run `parity check` once after upgrading and look before merging: a layer name now matches only when it is
+unique, so nodes that used to be matched to the wrong element are now unmatched (`ambiguous-name`) and their diffs show as fixed.
+With `gate.failOnUnmatched: ["*"]` those nodes fail the gate; use `["text-not-found"]` to fail only on missing elements.*
+
+- **修正:圖層名對到好幾個同名元素時,不再拿第一個**(`report.json` 的 `unmatched[].reason` 多一個值 `ambiguous-name`,開放集合的加法;
+  六面都沒動,配對規則演進,所以是 minor)。以前同名而且大小合理的元素有好幾個時,拿文件順序的第一個;配錯一個元素,它的每個屬性都報一條假落差。
+  - 現在只有一個才配。有好幾個時先看**它在哪一區**(最近一個已配對的設計祖先 → 候選要在它配到的元素裡面),再看**裡面有什麼**
+    (已配對的設計子孫 → 留下包住最多個的候選)。一個解開了可能成為別人的線索,所以反覆到沒有進展為止;順序固定,結果也固定。
+    只用結構,不看座標。
+  - 還分不出來就列為未配對,原因 `ambiguous-name`;主控台會提示加 `data-parity` 或寫進 `parity.map.json`。文字整頁都找不到的照舊是
+    `text-not-found`。同名的都被別的節點配走了,照 2.4 以前的規則給原因。
+  - **實測**(論文評估語料:22 個非作者網站頁面,同一份語料先跑 2.4.0 再跑這一版,只看基準頁):圖層名照網頁 class 命名的條件下,
+    配錯 531 → 42、配對正確 5,361 → 5,408、基準頁的假硬落差 1,700 → 198、CI 會紅的頁面 19 → 10(共 22 頁),名字配對的正確率 72.0% → 99.5%。
+    模擬 Figma 命名的條件下小幅改善(假硬落差 769 → 738)。**代價**:254 個原本靠順序剛好配對的節點改列 `ambiguous-name`,
+    其中 203 個是同一層裡的同名兄弟(清單的每一列),只有順序分得出來;依「寧可漏報,不可誤報」不拿順序猜。
+    植入錯誤的直接回報 715 → 724,其中尺寸 29 → 22、背景色 58 → 50 變少,就是落在這些節點上的案例。語料是模擬的,分數變好不等於真實 Figma 變準。
+  - 匿名統計的 `unmatchedBy` 多一個 key `ambiguous-name`(收集站要先上線才能發這一版,協定的版本表記了一筆)。
+  *A layer name now matches only when it is unique. When several plausibly sized elements carry the name, Parity keeps the ones inside
+  the element its nearest matched ancestor got, then the ones holding the most of its matched content; still more than one → unmatched
+  with the new reason `ambiguous-name` instead of the first in document order.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

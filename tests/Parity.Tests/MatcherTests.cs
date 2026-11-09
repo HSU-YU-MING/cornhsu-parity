@@ -246,6 +246,172 @@ public class MatcherTests
     }
 
     [Fact]
+    public void Several_plausible_same_name_elements_are_not_paired_in_document_order()
+    {
+        // 清單 #1:以前拿第一個尺寸合理的,評估語料裡名字配對只對 72%。沒有任何線索分得出來 → 不猜
+        var design = Design("1", "frame", children: Design("2", "card", box: new Box(0, 0, 300, 200)));
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+        [
+            Rendered("div.card:nth-of-type(1)", classes: "card", box: new Box(0, 0, 300, 200)),
+            Rendered("div.card:nth-of-type(2)", classes: "card", box: new Box(0, 220, 300, 200)),
+        ]);
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Empty(result.Pairs);
+        var u = Assert.Single(result.Unmatched);
+        Assert.Equal(("card", "ambiguous-name"), (u.DesignLayer, u.Reason));
+    }
+
+    [Fact]
+    public void Same_name_is_resolved_by_the_region_its_matched_ancestor_covers()
+    {
+        // 頁首和價目區各有一個 icon;設計稿的 icon 在價目區裡,價目區已經配好 → 只剩價目區裡那一個
+        var design = Design("1", "frame", children:
+            Design("2", "pricing", box: new Box(0, 100, 600, 300), children:
+                Design("3", "icon", box: new Box(10, 110, 24, 24))));
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+        [
+            Rendered("header", "header", box: new Box(0, 0, 1280, 60), children:
+                Rendered("header > i.icon", "i", classes: "icon", box: new Box(10, 10, 24, 24))),
+            Rendered("section.pricing", "section", classes: "pricing", box: new Box(0, 100, 600, 300), children:
+                Rendered("section.pricing > i.icon", "i", classes: "icon", box: new Box(10, 110, 24, 24))),
+        ]);
+
+        var result = Matcher.Match(design, rendered);
+
+        var icon = Assert.Single(result.Pairs, p => p.Design.Name == "icon");
+        Assert.Equal(("section.pricing > i.icon", "auto-name"), (icon.Rendered.Selector, icon.MatchedBy));
+        Assert.Empty(result.Unmatched);
+    }
+
+    [Fact]
+    public void Same_name_is_resolved_by_what_it_contains_not_by_order()
+    {
+        // 兩張 card 的標題文字不同,文字錨點先配好了;頁面上的順序跟設計稿相反,證明靠的是內容不是順序
+        var design = Design("1", "frame", children:
+        [
+            Design("2", "card", box: new Box(0, 0, 300, 200), children:
+                Design("3", "title", DesignNodeType.Text, box: new Box(10, 10, 100, 20), characters: "Basic")),
+            Design("4", "card", box: new Box(320, 0, 300, 200), children:
+                Design("5", "title", DesignNodeType.Text, box: new Box(330, 10, 100, 20), characters: "Pro")),
+        ]);
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+        [
+            Rendered("div.card:nth-of-type(1)", classes: "card", box: new Box(0, 0, 300, 200), children:
+                Rendered("div.card:nth-of-type(1) > h3", "h3", text: "Pro")),
+            Rendered("div.card:nth-of-type(2)", classes: "card", box: new Box(320, 0, 300, 200), children:
+                Rendered("div.card:nth-of-type(2) > h3", "h3", text: "Basic")),
+        ]);
+
+        var result = Matcher.Match(design, rendered);
+
+        var cards = result.Pairs.Where(p => p.Design.Name == "card").ToDictionary(p => p.Design.Id, p => p.Rendered.Selector);
+        Assert.Equal("div.card:nth-of-type(2)", cards["2"]); // Basic
+        Assert.Equal("div.card:nth-of-type(1)", cards["4"]); // Pro
+        Assert.All(result.Pairs.Where(p => p.Design.Name == "card"), p => Assert.Equal("auto-name", p.MatchedBy));
+        Assert.Empty(result.Unmatched);
+    }
+
+    [Fact]
+    public void A_resolved_container_becomes_the_region_for_its_same_name_children()
+    {
+        // card 靠內容解開之後,它裡面的 icon 才有區域可看——要反覆解到沒有進展為止,只跑一輪會留下 icon
+        var design = Design("1", "frame", children:
+        [
+            Design("2", "card", box: new Box(0, 0, 300, 200), children:
+            [
+                Design("3", "title", DesignNodeType.Text, box: new Box(10, 10, 100, 20), characters: "Basic"),
+                Design("4", "icon", box: new Box(10, 40, 24, 24)),
+            ]),
+            Design("5", "card", box: new Box(320, 0, 300, 200), children:
+            [
+                Design("6", "title", DesignNodeType.Text, box: new Box(330, 10, 100, 20), characters: "Pro"),
+                Design("7", "icon", box: new Box(330, 40, 24, 24)),
+            ]),
+        ]);
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+        [
+            Rendered("#a", classes: "card", box: new Box(0, 0, 300, 200), children:
+            [
+                Rendered("#a > h3", "h3", text: "Pro"),
+                Rendered("#a > i", "i", classes: "icon", box: new Box(10, 40, 24, 24)),
+            ]),
+            Rendered("#b", classes: "card", box: new Box(320, 0, 300, 200), children:
+            [
+                Rendered("#b > h3", "h3", text: "Basic"),
+                Rendered("#b > i", "i", classes: "icon", box: new Box(330, 40, 24, 24)),
+            ]),
+        ]);
+
+        var result = Matcher.Match(design, rendered);
+
+        var byId = result.Pairs.ToDictionary(p => p.Design.Id, p => p.Rendered.Selector);
+        Assert.Equal(("#b", "#b > i", "#a", "#a > i"), (byId["2"], byId["4"], byId["5"], byId["7"]));
+        Assert.Empty(result.Unmatched);
+    }
+
+    [Fact]
+    public void Nested_same_name_elements_that_both_hold_the_content_stay_unmatched()
+    {
+        // .row > .row:兩層都包住同一段文字,區域和內容都分不出來 → 不挑外層也不挑內層
+        var design = Design("1", "frame", children:
+            Design("2", "row", box: new Box(0, 0, 600, 40), children:
+                Design("3", "label", DesignNodeType.Text, box: new Box(0, 0, 100, 20), characters: "Hi")));
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+            Rendered("#outer", classes: "row", box: new Box(0, 0, 600, 40), children:
+                Rendered("#inner", classes: "row", box: new Box(0, 0, 600, 40), children:
+                    Rendered("#inner > p", "p", text: "Hi"))));
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Equal("label", Assert.Single(result.Pairs).Design.Name);
+        var u = Assert.Single(result.Unmatched);
+        Assert.Equal(("row", "ambiguous-name"), (u.DesignLayer, u.Reason));
+    }
+
+    [Fact]
+    public void A_missing_text_with_an_ambiguous_name_is_reported_as_text_not_found()
+    {
+        // 文字整頁都沒有:元件不見了,這比「同名分不出來」更有用,而且 gate.failOnUnmatched 擋得到
+        var design = Design("1", "frame", children:
+            Design("2", "badge", DesignNodeType.Text, box: new Box(0, 0, 60, 20), characters: "New"));
+        var badges = new[]
+        {
+            Rendered("#x", "span", classes: "badge", text: "Sale", box: new Box(0, 0, 60, 20)),
+            Rendered("#y", "span", classes: "badge", text: "Hot", box: new Box(0, 40, 60, 20)),
+        };
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children: badges) with { PageText = "Sale Hot" };
+
+        var result = Matcher.Match(design, rendered);
+
+        Assert.Empty(result.Pairs);
+        Assert.Equal("text-not-found", Assert.Single(result.Unmatched).Reason);
+    }
+
+    [Fact]
+    public void When_the_other_same_name_node_takes_one_candidate_the_last_one_is_unique()
+    {
+        // 兩個同名設計節點、兩個同名元素:一個靠內容解開後,另一個只剩一個候選 → 照「唯一才配」配上
+        var design = Design("1", "frame", children:
+        [
+            Design("2", "card", box: new Box(0, 0, 300, 200), children:
+                Design("3", "title", DesignNodeType.Text, box: new Box(10, 10, 100, 20), characters: "Basic")),
+            Design("4", "card", box: new Box(320, 0, 300, 200)),
+        ]);
+        var rendered = Rendered("body", box: new Box(0, 0, 1280, 900), children:
+        [
+            Rendered("#a", classes: "card", box: new Box(0, 0, 300, 200)),
+            Rendered("#b", classes: "card", box: new Box(320, 0, 300, 200), children:
+                Rendered("#b > h3", "h3", text: "Basic")),
+        ]);
+
+        var byId = Matcher.Match(design, rendered).Pairs.ToDictionary(p => p.Design.Id, p => p.Rendered.Selector);
+
+        Assert.Equal(("#b", "#a"), (byId["2"], byId["4"]));
+    }
+
+    [Fact]
     public void Randomized_id_in_selector_gets_a_specific_unmatched_reason()
     {
         // 野生實查 F2(MDN):snapshot 凍住的隨機 id 在下次載入不存在 → 配不到是必然,

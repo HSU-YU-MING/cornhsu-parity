@@ -149,7 +149,7 @@ internal static class UsageStats
     /// UsageStatsTests 核對 <see cref="Parity.Engine.Comparison.Matcher.UnmatchedReasons"/> 都在表上。
     /// </summary>
     internal static readonly IReadOnlyList<string> UnmatchedReasons =
-        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "other"];
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "ambiguous-name", "other"];
 
     /// <summary>abs(delta) 落在第幾桶。邊界左閉右開:剛好等於邊界值的進右邊那一桶(長度的 1 → 「1–2」)。</summary>
     internal static int Bucket(double absDelta, double[] edges)

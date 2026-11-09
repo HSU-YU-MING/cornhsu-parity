@@ -15,7 +15,7 @@ public sealed record MatchResult(
 /// 節點配對(規畫書 4.7)——以設計端為錨,自動優先、只補漏:
 ///   1. 手動錨點(map 檔或 data-parity,擷取端已標成 ExplicitMatch)→ 最高優先
 ///   2. 文字錨點:TEXT 節點文字 ↔ 頁面元素文字(唯一才配;多個同文字時用圖層名消歧,仍不硬湊)
-///   3. 圖層名 ↔ DOM id / class / aria-label / data-testid
+///   3. 圖層名 ↔ DOM id / class / aria-label / data-testid(唯一才配;多個同名時看它在哪一區、裡面有什麼,仍分不出就 ambiguous-name)
 ///   4. 容器推論:配不到的容器,用「已配對子孫的最近共同祖先(LCA)」反推——純結構、不猜
 /// 配不到 → 誠實進未配對清單,不假裝全對上。文字節點的文字整頁都找不到(擷取端有給整頁文字時才判斷)
 /// → text-not-found:元件不見或文字被改掉,而不是「有但分不出來」。
@@ -28,7 +28,7 @@ public static class Matcher
     /// 新增原因時 ReportVocabularyTests 會逼兩份 README 的字彙表一起改。
     /// </summary>
     public static IReadOnlyList<string> UnmatchedReasons { get; } =
-        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible"];
+        ["no-anchor", "ambiguous-or-missing-text", "text-not-found", "randomized-id", "size-implausible", "ambiguous-name"];
 
     public static MatchResult Match(DesignNode designRoot, RenderedNode renderedRoot)
     {
@@ -139,7 +139,22 @@ public static class Matcher
         }
 
         // --- 第 3 關:圖層名 ↔ id / class / aria-label(附尺寸合理性防線)---
+        // 唯一才配,跟文字錨點同一個原則(2.5.0)。以前同名的元素有好幾個時拿文件順序第一個尺寸合理的:
+        // 評估語料裡名字配對只對 72%,基準頁的假落差 92.9% 來自這裡(配錯一個元素,它的每個屬性都報一條)。
+        // 好幾個時先看它在哪一區、裡面有什麼(ByContext),還分不出來就列 ambiguous-name,不猜。
+        var chainOf = BuildAncestorChains(renderedRoot);
+        var parentOf = new Dictionary<DesignNode, DesignNode>(ReferenceEqualityComparer.Instance);
+        foreach (var n in designRoot.DescendantsAndSelf())
+            foreach (var c in n.Children ?? [])
+                parentOf[c] = n;
+
+        // 沒有任何同名元素可用時的原因(跟 2.4 以前一樣)
+        string NoNameHit(DesignNode d)
+            => string.IsNullOrWhiteSpace(d.Characters) ? "no-anchor"
+                : TextNotFound(d) ? "text-not-found" : "ambiguous-or-missing-text";
+
         var pending = new List<(DesignNode Node, string Reason)>();
+        var tied = new List<(DesignNode Node, List<RenderedNode> Options)>();
         foreach (var d in stillRemaining)
         {
             var key = NormalizeName(d.Name);
@@ -150,21 +165,40 @@ public static class Matcher
             }
 
             var named = candidates.Where(r => !taken.Contains(r) && NameMatches(r, key)).ToList();
-            var hit = named.FirstOrDefault(r => SizePlausible(d, r));
+            var plausible = named.Where(r => SizePlausible(d, r)).ToList();
 
-            if (hit is not null)
-                Pair(d, hit, "auto-name");
+            if (plausible.Count == 1)
+                Pair(d, plausible[0], "auto-name");
+            else if (plausible.Count > 1)
+                tied.Add((d, plausible)); // 等全部唯一的都配完,區域與內容的線索才最多
             else if (named.Count > 0)
                 pending.Add((d, "size-implausible"));
-            else if (string.IsNullOrWhiteSpace(d.Characters))
-                pending.Add((d, "no-anchor"));
             else
-                pending.Add((d, TextNotFound(d) ? "text-not-found" : "ambiguous-or-missing-text"));
+                pending.Add((d, NoNameHit(d)));
         }
+
+        // 一個解開了,可能成為別人的區域或內容線索,所以反覆到沒有進展為止。順序固定,結果也固定
+        for (var progressedByContext = true; progressedByContext && tied.Count > 0;)
+        {
+            progressedByContext = false;
+            for (var i = 0; i < tied.Count; i++)
+            {
+                var (d, options) = tied[i];
+                var left = ByContext(d, options.Where(r => !taken.Contains(r)).ToList(), parentOf, matchedByDesign, chainOf);
+                if (left.Count != 1) continue;
+                Pair(d, left[0], "auto-name");
+                tied.RemoveAt(i--);
+                progressedByContext = true;
+            }
+        }
+        foreach (var (d, options) in tied)
+            pending.Add((d,
+                options.All(taken.Contains) ? NoNameHit(d)       // 同名的都被別人配走了
+                : TextNotFound(d) ? "text-not-found"            // 文字整頁都沒有:元件不見,比「分不出來」更有用
+                : "ambiguous-name"));
 
         // --- 第 4 關:容器推論——已配到 ≥2 個子孫的容器,對應到那些子孫的最近共同祖先 ---
         // 純結構推論(不比對外觀、不猜),把「無文字/名字對不上」但內容配對得上的容器救回來。
-        var chainOf = BuildAncestorChains(renderedRoot);
         bool progressed = true;
         while (progressed)
         {
@@ -230,6 +264,39 @@ public static class Matcher
 
     private static readonly char[] SelectorSeparators =
         [' ', '>', '.', '#', ':', '(', ')', '[', ']', '=', '"', '\'', '-', '_', ','];
+
+    /// <summary>
+    /// 同名候選有好幾個時,用已經配好的節點縮小範圍(第 3 關),只用結構,不看座標:
+    /// 1. 哪一區:最近一個已配對的設計祖先 → 候選要在它配到的元素裡面(三張卡片裡各有一個 icon)。
+    /// 2. 裡面有什麼:已配對的設計子孫 → 留下包住最多個的候選(三張卡片的標題文字各不相同)。
+    /// 回傳剩下的候選;剩一個才算解開。祖先配錯時可能篩掉正確的那個,這時通常剩 0 個或好幾個,照樣列 ambiguous-name。
+    /// </summary>
+    private static List<RenderedNode> ByContext(
+        DesignNode d, List<RenderedNode> options,
+        Dictionary<DesignNode, DesignNode> parentOf,
+        Dictionary<string, RenderedNode> matchedByDesign,
+        Dictionary<RenderedNode, IReadOnlyList<RenderedNode>> chainOf)
+    {
+        // x 在 container 裡面(不含自己):x 的祖先鏈上有 container
+        bool Inside(RenderedNode x, RenderedNode container)
+            => !ReferenceEquals(x, container) && chainOf[x].Contains(container, ReferenceEqualityComparer.Instance);
+
+        RenderedNode? region = null;
+        for (var p = parentOf.GetValueOrDefault(d); p is not null && region is null; p = parentOf.GetValueOrDefault(p))
+            matchedByDesign.TryGetValue(p.Id, out region);
+        if (region is not null)
+            options = options.Where(r => Inside(r, region)).ToList();
+        if (options.Count <= 1) return options;
+
+        var contents = d.DescendantsAndSelf().Skip(1)
+            .Select(c => matchedByDesign.GetValueOrDefault(c.Id))
+            .OfType<RenderedNode>().ToList();
+        if (contents.Count == 0) return options;
+
+        var held = options.Select(r => (Node: r, Count: contents.Count(c => Inside(c, r)))).ToList();
+        var most = held.Max(h => h.Count);
+        return most == 0 ? options : held.Where(h => h.Count == most).Select(h => h.Node).ToList();
+    }
 
     /// <summary>每個實作節點 → 從 root 到自己的祖先鏈(含自己),供算 LCA。</summary>
     private static Dictionary<RenderedNode, IReadOnlyList<RenderedNode>> BuildAncestorChains(RenderedNode root)
