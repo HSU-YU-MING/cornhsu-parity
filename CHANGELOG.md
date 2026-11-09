@@ -149,6 +149,19 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   the other way round on the page, or a text that ends up entirely outside its container, give a soft `relation` diff. On the thesis
   corpus, injected moves reported in snapshot mode went from 8.5% to 51.9%.*
 
+- **改進:Markdown 報告(PR 留言)把根本原因放前面**(只改呈現:`report.json`、gate、分數、主控台都不變)。一個元件不見,下面全被推動,
+  報告列出一大串,真正的原因埋在裡面;一個 token 錯了,幾十個元素各一列洗版。
+  - **相同落差併成一列**:同一頁屬性、期望、實際、嚴重度都一樣的,寫成「3 elements: `A`, `B`, `C`」(超過 3 個列前三個加「…」)。
+  - **連帶影響收成一組**:一頁裡有可能的根本原因(文字整頁找不到的元件、尺寸／換行數／字級／行高／內距／間距改變、被推出容器的文字),
+    這一頁的位移(`offsetX`、`offsetY`、容器對齊)就收進後面一組可摺疊的「Position shifts that may be knock-on effects」,
+    開頭先列出那些原因(最多 3 個)。沒有這種原因的頁面,位移照舊留在主表:那可能就是真的移位。
+  - 「整頁找不到」才算原因,一般的未配對不算:基準頁本來就有上千個配不到的節點,算進去等於每頁都有原因。
+  - **實測**(論文評估語料照網頁 class 命名的報告,用 `parity report` 改前改後各產生一次):主表列數,元件不見 107 案 1,596 → 374、
+    尺寸改變 102 案 1,206 → 339、背景色 97 案 1,472 → 287,大部分來自相同落差併列。
+  *The Markdown report merges identical gaps on several elements into one row and, when a page has a likely root cause (an element
+  whose text is nowhere on the page, a size, line-count, font-size or padding change, a text pushed out of its container), moves that
+  page's position shifts into a collapsed knock-on group listed after the causes. `report.json` and the gate are unchanged.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

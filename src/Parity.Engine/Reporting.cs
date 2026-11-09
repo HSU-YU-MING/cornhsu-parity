@@ -271,25 +271,60 @@ public static class MarkdownReport
             .SelectMany(x => x.Node.Diffs.Select(d => (x.Route, x.Node, d)))
             .ToList();
 
-        if (rows.Count > 0)
+        // 清單 #9(2.5.0,只改呈現、不改判定):
+        // 1. 位移(offset、容器對齊)在同一頁有可能的根本原因時(元件不見、尺寸／換行／字級／內距變了、文字跑出容器)收到後面一組,
+        //    先講原因——一個元件不見,下面全被推動,原因不該埋在一大串位移裡。沒有可能原因的頁面照舊留在主表:那可能就是真的移位。
+        // 2. 同一頁屬性、期望、實際、嚴重度都一樣的落差併成一列(一個 token 錯了,幾十個節點各一列會洗版)。
+        var causes = reports.ToDictionary(r => r.Route, LikelyCauses);
+        var knockOn = rows.Where(x => ShiftProps.Contains(x.d.Prop) && causes[x.Route].Count > 0).ToList();
+        var direct = rows.Except(knockOn).ToList();
+
+        string Header() => multi ? "| Route | Element | Property | Expected → Actual | Severity | Suggested fix |\n|---|---|---|---|---|---|"
+                                 : "| Element | Property | Expected → Actual | Severity | Suggested fix |\n|---|---|---|---|---|";
+        string Row(string route, string element, PropDiff d)
+        {
+            // Code:期望與實際可能是設計稿或頁面的文字(compare.text),反引號不能讓它跳出程式碼區段
+            var arrow = $"{Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}" +
+                (d.Delta is { } dl ? $" (Δ{dl})" : "");
+            var sev = d.Soft ? $"{d.Severity.ToString().ToLowerInvariant()}(soft)" : d.Severity.ToString().ToLowerInvariant();
+            var fix = FixHint.For(d, tokens) is { } f ? Code(f, MaxValueCell + 40) : "—";
+            return multi
+                ? $"| {Word(route)} | {element} | {Word(d.Prop)} | {arrow} | {sev} | {fix} |"
+                : $"| {element} | {Word(d.Prop)} | {arrow} | {sev} | {fix} |";
+        }
+
+        if (direct.Count > 0)
         {
             sb.AppendLine("### Diffs and suggested fixes");
             sb.AppendLine();
-            sb.AppendLine(multi ? "| Route | Element | Property | Expected → Actual | Severity | Suggested fix |"
-                                : "| Element | Property | Expected → Actual | Severity | Suggested fix |");
-            sb.AppendLine(multi ? "|---|---|---|---|---|---|" : "|---|---|---|---|---|");
-            foreach (var (route, n, d) in rows)
+            sb.AppendLine(Header());
+            foreach (var g in direct.GroupBy(x => (x.Route, x.d.Prop, x.d.Expected, x.d.Actual, x.d.Severity, x.d.Soft)))
             {
-                // Code:期望與實際可能是設計稿或頁面的文字(compare.text),反引號不能讓它跳出程式碼區段
-                var arrow = $"{Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}" +
-                    (d.Delta is { } dl ? $" (Δ{dl})" : "");
-                var sev = d.Soft ? $"{d.Severity.ToString().ToLowerInvariant()}(soft)" : d.Severity.ToString().ToLowerInvariant();
-                var fix = FixHint.For(d, tokens) is { } f ? Code(f, MaxValueCell + 40) : "—";
-                var cells = multi
-                    ? $"| {Word(route)} | {Layer(n.DesignLayer, n.DesignId)} | {Word(d.Prop)} | {arrow} | {sev} | {fix} |"
-                    : $"| {Layer(n.DesignLayer, n.DesignId)} | {Word(d.Prop)} | {arrow} | {sev} | {fix} |";
-                sb.AppendLine(cells);
+                var nodes = g.Select(x => x.Node).ToList();
+                var element = nodes.Count == 1
+                    ? Layer(nodes[0].DesignLayer, nodes[0].DesignId)
+                    : $"{nodes.Count} elements: {string.Join(", ", nodes.Take(MaxGroupedNames).Select(n => Layer(n.DesignLayer, n.DesignId)))}" +
+                      (nodes.Count > MaxGroupedNames ? ", …" : "");
+                sb.AppendLine(Row(g.Key.Route, element, g.First().d));
             }
+            sb.AppendLine();
+        }
+
+        if (knockOn.Count > 0)
+        {
+            sb.AppendLine($"### Position shifts that may be knock-on effects ({knockOn.Count})");
+            sb.AppendLine();
+            foreach (var route in knockOn.Select(x => x.Route).Distinct())
+                sb.AppendLine($"- {(multi ? $"{Word(route)}: " : "")}likely caused by " +
+                    string.Join(" · ", causes[route].Select(c => c(Layer))) + ". Fix those first; these shifts often go away with them.");
+            sb.AppendLine();
+            sb.AppendLine($"<details><summary>Show {knockOn.Count} position shift(s)</summary>");
+            sb.AppendLine();
+            sb.AppendLine(Header());
+            foreach (var (route, n, d) in knockOn)
+                sb.AppendLine(Row(route, Layer(n.DesignLayer, n.DesignId), d));
+            sb.AppendLine();
+            sb.AppendLine("</details>");
             sb.AppendLine();
         }
 
@@ -350,6 +385,39 @@ public static class MarkdownReport
 
     /// <summary>圖層名這類名稱最多幾個字元:比表格的值寬鬆,正常的名字不會被截斷。</summary>
     internal const int MaxNameCell = 200;
+
+    /// <summary>位移類的屬性:常常是別處改變的連帶結果(清單 #9)。</summary>
+    private static readonly HashSet<string> ShiftProps = ["offsetX", "offsetY", "mainAxisOffset", "crossAxisOffset"];
+
+    /// <summary>會把旁邊的東西推走的改變:尺寸、換行、字級、內距、間距。</summary>
+    private static readonly HashSet<string> CauseProps =
+        ["width", "height", "lineCount", "fontSize", "lineHeight", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "itemSpacing"];
+
+    /// <summary>併成一列時,元素欄最多列出幾個名字。</summary>
+    private const int MaxGroupedNames = 3;
+
+    /// <summary>一頁裡最多列出幾個可能的根本原因。</summary>
+    private const int MaxCauses = 3;
+
+    /// <summary>
+    /// 一頁裡可能把別的元素推走的原因:元件整頁找不到(text-not-found)、尺寸／換行／字級／內距改變、文字跑出容器。
+    /// 回傳「拿圖層名格式化函式就能寫出一句話」的清單(圖層名要經過 Layer(),才連得回 Figma、才跳脫得了)。
+    /// </summary>
+    private static List<Func<Func<string, string, string>, string>> LikelyCauses(FidelityReport report)
+    {
+        var all = new List<Func<Func<string, string, string>, string>>();
+        foreach (var u in report.Unmatched.Where(u => u.Reason == "text-not-found"))
+            all.Add(layer => $"{layer(u.DesignLayer, u.DesignId)} not found on the page");
+        foreach (var n in report.Nodes)
+            foreach (var d in n.Diffs)
+                if (CauseProps.Contains(d.Prop))
+                    all.Add(layer => $"{layer(n.DesignLayer, n.DesignId)} {Word(d.Prop)} {Code(d.Expected, MaxValueCell)} → {Code(d.Actual, MaxValueCell)}");
+                else if (d.Prop == "relation" && d.Actual.StartsWith("outside", StringComparison.Ordinal))
+                    all.Add(layer => $"{layer(n.DesignLayer, n.DesignId)} outside its container");
+        if (all.Count <= MaxCauses) return all;
+        var more = all.Count - MaxCauses;
+        return [.. all.Take(MaxCauses), _ => $"{more} more"];
+    }
 
     /// <summary>
     /// 來自資料的名稱(圖層名)放進 Markdown:一律是程式碼區段。GitHub 在區段內不處理連結、圖片、@ 提及與 HTML,
