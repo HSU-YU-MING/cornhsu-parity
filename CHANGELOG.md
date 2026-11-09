@@ -227,6 +227,21 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   `targets[].steps` (click, hover, fill, press, waitFor, wait) put the page in the state to measure, for check, snapshot, baseline, serve
   and mcp alike.*
 
+- **新增:`parity lint --page`,檢查做出來的頁面有沒有守 design token**(lint 多一個旗標,加法;minor)。以前 `parity lint` 只看設計稿,
+  設計稿用對了 token,頁面照樣可能在旁邊手寫一個相近的色碼。
+  - 開每個 target(視窗、`auth`、`steps` 跟 `check` 一樣),看每個看得見的元素實際用到的文字色、背景、邊框色、字級、內距、圓角,
+    對 `tokensFile`。不需要配對。同一個值只報一次,附元素數與最多三個例子。
+  - 分兩級:**near miss**(離顏色 token ΔE 6 以內、或離尺寸 token 2px 以內且不超過值的四分之一)幾乎一定是手滑,會擋(exit 1)並說該用哪個
+    token;**off token**(附近沒有 token)只列出——真實頁面有第三方元件與 token 檔沒收的值,全擋的話這個檢查會一直紅。
+  - token 色降透明度算用了那個 token(作品集實測:分隔線 `rgba(ink, .14)` 以前整頁都是假的 near miss)。尺寸 token 看名字分種類
+    (`font`/`text`/`type`、`radius`/`rounded`/`corner`、`space`/`gap`/`pad`…),字級不會被說成「改用 space-5」;某一類沒有 token 就不檢查。
+  - 設計 lint 的判定不變,離 token 很近的違規多標一個 `[near miss]`。
+  - **實測**(作品集三頁 616 個元素,CSS 變數當 token):兩個 near miss(同一個寫死的程式碼卡片標題列)、十二個 off token,全是寫死在頁面
+    CSS 裡的顏色;離線示範抓到刻意做壞的 30px 標題(token 是 32px)。
+  *New: `parity lint --page` checks the colors and sizes the rendered page actually uses against `tokensFile`, grouped by value. Values a
+  hair away from a token are near misses and fail (exit 1) with the token to use; other off-token values are listed. Token colors at
+  reduced opacity count as the token, and size tokens are matched by kind from their names.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

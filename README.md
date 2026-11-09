@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1707**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1730**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -148,6 +148,8 @@ parity snapshot            # Freeze the currently rendered UI as the design base
                            #   regions that move: rotating ads, animations, lazy media)
 parity lint                # Design lint: are the design file's values inside the allowed
                            #   design-token set? (design only, no implementation)
+parity lint --page         # The same question for the rendered page: which colors and sizes
+                           #   does it actually use that are not tokens?
 parity check --reverse     # Reverse view, for a designer redrawing an existing page:
                            #   how does my draft differ from what ships? (never gates)
 parity bug-report          # (experimental) Collect version / OS / Node / Chromium info and print
@@ -487,6 +489,35 @@ within the ΔE tolerance passes), and fontSize / padding / itemSpacing / cornerR
 any size token passes — spacing, font sizes and corner radii share one scale). Every violation
 carries "the nearest token", so the message is "change it to this", not merely "you are wrong".
 Violations exit 1, so it can run in CI. Dimensions you have not defined tokens for are not linted.
+A violation within a hair of a token is marked `[near miss]` (the same rule as `--page`, below).
+
+**Keeping the page itself inside the design system: `parity lint --page`.** A design can use the
+right token and the page can still hard-code a color next to it. `--page` renders each target (same
+viewport, `auth` and `steps` as `check`) and checks the values the page actually uses against
+`tokensFile` — no design matching, every visible element: text color, background, border color,
+font size, padding and corner radius. Each off-token value is reported once, with how many elements
+use it and up to three examples:
+
+```text
+target /: 12 elements, 1 near miss(es), 12 off-token value(s)
+  ✘ near miss fontSize 30px on 1 element(s) — use font-size-2xl = 32px (off by 2)
+      e.g. ‹body > h1:nth-of-type(1)›
+  · off token background #F3F4F6 on 3 element(s) — nearest color-primary = #2563EB (ΔE 46.13)
+      e.g. ‹#feature-card-1›, ‹#feature-card-2›, ‹#feature-card-3›
+```
+
+- **Near miss** — within ΔE 6 of a color token (outside `tolerances.colorDeltaE`), or within 2px and
+  a quarter of the value of a size token: almost always a slip, so it **fails** (exit 1) and names the token to use.
+- **Off token** — nothing close: intentional, a third-party widget, or a value the token file lacks.
+  Listed, never fails — real pages have plenty of these, and a check that is always red gets turned off.
+- A token color at reduced opacity (`rgba(<ink>, .14)` for a divider) counts as that token.
+- The token file is a flat name → value list, so size tokens are told apart by name: `font`/`text`/`type`
+  → font sizes, `radius`/`rounded`/`corner` → radii, `space`/`spacing`/`gap`/`pad`/`margin`/`inset`/`gutter`
+  → padding; other names count for every kind. A kind with no tokens at all is not checked. (Design lint
+  keeps comparing every size with every size token, as before.)
+- Measured on this project's own portfolio site with its CSS variables as tokens: 616 elements over three
+  pages, two near misses (the same hard-coded code-card title bar, `#2B271F` next to `ink`) and twelve
+  off-token values, all of them colors written straight into the page's CSS.
 
 **Redrawing against what ships: `parity check --reverse`.** The direction flips: "expected"
 becomes the current implementation and "actual" becomes your draft. That gives a designer a list

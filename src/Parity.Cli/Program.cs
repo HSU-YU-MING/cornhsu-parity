@@ -462,9 +462,14 @@ internal static class LintCommand
         if (targets.Count == 0) // 與 check 同一句(ScanSession.RunAsync)
             throw new InvalidOperationException($"no target with route {routeFilter}.");
 
-        Console.WriteLine($"\x1b[1mParity lint\x1b[0m — design-token conformance of the design file (design only, no implementation)\n");
-
         var source = ScanSession.CreateDesignSource(config, refresh: opts.ContainsKey("--refresh"));
+        if (opts.ContainsKey("--page"))
+        {
+            try { return await LintPageAsync(config, tokens, targets, source); }
+            finally { (source as IDisposable)?.Dispose(); }
+        }
+
+        Console.WriteLine($"\x1b[1mParity lint\x1b[0m — design-token conformance of the design file (design only, no implementation)\n");
         try
         {
             var total = 0;
@@ -492,7 +497,9 @@ internal static class LintCommand
                     ? ""
                     : $"; nearest: \x1b[36m{ConsoleText.Safe(v.NearestToken)}\x1b[0m = {ConsoleText.Safe(v.NearestValue)}" +
                       (v.Prop == "color" ? $" (ΔE {v.Distance})" : $" (off by {v.Distance})");
-                Console.WriteLine($"  \x1b[33m✘ {ConsoleText.Safe(v.Layer)}\x1b[0m {v.Prop} = {ConsoleText.Safe(v.Value)} is not a token value{near}");
+                // near miss(2.5.0):離 token 很近,多半是手滑——跟 lint --page 同一個判準
+                var nearMiss = v.Distance is { } d && TokenDistance.IsNearMiss(v.Prop == "color", d, ParseLeadingNumber(v.Value)) ? " \x1b[31m[near miss]\x1b[0m" : "";
+                Console.WriteLine($"  \x1b[33m✘ {ConsoleText.Safe(v.Layer)}\x1b[0m {v.Prop} = {ConsoleText.Safe(v.Value)} is not a token value{near}{nearMiss}");
             }
 
             if (allViolations.Count > 0)
@@ -507,6 +514,66 @@ internal static class LintCommand
         {
             (source as IDisposable)?.Dispose();
         }
+    }
+
+    private static double ParseLeadingNumber(string value)
+        => double.TryParse(value.TrimEnd('p', 'x'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0;
+
+    /// <summary>
+    /// parity lint --page(2.5.0):開頁面,看實際用到的顏色與尺寸有沒有落在 token 裡。視窗跟 check 一樣:target 有寫寬高就用,
+    /// 沒寫就用設計 frame 的尺寸(響應式頁面在手機 frame 下才會量到手機版的值)。登入態與步驟照套。
+    /// exit 1 = 有 near miss(幾乎一定是錯的);off token 只列出——真實頁面常有第三方元件與 token 檔沒收的值,全擋的話這個檢查會一直紅。
+    /// </summary>
+    private static async Task<int> LintPageAsync(ParityConfig config, DesignTokens tokens, List<TargetConfig> targets, IDesignSource source)
+    {
+        Console.WriteLine("\x1b[1mParity lint --page\x1b[0m — design-token conformance of the rendered page (colors and sizes the page uses)\n");
+        await using var impl = new Parity.Engine.ImplementationSources.Web.WebImplementationSource();
+        var nearMisses = 0;
+        var offToken = 0;
+        var elements = 0;
+        foreach (var t in targets)
+        {
+            var (width, height) = (t.Width, t.Height ?? (t.Width is null ? null : 800));
+            if (width is null)
+            {
+                var frame = (await source.GetFrameAsync(new DesignRef(
+                    config.DesignFile is { } df ? Path.GetFullPath(Path.Combine(config.BaseDirectory, df))
+                        : config.FigmaFileKey ?? throw new InvalidOperationException("the config needs either figmaFileKey or designFile."),
+                    t.Frame))).Box;
+                (width, height) = ((int)Math.Ceiling(frame.W), height ?? (int)Math.Ceiling(frame.H));
+            }
+            var url = ScanSession.ResolveUrl(t.Url, config.BaseDirectory);
+            var tree = await impl.CaptureAsync(config.WithPageSetup(new ImplRef(url, width, height) { IgnoreSelectors = config.Ignore }, t));
+            var count = tree.DescendantsAndSelf().Count() - 1;
+            elements += count;
+            var findings = PageLint.Run(tree, tokens, config.Tolerances.ColorDeltaE);
+            var near = findings.Count(f => f.NearMiss);
+            nearMisses += near;
+            offToken += findings.Count - near;
+            Console.WriteLine($"target \x1b[1m{ConsoleText.Safe(t.Route)}\x1b[0m: {count} elements, {near} near miss(es), {findings.Count - near} off-token value(s)");
+            foreach (var f in findings)
+            {
+                // selector、值都來自頁面;token 名稱來自 repo:一律過 Safe
+                var unit = f.Prop is "color" or "background" or "borderColor" ? $"ΔE {f.Distance}" : $"off by {f.Distance}";
+                var label = f.NearMiss ? "\x1b[31m✘ near miss\x1b[0m" : "\x1b[33m· off token\x1b[0m";
+                var advice = f.NearMiss ? "use" : "nearest";
+                Console.WriteLine($"  {label} {f.Prop} {ConsoleText.Safe(f.Value)} on {f.Count} element(s) — {advice} " +
+                    $"\x1b[36m{ConsoleText.Safe(f.NearestToken ?? "")}\x1b[0m = {ConsoleText.Safe(f.NearestValue ?? "")} ({unit})");
+                Console.WriteLine($"      \x1b[90me.g. {string.Join(", ", f.Examples.Select(e => $"‹{ConsoleText.Safe(e)}›"))}\x1b[0m");
+            }
+        }
+
+        Console.WriteLine();
+        if (nearMisses > 0)
+        {
+            Console.WriteLine($"\x1b[31m✘ {nearMisses} near miss(es)\x1b[0m — values a hair away from a token, almost always a typo; " +
+                $"{offToken} other off-token value(s) listed ({elements} elements checked)");
+            return 1;
+        }
+        Console.WriteLine(offToken > 0
+            ? $"\x1b[32m✔ no near misses\x1b[0m; {offToken} off-token value(s) listed — intentional, third-party, or missing from the token file ({elements} elements checked)"
+            : $"\x1b[32m✔ everything conforms to the token set\x1b[0m ({elements} elements checked)");
+        return 0;
     }
 }
 
@@ -770,7 +837,7 @@ internal static class Usage
             ["--config=", "--target=", "--out=", "--width=", "--height=", "--headed", "--stabilize"];
         /// <summary>serve 與 map 共用(同一份實作)。</summary>
         public static readonly string[] Serve = ["--config=", "--port=", "--watch", "--open"];
-        public static readonly string[] Lint = ["--config=", "--target=", "--refresh"];
+        public static readonly string[] Lint = ["--config=", "--target=", "--refresh", "--page"];
         public static readonly string[] BaselineSave = ["--config=", "--target=", "--headed"];
         public static readonly string[] BaselineList = ["--config="];
         public static readonly string[] Init = [];
@@ -849,10 +916,13 @@ internal static class Usage
         """;
 
     public const string Lint = """
-          parity lint [--config <path>] [--target <route>] [--refresh]
+          parity lint [--config <path>] [--target <route>] [--refresh] [--page]
               Design lint: looks only at the design file and checks its values against the allowed design-token set
               (color/font size/padding/spacing/corner radius; requires tokensFile).
               For designers keeping a new page inside the design system.
+              --page      Lint the rendered page instead: the colors and sizes it actually uses (text color, background,
+                          border color, font size, padding, corner radius), grouped by value. A value a hair away from a
+                          token is a "near miss" (almost always a typo) and fails (exit 1); other off-token values are listed.
         """;
 
     public const string Baseline = """
