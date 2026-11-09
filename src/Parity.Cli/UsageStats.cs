@@ -135,7 +135,7 @@ internal static class UsageStats
         ("itemSpacing", LengthEdges), ("cornerRadius", LengthEdges), ("fontSize", LengthEdges), ("lineHeight", LengthEdges),
         ("letterSpacing", LengthEdges), ("borderWidth", LengthEdges), ("shadow", LengthEdges),
         ("mainAxisOffset", LengthEdges), ("crossAxisOffset", LengthEdges), ("outlineWidth", LengthEdges),
-        ("color", ColorEdges), ("background", ColorEdges), ("borderColor", ColorEdges), ("shadowColor", ColorEdges), ("gradient", ColorEdges), ("outlineColor", ColorEdges),
+        ("color", ColorEdges), ("background", ColorEdges), ("borderColor", ColorEdges), ("shadowColor", ColorEdges), ("gradient", ColorEdges), ("outlineColor", ColorEdges), ("imageColor", ColorEdges),
         ("fontWeight", WeightEdges),
         ("opacity", RatioEdges), ("image", RatioEdges),
         ("lineCount", LineEdges),

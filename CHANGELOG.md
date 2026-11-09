@@ -162,6 +162,19 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   whose text is nowhere on the page, a size, line-count, font-size or padding change, a text pushed out of its container), moves that
   page's position shifts into a collapsed knock-on group listed after the causes. `report.json` and the gate are unchanged.*
 
+- **修正:圖片的顏色偏掉抓得到了**(`diffs[].prop` 多 `imageColor`;`image` 的意思變窄;都是軟落差,minor)。以前「內容差多少」和「顏色差多少」
+  合成一個分數、共用 10% 門檻,圖片顏色偏掉多半過不了(論文評估:色相轉 30° 只抓到 5.9%)。
+  - 現在分開判斷、分開報:明暗結構差超過 10% → `image`(內容換了);結構一樣、8×8 格平均色差(CIEDE2000)超過 3 → `imageColor`(顏色偏了)。
+    內容換了就不另報顏色。純色圖只換了顏色(藍換紅)算 `imageColor`,以前是 `image`。
+  - **門檻怎麼定的**:重新壓成 JPEG 品質 30～90 的平均色差是 0.1～0.51、縮放 0.01～0.03;色相轉 10° 約 3.6、30° 約 10.8。門檻 3 比最狠的壓縮高六倍,
+    換壓縮格式照樣不算落差(測試涵蓋品質 30、50、90)。
+  - **實測**(論文評估語料的快照模式,`compare.images: soft`):圖片變色 68 案 **5.9% → 70.6%**;圖片換錯 69 案維持 98.6%;沒植入錯誤的基準頁
+    沒有任何圖片提醒。良性變化(加橫幅、換字型、改行高、改視窗寬度)每種多 2～5 條 `imageColor`:版面一動,圖片裁切的位置跟著偏,
+    原本的 `image` 在這些情況就有 82～89 條。
+  *`image` now means the content changed (structure differs by more than 10%); a color shift with the same structure is a new soft
+  `imageColor` diff (average CIEDE2000 over an 8×8 grid above 3; JPEG recompression stays near 0.5). Injected 30° hue shifts reported on
+  the thesis corpus went from 5.9% to 70.6%.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

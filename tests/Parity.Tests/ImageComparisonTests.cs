@@ -35,6 +35,14 @@ public class ImageComparisonTests
         return image;
     }
 
+    /// <summary>內容與顏色都在門檻內:不算落差。</summary>
+    private static void Within(ImageComparer.ImageDifference? m)
+    {
+        Assert.NotNull(m);
+        Assert.True(m.Value.Structure <= ImageComparer.Tolerance, $"structure {m.Value.Structure}");
+        Assert.True(m.Value.Color <= ImageComparer.ColorTolerance, $"color ΔE {m.Value.Color}");
+    }
+
     private static Image<Rgba32> AsJpeg(Image<Rgba32> image, int quality)
     {
         using var stream = new MemoryStream();
@@ -49,17 +57,19 @@ public class ImageComparisonTests
         using var a = Picture();
         using var b = Picture();
 
-        Assert.Equal(0, ImageComparer.Difference(a, Whole, b, Whole));
+        Assert.Equal(new ImageComparer.ImageDifference(0, 0), ImageComparer.Measure(a, Whole, b, Whole));
     }
 
     [Fact]
     public void Solid_colors_differ_although_their_structure_is_the_same()
     {
-        // 結構雜湊對純色無感,要靠顏色那一半
+        // 結構雜湊對純色無感,要靠顏色那一半:結構差是 0,顏色差很大(2.5.0 起報成 imageColor)
         using var blue = Solid(37, 99, 235);
         using var red = Solid(255, 0, 0);
 
-        Assert.True(ImageComparer.Difference(blue, Whole, red, Whole) > 0.5);
+        var m = ImageComparer.Measure(blue, Whole, red, Whole)!.Value;
+        Assert.Equal(0, m.Structure);
+        Assert.True(m.Color > 30);
     }
 
     [Fact]
@@ -68,19 +78,36 @@ public class ImageComparisonTests
         using var a = Picture();
         using var b = Picture(flipped: true);
 
-        Assert.True(ImageComparer.Difference(a, Whole, b, Whole) > ImageComparer.Tolerance);
+        Assert.True(ImageComparer.Measure(a, Whole, b, Whole)!.Value.Structure > ImageComparer.Tolerance);
     }
 
     [Theory]
     [InlineData(90)]
     [InlineData(50)]
+    [InlineData(30)] // 2.5.0 顏色門檻調低之後:最狠的壓縮,平均色差也只有 0.5 左右(門檻 3)
     public void Recompressing_an_image_is_not_a_difference(int quality)
     {
         using var original = Picture(256);
         using var compressed = AsJpeg(original, quality);
         var box = new Box(0, 0, 256, 256);
 
-        Assert.True(ImageComparer.Difference(original, box, compressed, box) <= ImageComparer.Tolerance);
+        Within(ImageComparer.Measure(original, box, compressed, box));
+    }
+
+    [Theory]
+    [InlineData(30f)] // 論文評估植入的「圖片變色」
+    [InlineData(10f)]
+    public void A_hue_shift_is_a_color_difference_not_a_content_difference(float degrees)
+    {
+        // 清單 #10:以前內容與顏色合成一個分數、共用 10% 門檻,色相轉 30° 多半過不了。現在顏色另外比平均色差
+        using var original = Picture(256);
+        using var shifted = original.Clone(c => c.Hue(degrees));
+        var box = new Box(0, 0, 256, 256);
+
+        var m = ImageComparer.Measure(original, box, shifted, box)!.Value;
+
+        Assert.True(m.Structure <= ImageComparer.Tolerance, $"structure {m.Structure}");
+        Assert.True(m.Color > ImageComparer.ColorTolerance, $"color ΔE {m.Color}");
     }
 
     [Fact]
@@ -98,7 +125,7 @@ public class ImageComparisonTests
             }
         var box = new Box(0, 0, 128, 128);
 
-        Assert.True(ImageComparer.Difference(flat, box, noisy, box) <= ImageComparer.Tolerance);
+        Within(ImageComparer.Measure(flat, box, noisy, box));
     }
 
     [Fact]
@@ -107,7 +134,7 @@ public class ImageComparisonTests
         using var large = Picture(256);
         using var small = large.Clone(c => c.Resize(128, 128));
 
-        Assert.True(ImageComparer.Difference(large, new Box(0, 0, 256, 256), small, new Box(0, 0, 128, 128)) <= ImageComparer.Tolerance);
+        Within(ImageComparer.Measure(large, new Box(0, 0, 256, 256), small, new Box(0, 0, 128, 128)));
     }
 
     [Fact]
@@ -120,7 +147,7 @@ public class ImageComparisonTests
             for (var x = 0; x < 20; x++)
                 b[x + 10, y + 10] = new Rgba32(255, 255, 255);
 
-        Assert.Equal(0, ImageComparer.Difference(a, new Box(10, 10, 20, 20), b, new Box(10, 10, 20, 20)));
+        Assert.Equal(new ImageComparer.ImageDifference(0, 0), ImageComparer.Measure(a, new Box(10, 10, 20, 20), b, new Box(10, 10, 20, 20)));
     }
 
     [Theory]
@@ -134,7 +161,7 @@ public class ImageComparisonTests
         using var b = Solid(0, 0, 0);
         var box = new Box(x, y, w, h);
 
-        Assert.Null(ImageComparer.Difference(a, box, b, box));
+        Assert.Null(ImageComparer.Measure(a, box, b, box));
     }
 
     [Fact]
@@ -143,7 +170,7 @@ public class ImageComparisonTests
         using var transparent = new Image<Rgba32>(64, 64, new Rgba32(0, 0, 0, 0));
         using var white = Solid(255, 255, 255);
 
-        Assert.Equal(0, ImageComparer.Difference(transparent, Whole, white, Whole));
+        Assert.Equal(new ImageComparer.ImageDifference(0, 0), ImageComparer.Measure(transparent, Whole, white, Whole));
     }
 
     // ---------- 走真的 parity snapshot + check ----------
@@ -196,7 +223,7 @@ public class ImageComparisonTests
     }
 
     private static List<PropDiff> ImageDiffs(FidelityReport report)
-        => report.Nodes.SelectMany(n => n.Diffs).Where(d => d.Prop == "image").ToList();
+        => report.Nodes.SelectMany(n => n.Diffs).Where(d => d.Prop is "image" or "imageColor").ToList();
 
     [Fact]
     public async Task The_same_page_has_no_image_diff()
@@ -210,14 +237,15 @@ public class ImageComparisonTests
     [Fact]
     public async Task A_replaced_image_is_a_soft_diff_on_that_element_only()
     {
+        // 藍色純色圖換成紅色:結構一樣、顏色差很大,2.5.0 起報成 imageColor(以前內容與顏色合成一個 image)
         if (await SnapshotThenCheck(Page(SvgDataUri("#FF0000"))) is not { } run) { Console.WriteLine(Skipped); return; }
 
-        var node = Assert.Single(run.Report.Nodes, n => n.Diffs.Any(d => d.Prop == "image"));
+        var node = Assert.Single(run.Report.Nodes, n => n.Diffs.Any(d => d.Prop == "imageColor"));
         Assert.Equal("hero", node.DesignLayer);
         var diff = Assert.Single(node.Diffs);
         Assert.True(diff.Soft);
         Assert.Equal(DiffStatus.Mismatch, diff.Status);
-        Assert.InRange(diff.Delta!.Value, ImageComparer.Tolerance, 1);
+        Assert.True(diff.Delta > ImageComparer.ColorTolerance);
         Assert.Equal(0, run.Exit); // 軟落差不擋
         Assert.Equal(1, run.Report.Summary.NodesWithDiffs); // 摘要有重算
         Assert.Equal(1, run.Report.Summary.Minor);
@@ -230,7 +258,7 @@ public class ImageComparisonTests
         var page = Page(SvgDataUri("#2563EB")).Replace(SvgDataUri("#16A34A"), SvgDataUri("#FF0000"));
         if (await SnapshotThenCheck(page) is not { } run) { Console.WriteLine(Skipped); return; }
 
-        Assert.Equal("banner", Assert.Single(run.Report.Nodes, n => n.Diffs.Any(d => d.Prop == "image")).DesignLayer);
+        Assert.Equal("banner", Assert.Single(run.Report.Nodes, n => n.Diffs.Any(d => d.Prop == "imageColor")).DesignLayer);
     }
 
     [Fact]
@@ -351,7 +379,7 @@ public class ImageComparisonTests
         using var otherShot = new MemoryStream();
         await other.SaveAsPngAsync(otherShot);
         var changed = await ImageComparer.CompareAsync(result, referencePath, otherShot.ToArray(), referenceOrigin: default(Box));
-        Assert.Equal("image", Assert.Single(changed.Report.Nodes.Single().Diffs).Prop);
+        Assert.Equal("imageColor", Assert.Single(changed.Report.Nodes.Single().Diffs).Prop); // 藍塊換紅塊:顏色偏了
     }
 
     [Fact]
