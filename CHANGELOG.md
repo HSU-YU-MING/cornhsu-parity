@@ -197,6 +197,20 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   and the exact actual value. Accepted gaps stay in the report as soft gaps with an `accepted` reason — they never gate, cost no points
   and are not new against a baseline. Entries that match nothing on a scanned page get a note.*
 
+- **新增(實驗性):`parity mcp`,讓 AI agent 自己拿設計稿驗收**(新指令;六面都沒動,minor)。在 stdin/stdout 跑 MCP server,
+  三個工具:`parity_list_targets`(設定檔的頁面與 gate,不開瀏覽器)、`parity_check`(跑 check,回結論、分數、最重要的落差與建議修法、
+  下一步)、`parity_get_report`(不重跑,翻上一份報告,可以篩 route、屬性、最低嚴重度)。agent 不必帶設計資料,用的是專案自己的設定檔。
+  - 結論與 `parity check` 一致:`pass` / `fail` / `untrusted` 對應 exit code 0 / 1 / 3,`baseline: true` 走回歸模式;會寫 `.parity/report.json`。
+  - 回應不只給結果:每個結果帶 `next` 一句話講下一步,清單只列前 20 筆(可調,最多 200)。參數錯、設定檔壞、瀏覽器沒裝回工具錯誤(`isError`)
+    並附提示;工具名不認得、參數形狀不對才是協定錯誤(-32602)。
+  - 兩個 MCP 世代都接:2026-07-28(沒有握手、`server/discover`、`_meta` 帶版本,不認得的版本回 -32022)與 2025-11-25 以前的 `initialize`。
+  - stdout 只有協定訊息:啟動時把 Console.Out 整個轉到 stderr,掃描途中的任何輸出都進 stderr。
+  - **MCP 跑的 check 不送匿名統計**:agent 每改一次就重跑一次,同一個專案會被重複計數。
+  - **實驗性**:跟 `parity push` 一樣不在凍結範圍內,標記穩定之前工具名、參數與結果欄位可能在 minor 版變動。
+  *New, experimental: `parity mcp` runs an MCP server on stdio with three tools — list targets, run a check (verdict, score, top gaps
+  with fixes, next step) and page through the last report — so an AI agent can verify its UI changes against the design. Speaks both the
+  2026-07-28 revision and the older `initialize` handshake. Checks run through it never send usage statistics.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

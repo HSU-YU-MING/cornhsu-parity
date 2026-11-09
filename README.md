@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1639**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1675**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -108,7 +108,8 @@ up for someone, to pass on as it is. The full description is in
 
 - **On by default, CI included:** after each `parity check` that produces a report (exit 0, 1 or 3), one
   request to `https://stats.cornhsu.com/v1/parity` — the same for the .NET tool and the npm package.
-  Development builds (any version starting with `0.0.0-`) never send.
+  Development builds (any version starting with `0.0.0-`) never send, and neither do checks run through
+  `parity mcp`.
 - **What is sent — counts and ranges only:** the tool version, the OS, whether it runs in CI, the fidelity
   score, whether the gate failed, the number of pages, the kind of design source, the design and matched
   node totals, gap counts per severity, for each measured property how many gaps and how large, in ranges,
@@ -660,6 +661,38 @@ parity map              # Interactive matching: click an unmatched layer → cli
 - **Binds 127.0.0.1 only**: the report contains your site's structure, so it must not be
   reachable from the local network
 - The UI is a zero-build static SPA, so the dotnet tool needs no Node toolchain
+
+## From an AI agent: `parity mcp` (experimental)
+
+`parity mcp` runs an [MCP](https://modelcontextprotocol.io/) server on stdin/stdout, so an agent that
+changes your UI (Claude Code, Cursor, VS Code, …) can check its own work against the design — the same
+check as `parity check`, run on the project's own `parity.config.json`. The agent brings no design data.
+
+```sh
+claude mcp add parity -- parity mcp                    # dotnet tool
+claude mcp add parity -- npx -y cornhsu-parity mcp     # npm
+```
+
+Other clients take the same command in their MCP settings (`"command": "parity", "args": ["mcp"]`).
+Start it in the project folder, or pass `--config <path>`.
+
+| Tool | What it does |
+|---|---|
+| `parity_list_targets` | The pages in the config, the design source, the gate, and whether a report exists. Opens no browser. |
+| `parity_check` | Runs the check (optionally one `target`, or `baseline: true` for regression mode). Returns the verdict — `pass` / `fail` / `untrusted`, with the exit code `parity check` would give — the score, the most important gaps (`limit`, default 20) with a suggested CSS fix each, unmatched nodes, and a `next` sentence saying what to do. Writes `.parity/report.json`. |
+| `parity_get_report` | Pages through the last report without re-running: `route`, `prop`, `minSeverity`, `includeSoft`, `offset`, `limit`. |
+
+- Results come as `structuredContent` and as the same JSON in a text block. Bad arguments, a broken
+  config or a missing browser come back as tool errors (`isError`) with a `next` hint, not as protocol errors.
+- Speaks both MCP generations: the 2026-07-28 revision (no handshake, `server/discover`, version in
+  `_meta`) and the `initialize` handshake of 2025-11-25 and earlier.
+- Checks run here **never send anonymous usage statistics**: an agent re-runs the check after each edit,
+  and those runs would be counted many times over.
+- Layer names, selectors and the expected and actual values come from the design file and the page.
+  The server's instructions tell the agent to treat them as data, not instructions; an agent should also
+  not add `accept` entries on its own — the result says so.
+- **Experimental**: tool names, arguments and result fields may change in a 2.x minor release until this
+  is marked stable. The rest of Parity's frozen interfaces are unaffected.
 
 ## In CI (M4)
 
