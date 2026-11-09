@@ -292,6 +292,11 @@ internal static class CheckCommand
                     "element, or map it in parity.map.json.\x1b[0m");
         }
 
+        // 字型沒載到(2.5.0):落差可能全是用系統字型量的結果,放在落差清單之後、讀的人還記得那些數字時講。字型名來自頁面:過 Safe
+        if (report.FontsNotLoaded is { Count: > 0 } fonts)
+            Console.WriteLine($"  \x1b[33m⚠ web font(s) did not load: {string.Join(", ", fonts.Select(ConsoleText.Safe))} — text was measured " +
+                "with a fallback font, so text widths, line breaks and positions may differ for that reason alone.\x1b[0m");
+
         // compare.extras = "list" 且有發現才印(沒開是 null、開了沒有是 total 0,兩者都不印)。selector 來自頁面:過 Safe
         if (report.Extras is { Total: > 0 } extras)
         {

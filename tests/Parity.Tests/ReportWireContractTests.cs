@@ -41,14 +41,21 @@ public class ReportWireContractTests
             [
                 new ExtraElement("body > div:nth-of-type(1)", "div", new Box(0, 0, 800, 200)),
                 new ExtraElement("#promo", "img", new Box(16, 240, 320, 180.5)),
-            ])),
+            ]),
+            ["Inter 400 normal", "Inter 700 normal"]),
     ]);
 
-    /// <summary>現行寫端的位元組。extras(compare.extras)加進來時另開這一份,2.2.0 寫的 report.v1.json 原樣留著當舊檔。</summary>
-    private static string Golden() => Normalize(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1-extras.json"));
+    /// <summary>
+    /// 現行寫端的位元組。欄位加進來時另開一份,舊的原樣留著當舊檔:
+    /// report.v1.json(2.2.0)→ report.v1-extras.json(2.3.0 加 extras)→ report.v1-fonts.json(2.5.0 加 fontsNotLoaded)。
+    /// </summary>
+    private static string Golden() => Normalize(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1-fonts.json"));
 
     /// <summary>2.2.0(extras 出現之前)寫出的報告,一個位元組都不改:新版讀舊檔的對照組。</summary>
     private static string GoldenBeforeExtras() => Normalize(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1.json"));
+
+    /// <summary>2.3.0～2.4.0(fontsNotLoaded 出現之前)寫出的報告,一個位元組都不改。</summary>
+    private static string GoldenBeforeFonts() => Normalize(Repo.Read("tests", "Parity.Tests", "Golden", "report.v1-extras.json"));
 
     // 行尾隨平台(Indented 用 Environment.NewLine;checkout 的 golden 檔行尾隨 core.autocrlf),只比內容
     private static string Normalize(string s) => s.Replace("\r\n", "\n").TrimEnd();
@@ -159,8 +166,35 @@ public class ReportWireContractTests
         Assert.Null(Assert.Single(back.Reports).Extras);
         const string summaryEnd = "\"maxSeverity\": \"serious\"\n      }\n    }";
         Assert.Contains(summaryEnd, old);
-        var expected = old.Replace(summaryEnd, "\"maxSeverity\": \"serious\"\n      },\n      \"extras\": null\n    }");
+        // 2.5.0 起還多一行 "fontsNotLoaded": null(同一種加法)
+        var expected = old.Replace(summaryEnd, "\"maxSeverity\": \"serious\"\n      },\n      \"extras\": null,\n      \"fontsNotLoaded\": null\n    }");
         Assert.Equal(expected, Normalize(JsonSerializer.Serialize(back, ReportWire.Indented)));
+    }
+
+    [Fact]
+    public void A_report_written_before_fonts_not_loaded_existed_reads_as_null_and_rewrites_with_only_that_key_added()
+    {
+        // 2.3.0～2.4.0 寫的報告:照讀、fontsNotLoaded 讀成 null,重寫時每份報告只多一行 "fontsNotLoaded": null
+        var old = GoldenBeforeFonts();
+        Assert.DoesNotContain("fontsNotLoaded", old);
+
+        var back = JsonSerializer.Deserialize<ReportDocument>(old, ReportWire.Indented)!;
+
+        Assert.All(back.Reports, r => Assert.Null(r.FontsNotLoaded));
+        var rewritten = Normalize(JsonSerializer.Serialize(back, ReportWire.Indented));
+        Assert.Equal(old, rewritten.Replace(",\n      \"fontsNotLoaded\": null", ""));
+        Assert.Equal(back.Reports.Count, rewritten.Split("\"fontsNotLoaded\": null").Length - 1);
+    }
+
+    [Fact]
+    public void Fonts_not_loaded_comes_last_null_when_everything_loaded_and_a_list_otherwise()
+    {
+        var loaded = JsonSerializer.Serialize(Sample().Reports[0], ReportWire.Compact);
+        var missing = JsonSerializer.Serialize(Sample().Reports[1], ReportWire.Compact);
+
+        Assert.EndsWith(",\"extras\":null,\"fontsNotLoaded\":null}", loaded);
+        Assert.EndsWith("]},\"fontsNotLoaded\":[\"Inter 400 normal\",\"Inter 700 normal\"]}", missing);
+        Assert.Equal(["Inter 400 normal", "Inter 700 normal"], JsonSerializer.Deserialize<FidelityReport>(missing, ReportWire.Compact)!.FontsNotLoaded);
     }
 
     [Fact]
@@ -169,13 +203,13 @@ public class ReportWireContractTests
         // 「沒開」(null,key 照樣寫出)與「開了、沒有」({ total: 0, items: [] })讀的人要分得出來
         var off = JsonSerializer.Serialize(Sample().Reports[0], ReportWire.Compact);
         var none = JsonSerializer.Serialize(Sample().Reports[0] with { Extras = new ExtraElements(0, []) }, ReportWire.Compact);
-        var some = JsonSerializer.Serialize(Sample().Reports[1], ReportWire.Compact);
+        var some = JsonSerializer.Serialize(Sample().Reports[1] with { FontsNotLoaded = null }, ReportWire.Compact);
 
-        Assert.EndsWith("\"maxSeverity\":\"serious\"},\"extras\":null}", off);
-        Assert.EndsWith("},\"extras\":{\"total\":0,\"items\":[]}}", none);
+        Assert.EndsWith("\"maxSeverity\":\"serious\"},\"extras\":null,\"fontsNotLoaded\":null}", off);
+        Assert.EndsWith("},\"extras\":{\"total\":0,\"items\":[]},\"fontsNotLoaded\":null}", none);
         Assert.EndsWith("},\"extras\":{\"total\":3,\"items\":[" +
             "{\"selector\":\"body \\u003E div:nth-of-type(1)\",\"tag\":\"div\",\"box\":{\"x\":0,\"y\":0,\"width\":800,\"height\":200}}," +
-            "{\"selector\":\"#promo\",\"tag\":\"img\",\"box\":{\"x\":16,\"y\":240,\"width\":320,\"height\":180.5}}]}}", some);
+            "{\"selector\":\"#promo\",\"tag\":\"img\",\"box\":{\"x\":16,\"y\":240,\"width\":320,\"height\":180.5}}]},\"fontsNotLoaded\":null}", some);
         Assert.Null(JsonSerializer.Deserialize<FidelityReport>(off, ReportWire.Compact)!.Extras);
         Assert.Equal(0, JsonSerializer.Deserialize<FidelityReport>(none, ReportWire.Compact)!.Extras!.Total);
     }

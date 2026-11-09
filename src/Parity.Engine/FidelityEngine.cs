@@ -83,7 +83,7 @@ public sealed class FidelityEngine(IDesignSource design, IImplementationSource i
 
         var report = new FidelityReport(
             req.Route, req.Impl.Url, $"{req.Design.Source}#{req.Design.NodeId}",
-            nodes, match.Unmatched, summary, extras);
+            nodes, match.Unmatched, summary, extras, renderedTree.FontsNotLoaded);
         return new ScanResult(report, designTree, renderedTree, renderedOrigin, designOrigin);
     }
 

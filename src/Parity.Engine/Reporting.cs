@@ -240,6 +240,16 @@ public static class MarkdownReport
             sb.AppendLine();
         }
 
+        // 字型沒載到(2.5.0):文字是用系統字型量的,下面那些寬度、換行、位置的落差可能全是這一個原因。
+        // 字型名來自頁面的 CSS,一律過 Name()
+        foreach (var r in reports.Where(r => r.FontsNotLoaded is { Count: > 0 }))
+        {
+            sb.AppendLine($"> ⚠️ {(multi ? $"{Word(r.Route)}: " : "")}web font(s) did not load: " +
+                $"{string.Join(", ", r.FontsNotLoaded!.Select(Name))}. Text was measured with a fallback font, " +
+                "so text widths, line breaks and positions may differ for that reason alone.");
+            sb.AppendLine();
+        }
+
         // baseline 模式:先講「相對基準變了什麼」——PM/reviewer 最在意的
         if (baseline is not null)
         {
