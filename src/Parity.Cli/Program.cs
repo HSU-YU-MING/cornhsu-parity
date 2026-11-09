@@ -30,6 +30,7 @@ try
         "install-browser" => InstallBrowserCommand.Run(rest),
         "bug-report" => BugReportCommand.Run(rest),
         "mcp" => await McpCommand.RunAsync(rest),
+        "login" => await LoginCommand.RunAsync(rest),
         "help" or "--help" or "-h" => HelpCommand.Run(),
         "version" or "--version" => VersionCommand.Run(),
         _ => UnknownCommand(command),
@@ -554,10 +555,11 @@ internal static class SnapshotCommand
         foreach (var (t, i) in targets.Select((t, i) => (t, i)))
         {
             var url = ScanSession.ResolveUrl(t.Url, config.BaseDirectory);
-            var implRef = new ImplRef(url, t.Width ?? width, t.Height ?? height)
+            // 登入態與步驟跟 check 一樣套:快照要拍到 check 之後會量的那個狀態
+            var implRef = config.WithPageSetup(new ImplRef(url, t.Width ?? width, t.Height ?? height)
             {
                 IgnoreSelectors = config.Ignore,
-            };
+            }, t);
             var tree = await impl.CaptureAsync(implRef);
 
             // 連拍實測隨機 id(F2 根治):第二次載入,只出現在單邊的 id = 每次載入重新生成。
@@ -775,6 +777,7 @@ internal static class Usage
         public static readonly string[] InstallBrowser = ["--with-deps"];
         public static readonly string[] BugReport = ["--config=", "--open"];
         public static readonly string[] Mcp = ["--config="];
+        public static readonly string[] Login = ["--config=", "--url=", "--out="];
     }
 
     public const string Check = """
@@ -891,12 +894,88 @@ internal static class Usage
               Checks run from MCP write .parity/report.json like `parity check` but never send anonymous usage statistics.
         """;
 
+    public const string Login = """
+          parity login [--config <path>] [--url <url>] [--out <path>]
+              Open a browser window at the first target's url (or --url); sign in by hand, then press Enter here.
+              The session (cookies + localStorage) is saved to auth.storageState from the config, or --out
+              (default .parity/auth.json), and loaded before every page from then on. The file holds your login:
+              never commit it. Pages that need a header instead use "auth": { "headers": { … } } in the config.
+        """;
+
     /// <summary>子指令 --help:印該指令的用法,exit 0。</summary>
     public static int Print(string usage)
     {
         Console.WriteLine("Usage:");
         Console.WriteLine(usage);
         return 0;
+    }
+}
+
+internal static class LoginCommand
+{
+    /// <summary>
+    /// parity login(2.5.0):開看得見的瀏覽器讓使用者自己登入,按 Enter 後把 storage state 存檔。
+    /// 帳密從頭到尾只在瀏覽器裡,Parity 不碰、不存;存下來的是 cookie 與 localStorage,所以提醒不要 commit。
+    /// </summary>
+    public static async Task<int> RunAsync(string[] args)
+    {
+        var opts = CliOptions.Parse(args, Usage.Flags.Login);
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Login);
+        var configPath = opts.GetValueOrDefault("--config") ?? ParityConfig.FindConfigFile(Directory.GetCurrentDirectory());
+        var config = configPath is null ? null : ParityConfig.Load(configPath);
+        var baseDir = config?.BaseDirectory ?? Directory.GetCurrentDirectory();
+
+        var url = opts.GetValueOrDefault("--url") is { } u
+            ? ScanSession.ResolveUrl(u, baseDir)
+            : config?.Targets.Select(t => t.Url).FirstOrDefault(t => !Parity.Engine.ImplementationSources.Web.WebImplementationSource.IsAttachUrl(t)) is { } first
+                ? ScanSession.ResolveUrl(first, baseDir)
+                : throw new InvalidOperationException("no page to open: pass --url, or run this next to a parity.config.json with a target.");
+        var outPath = Path.GetFullPath(opts.GetValueOrDefault("--out")
+            ?? Path.Combine(baseDir, config?.Auth.StorageState ?? Path.Combine(".parity", "auth.json")));
+
+        Console.WriteLine($"\x1b[1mParity login\x1b[0m — opening {ConsoleText.Safe(url)}");
+        Console.WriteLine("Sign in in the browser window. When the page shows you signed in, come back here and press Enter.");
+        await using var impl = new Parity.Engine.ImplementationSources.Web.WebImplementationSource(
+            new Parity.Engine.ImplementationSources.Web.WebCaptureOptions(Headless: false));
+        await impl.RecordLoginAsync(url, outPath, () => Task.Run(() => Console.In.ReadLine()));
+
+        Console.WriteLine($"\x1b[32m✔\x1b[0m saved the login state to {outPath}");
+        Console.WriteLine("\x1b[33m⚠ this file holds your session cookies — never commit it.\x1b[0m" + GitIgnoredNote(outPath));
+        if (config?.Auth.StorageState is null)
+        {
+            var relative = Path.GetRelativePath(baseDir, outPath).Replace('\\', '/');
+            Console.WriteLine($"Add this to parity.config.json so every check loads it:\n  \"auth\": {{ \"storageState\": \"{relative}\" }}");
+        }
+        return 0;
+    }
+
+    /// <summary>問 git 這個檔有沒有被忽略。問不到(沒有 git、不在 repo 裡)就不多說。</summary>
+    private static string GitIgnoredNote(string path)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git")
+            {
+                WorkingDirectory = Path.GetDirectoryName(path)!,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var a in new[] { "check-ignore", "-q", path }) psi.ArgumentList.Add(a);
+            using var git = System.Diagnostics.Process.Start(psi)!;
+            if (!git.WaitForExit(5_000)) { git.Kill(); return ""; }
+            return git.ExitCode switch
+            {
+                0 => " (git ignores it — good.)",
+                1 => "\n\x1b[31m✘ git does NOT ignore it: add it to .gitignore before your next commit.\x1b[0m",
+                _ => "",
+            };
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return "";
+        }
     }
 }
 
@@ -929,7 +1008,7 @@ internal static class HelpCommand
         foreach (var usage in new[]
         {
             Usage.Check, Usage.Report, Usage.Push, Usage.Snapshot, Usage.Serve, Usage.Map,
-            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser, Usage.BugReport, Usage.Mcp,
+            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser, Usage.BugReport, Usage.Mcp, Usage.Login,
         })
             Console.WriteLine(usage);
         Console.WriteLine("\nExit codes: 0 = pass; 1 = diffs exceed the gate threshold; 2 = execution error; " +

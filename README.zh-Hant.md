@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1675 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1707 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -170,6 +170,8 @@ dotnet run --project src/Parity.Cli -- check --config samples/demo/parity.config
   "tolerances": { "sizePx": 2, "spacingPx": 2, "colorDeltaE": 2.0, "fontSizePx": 0.5, "positionPx": 4 },
   "ignore": ["[data-parity-ignore]"],
   "accept": [],                              // 選配:一條一條收下的落差,每條都寫原因(見下面「收下單一條落差」)
+  "auth": { "storageState": ".parity/auth.json" },  // 選配:要登入才看得到的頁面(見「要登入的頁面與頁面狀態」);
+                                             //   target 也可以加 "steps" 打開選單、分頁或對話框
   "gate": {
     "failOn": ["critical", "serious"],       // minor / medium / serious / critical 任選,一個字串放一個等級
     "failOnUnmatched": [],                   // 選配:要擋的未配對原因(exit 1),例如 ["text-not-found"],
@@ -248,6 +250,46 @@ electron . --remote-debugging-port=9222      # 你的 app,加這個旗標
 ```
 
 > 為什麼 Electron 幾乎免費:它的畫面就是一個 Chromium renderer,跟網頁同一套 DOM/CSS 量測。手機原生 / Flutter / 原生桌面不走 DOM,留待 v2.0。
+
+### 要登入的頁面與頁面狀態
+
+**要登入。** 在 Parity 開的瀏覽器裡自己登入一次,它把登入狀態存下來,之後每一頁開之前都先載入:
+
+```sh
+parity login        # 開第一個 target 的網址(或 --url);登入後回到終端機按 Enter
+```
+```jsonc
+"auth": { "storageState": ".parity/auth.json" }   // parity login 存的檔(它會把這一行印給你)
+```
+
+這個檔是 Playwright 的 storage state——網站的 cookie 與 localStorage,也就是你的登入狀態。**絕對不要 commit**:git 沒忽略它時
+`parity login` 會警告。密碼不經過 Parity,是你自己打在網站上。登入過期就再跑一次 `parity login`。要在標頭帶 token 的網站
+(proxy 後面的 staging、API key)用 `headers`,值寫成 `env:NAME`,祕密才不會進設定檔:
+
+```jsonc
+"auth": { "headers": { "Authorization": "env:STAGING_AUTH" } }
+```
+
+CI 上請在前一個步驟產生 storage state(自己的登入腳本,或測試帳號的 cookie)再讓 `storageState` 指過去,或改用 `headers`。
+
+**要在某個狀態下量。** 點了才打開的選單、第二個分頁、對話框:在 target 加 `steps`,頁面載完、量任何東西之前依序執行——
+`check`、`snapshot`、`baseline save`、`serve`、`parity mcp` 都一樣,所以快照跟之後的 check 看到的是同一個狀態:
+
+```jsonc
+{ "route": "/settings", "frame": "10:7", "url": "http://localhost:8080/settings",
+  "steps": [ { "click": "#tab-billing" }, { "waitFor": ".billing-panel" } ] }
+```
+
+| 步驟 | 做什麼 |
+|---|---|
+| `{ "click": "<selector>" }`、`{ "hover": … }` | 點擊或滑過第一個符合的元素 |
+| `{ "fill": "<selector>", "value": "…" }` | 在欄位裡打字(`value` 可以寫 `env:NAME`;永遠不會印出來,步驟失敗時也不會) |
+| `{ "press": "Escape" }`、`{ "press": "Enter", "in": "<selector>" }` | 在整頁或某個元素上按鍵 |
+| `{ "waitFor": "<selector>" }` | 等到元素看得見 |
+| `{ "wait": 500 }` | 固定等一段時間,毫秒(最多 10000) |
+
+每一步最多等 10 秒找元素。步驟失敗就以 exit 2 結束,並說是哪一步——頁面沒到你要的狀態就量,量到的是錯的畫面。步驟寫錯在載入時就是
+設定錯誤。`cdp:` 的 target 不套 `auth`、不准有 `steps`(設定錯誤):那個視窗停在你留下的狀態,Parity 也不在活著的 app 裡亂點。
 
 ## 設計來源:Figma、快照、或一張圖
 

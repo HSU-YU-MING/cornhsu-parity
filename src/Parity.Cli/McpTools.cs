@@ -311,7 +311,8 @@ internal sealed class McpTools(string? defaultConfig, string workingDirectory)
         parts.Add(verdict switch
         {
             "untrusted" => "Too few design nodes matched to trust the result — usually the target url or frame is wrong, the page did not " +
-                "load, or it needs a login. Check pages[] and the config before fixing any gap.",
+                "load, or it needs a login (the user can run `parity login` and set auth.storageState) or a menu or tab opened first " +
+                "(targets[].steps). Check pages[] and the config before fixing any gap.",
             "fail" when baselineMode => "Fix the new and worsened gaps under baseline (each has a suggested fix), then call parity_check again.",
             "fail" => "Fix the gaps listed, most severe first (each has a suggested CSS fix), then call parity_check again. If a gap is a " +
                 "deliberate design decision, the user can accept it with an `accept` entry and a reason in parity.config.json — do not add " +

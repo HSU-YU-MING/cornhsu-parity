@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Parity.Engine;
 using Parity.Engine.Comparison;
+using Parity.Engine.ImplementationSources;
 
 namespace Parity.Cli;
 
@@ -92,6 +93,15 @@ public sealed class ParityConfig
     {
         get => _gate ?? throw NullSection("gate", "an object, e.g. { \"failOn\": [\"critical\", \"serious\"] } (or remove the key for the defaults)");
         set => _gate = value;
+    }
+
+    // auth(2.5.0):要登入才看得到的頁面。寫成 null 一樣在載入時就報錯
+    private AuthConfig? _auth = new();
+
+    public AuthConfig Auth
+    {
+        get => _auth ?? throw NullSection("auth", "an object, e.g. { \"storageState\": \".parity/auth.json\" } (or remove the key)");
+        set => _auth = value;
     }
 
     // stats(2.1.0):匿名使用統計的開關與選填的專案 ID(stats-collector 的 PROTOCOL.md §3、§7.1)。
@@ -203,6 +213,27 @@ public sealed class ParityConfig
                 throw new InvalidOperationException(
                     $"config {path}: accept[{i}] needs a \"reason\" — say why this gap is accepted, so the next person reading the report knows.");
         }
+        // auth.headers:標頭名不能空、值要是字串。值本身(可能是 token)不進任何訊息
+        foreach (var (name, value) in Auth.Headers ?? [])
+            if (string.IsNullOrWhiteSpace(name) || value is null)
+                throw new InvalidOperationException(
+                    $"config {path}: auth.headers needs a header name and a string value for each entry " +
+                    "(e.g. \"Authorization\": \"env:PARITY_AUTH\"; got an empty name or a null value).");
+        if (Auth.StorageState is { } state && string.IsNullOrWhiteSpace(state))
+            throw new InvalidOperationException($"config {path}: auth.storageState is empty — give the path `parity login` saves to, or remove it.");
+        // targets[].steps:動作拼錯、少了值,在載入時就擋——跑到一半才發現,量到的是沒打開選單的畫面
+        // 讀欄位不讀 Targets:targets 是 null 或有 null 項時,要到用的時候才報錯(report/push 不碰 targets,行為不變)
+        var targets = _targets ?? [];
+        for (var i = 0; i < targets.Count; i++)
+        {
+            var t = targets[i];
+            if (t?.Steps is not { Count: > 0 } steps) continue;
+            if (Parity.Engine.ImplementationSources.Web.WebImplementationSource.IsAttachUrl(t.Url))
+                throw new InvalidOperationException(
+                    $"config {path}: targets[{i}] attaches to a running app (cdp:) and also has steps — steps would click around in your " +
+                    "live window, so they are not allowed there. Put the app in the state you want before running the check.");
+            t.ParsedSteps = steps.Select((s, j) => PageSteps.Parse(s, $"targets[{i}].steps[{j}]", path)).ToList();
+        }
         // stats.share 只收 true/false:寫成字串 "false" 是最可能的手誤,而它是隱私開關——不能當成「沒表態」照送
         if (Stats.Share.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False))
             throw new InvalidOperationException(
@@ -247,6 +278,34 @@ public sealed class ParityConfig
             dir = dir.Parent!;
         }
         return null;
+    }
+
+    /// <summary>
+    /// 一個 target 的擷取參照補上登入態與步驟(2.5.0;check、snapshot、baseline、serve、mcp 都走這裡,兩邊才拍到同一個狀態)。
+    /// cdp: 接現成視窗時不套登入態(那個視窗本來就是登入的)。env: 在這裡才讀,沒設就丟錯、指名變數,不印值。
+    /// </summary>
+    public ImplRef WithPageSetup(ImplRef reference, TargetConfig target)
+    {
+        if (Parity.Engine.ImplementationSources.Web.WebImplementationSource.IsAttachUrl(reference.Url)) return reference;
+        return reference with
+        {
+            StorageStatePath = Auth.StorageState is { } state ? Path.GetFullPath(Path.Combine(BaseDirectory, state)) : null,
+            ExtraHeaders = Auth.Headers is { Count: > 0 } headers
+                ? headers.ToDictionary(h => h.Key, h => ResolveSecret(h.Value, $"auth.headers.{h.Key}"))
+                : null,
+            Steps = target.ParsedSteps is { Count: > 0 } steps
+                ? steps.Select(s => s.Action == "fill" ? s with { Value = ResolveSecret(s.Value ?? "", $"a fill step of target {target.Route}") } : s).ToList()
+                : null,
+        };
+    }
+
+    /// <summary>"env:NAME" → 環境變數(沒設就丟錯,只說變數名);其他字串原樣。</summary>
+    internal static string ResolveSecret(string value, string field)
+    {
+        if (!value.StartsWith("env:", StringComparison.OrdinalIgnoreCase)) return value;
+        var name = value[4..];
+        return Environment.GetEnvironmentVariable(name)
+            ?? throw new InvalidOperationException($"{field} reads the environment variable {name}, which is not set.");
     }
 
     /// <summary>解析 designToken:"env:FIGMA_TOKEN" → 讀環境變數;其餘視為字面值。</summary>
@@ -407,6 +466,77 @@ public sealed class TargetConfig
     /// </summary>
     public int? Width { get; set; }
     public int? Height { get; set; }
+
+    /// <summary>
+    /// 量測之前在頁面上做的步驟(2.5.0):<c>{ "click": "#menu" }</c>、<c>{ "hover": … }</c>、<c>{ "waitFor": … }</c>、
+    /// <c>{ "fill": "#q", "value": "…" }</c>(value 可寫 env:NAME)、<c>{ "press": "Escape" }</c>(可加 <c>"in": selector</c>)、
+    /// <c>{ "wait": 500 }</c>(毫秒,最多 10000)。原樣收進來,載入時由 <see cref="PageSteps.Parse"/> 驗過、存進 <see cref="ParsedSteps"/>。
+    /// </summary>
+    public List<JsonElement>? Steps { get; set; }
+
+    [JsonIgnore]
+    public IReadOnlyList<PageStep>? ParsedSteps { get; internal set; }
+}
+
+/// <summary>"auth" 區段(2.5.0):要登入才看得到的頁面。cdp: 接現成視窗的 target 不套用。</summary>
+public sealed class AuthConfig
+{
+    /// <summary>Playwright 的 storage state 檔(cookie + localStorage),相對於設定檔。<c>parity login</c> 產生。**含登入 cookie,不要 commit。**</summary>
+    public string? StorageState { get; set; }
+
+    /// <summary>每個請求多帶的 HTTP 標頭。值可寫 env:NAME(建議:設定檔會進版控)。</summary>
+    public Dictionary<string, string>? Headers { get; set; }
+}
+
+/// <summary>targets[].steps 的解析(2.5.0)。寫法刻意短:一個動作一個 key,值就是對象。</summary>
+public static class PageSteps
+{
+    /// <summary>動作 → 這個動作另外可以帶的 key。</summary>
+    private static readonly Dictionary<string, string[]> Actions = new(StringComparer.Ordinal)
+    {
+        ["click"] = [],
+        ["hover"] = [],
+        ["waitFor"] = [],
+        ["fill"] = ["value"],
+        ["press"] = ["in"],
+        ["wait"] = [],
+    };
+
+    internal const int MaxWaitMs = 10_000;
+
+    public static PageStep Parse(JsonElement step, string where, string path)
+    {
+        Exception Bad(string why) => new InvalidOperationException($"config {path}: {where} {why}");
+        if (step.ValueKind != JsonValueKind.Object)
+            throw Bad("must be an object like { \"click\": \"#menu\" }.");
+        var keys = step.EnumerateObject().Select(p => p.Name).ToList();
+        var actions = keys.Where(Actions.ContainsKey).ToList();
+        if (actions.Count != 1)
+            throw Bad($"needs exactly one action ({string.Join(", ", Actions.Keys)}); got {(keys.Count == 0 ? "none" : string.Join(", ", keys.Select(ConsoleText.Safe)))}.");
+        var action = actions[0];
+        if (keys.FirstOrDefault(k => k != action && !Actions[action].Contains(k)) is { } extra)
+            throw Bad($"has \"{ConsoleText.Safe(extra)}\", which {action} does not take" +
+                (Actions[action].Length == 0 ? "." : $" (it takes: {string.Join(", ", Actions[action])})."));
+
+        string Text(string key, bool required)
+        {
+            if (!step.TryGetProperty(key, out var v))
+                return required ? throw Bad($"needs \"{key}\".") : null!;
+            if (v.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(v.GetString()) && key != "value")
+                throw Bad($"\"{key}\" must be a non-empty string.");
+            return v.GetString()!;
+        }
+
+        return action switch
+        {
+            "wait" => step.GetProperty("wait") is { ValueKind: JsonValueKind.Number } ms && ms.TryGetInt32(out var n) && n is >= 0 and <= MaxWaitMs
+                ? new PageStep("wait", Milliseconds: n)
+                : throw Bad($"\"wait\" must be a whole number of milliseconds from 0 to {MaxWaitMs}."),
+            "fill" => new PageStep("fill", Text("fill", true), Text("value", true)),
+            "press" => new PageStep("press", step.TryGetProperty("in", out _) ? Text("in", true) : null, Text("press", true)),
+            _ => new PageStep(action, Text(action, true)),
+        };
+    }
 }
 
 /// <summary>

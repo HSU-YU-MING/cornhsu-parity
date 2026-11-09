@@ -20,6 +20,9 @@ internal sealed record ConfigSummary(
     bool HasCustomBaselineFile,
     int IgnoreRules,
     int AcceptRules,
+    bool HasStorageState,
+    int AuthHeaders,
+    int TargetsWithSteps,
     ToleranceConfig Tolerances,
     IReadOnlyList<string> FailOn,
     IReadOnlyList<string> FailOnUnmatched,
@@ -53,6 +56,10 @@ internal sealed record ConfigSummary(
             HasCustomBaselineFile: config.BaselineFile is not null,
             IgnoreRules: config.Ignore.Count,
             AcceptRules: config.Accept.Count, // 只取條數:圖層名、selector、原因都可能是內部資訊
+                                              // 登入:只說有沒有、幾個。檔案路徑、標頭名與值、步驟的 selector 與填的字一律不取
+            HasStorageState: config.Auth.StorageState is not null,
+            AuthHeaders: config.Auth.Headers?.Count ?? 0,
+            TargetsWithSteps: targets.Count(t => t.Steps is { Count: > 0 }),
             Tolerances: config.Tolerances,
             FailOn: config.Gate.FailOn.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過只有四個等級名
             FailOnUnmatched: config.Gate.FailOnUnmatched.Select(s => s.ToLowerInvariant()).ToList(), // 載入時已驗過:已知原因或 "*"
@@ -83,6 +90,7 @@ internal sealed record ConfigSummary(
         yield return $"designToken: {DesignToken}";
         yield return $"tokensFile: {(HasTokensFile ? "set" : "not set")}; mapFile: {(HasMapFile ? "set" : "not set")}; " +
             $"baselineFile: {(HasCustomBaselineFile ? "custom" : "default")}; ignore rules: {IgnoreRules}; accept rules: {AcceptRules}";
+        yield return $"auth: storageState {(HasStorageState ? "set" : "not set")}, headers {AuthHeaders}; targets with steps: {TargetsWithSteps}";
         yield return $"tolerances: sizePx {N(Tolerances.SizePx)}, spacingPx {N(Tolerances.SpacingPx)}, " +
             $"colorDeltaE {N(Tolerances.ColorDeltaE)}, fontSizePx {N(Tolerances.FontSizePx)}, positionPx {N(Tolerances.PositionPx)}";
         yield return $"gate.failOn: {(FailOn.Count == 0 ? "(empty)" : string.Join(", ", FailOn))}";
