@@ -67,7 +67,7 @@ PR comment, updating the same comment rather than adding new ones.
 | Compared properties | Size, padding, spacing, typography, color (CIEDE2000 ΔE), relative position — **absolute coordinates are deliberately excluded** (they are guaranteed false positives in a flexible layout) |
 | Design sources | 4: the Figma API, a rendering snapshot, an image + annotations (pixel sampling — any tool that exports a PNG works), or JSON |
 | Implementation sources | The web (including **shadow DOM, same-origin iframes, and multiple responsive breakpoints**) plus **Electron** (attached to the live window over CDP) |
-| Tests | **1675**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
+| Tests | **1707**, covering the CIEDE2000 reference data set (Sharma), match disambiguation, position false-positive guards, image sampling, and real-browser capture regressions |
 | Proven in CI | The GitHub Action is validated by **real PRs in an external repo**: blocking the PR, commenting automatically (updating in place), and baseline regression gating |
 | Proven in production | **All 26 pages of cornhsu.com are gated by Parity itself** — dogfooding has already found and fixed three flaky root causes (most recently a scroll-triggered entrance animation; see 0.11.1) |
 
@@ -194,6 +194,8 @@ serious-severity gaps — which is exactly the behaviour you want from a CI gate
   "ignore": ["[data-parity-ignore]"],
   "accept": [],                              // optional: gaps you accept one by one, each with a reason
                                              //   (see "Accepting a single gap" below)
+  "auth": { "storageState": ".parity/auth.json" },  // optional: pages behind a login (see "Signed-in pages and page
+                                             //   state"); targets may also take "steps" to open a menu, tab or dialog
   "gate": {
     "failOn": ["critical", "serious"],       // any of minor / medium / serious / critical, one per string
     "failOnUnmatched": [],                   // optional: unmatched reasons that fail the gate (exit 1), e.g.
@@ -299,6 +301,53 @@ electron . --remote-debugging-port=9222      # your app, with this one extra fla
 > Why Electron is nearly free: its UI *is* a Chromium renderer, so it uses the same DOM/CSS
 > measurement path as the web. Mobile native, Flutter and native desktop do not go through a
 > DOM, so they are left for v2.0.
+
+### Signed-in pages and page state
+
+**Behind a login.** Sign in once, by hand, in a browser Parity opens; it saves the session and loads it
+before every page from then on:
+
+```sh
+parity login        # opens the first target's url (or --url); sign in, then press Enter in the terminal
+```
+```jsonc
+"auth": { "storageState": ".parity/auth.json" }   // what `parity login` saved (it prints this line for you)
+```
+
+The file is a Playwright storage state — the site's cookies and localStorage, i.e. your session. **Never
+commit it**: `parity login` warns when git would not ignore it. Your password never passes through
+Parity; you type it into the site. When the session expires, run `parity login` again. Sites that take a
+token in a header instead (staging behind a proxy, an API key) use `headers`; write the value as
+`env:NAME` so the secret stays out of the config:
+
+```jsonc
+"auth": { "headers": { "Authorization": "env:STAGING_AUTH" } }
+```
+
+In CI, create the storage state in an earlier step (your own login script, or a test account's cookie)
+and point `storageState` at it, or use `headers`.
+
+**In a particular state.** A menu that only opens on click, the second tab, a dialog: give the target
+`steps`, run after the page loads and before anything is measured — by `check`, `snapshot`, `baseline save`,
+`serve` and `parity mcp` alike, so a snapshot and later checks see the same state:
+
+```jsonc
+{ "route": "/settings", "frame": "10:7", "url": "http://localhost:8080/settings",
+  "steps": [ { "click": "#tab-billing" }, { "waitFor": ".billing-panel" } ] }
+```
+
+| Step | Does |
+|---|---|
+| `{ "click": "<selector>" }`, `{ "hover": … }` | Click or hover the first element that matches |
+| `{ "fill": "<selector>", "value": "…" }` | Type into a field (`value` may be `env:NAME`; it is never printed, even when the step fails) |
+| `{ "press": "Escape" }`, `{ "press": "Enter", "in": "<selector>" }` | Press a key on the page, or in an element |
+| `{ "waitFor": "<selector>" }` | Wait until the element is visible |
+| `{ "wait": 500 }` | Wait a fixed time, in ms (at most 10000) |
+
+Each step waits up to 10 s for its element. A step that fails stops the run with exit 2 and names the
+step — measuring a page that is not in the state you asked for would report the wrong screen. A typo in a
+step is a config error at load. `cdp:` targets ignore `auth` and refuse `steps` (a config error): that
+window is already in whatever state you left it, and Parity does not click around in a live app.
 
 ## Design sources: Figma, a snapshot, or just an image
 

@@ -211,6 +211,22 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   with fixes, next step) and page through the last report — so an AI agent can verify its UI changes against the design. Speaks both the
   2026-07-28 revision and the older `initialize` handshake. Checks run through it never send usage statistics.*
 
+- **新增:要登入的頁面與頁面狀態**(設定多 `auth` 與 `targets[].steps`、CLI 多 `parity login`,都是加法;minor)。
+  以前要量登入後的頁面只能用 `cdp:` 接一個自己開好的瀏覽器;點了才打開的選單、第二個分頁根本量不到。
+  - `parity login`:Parity 開一個看得見的瀏覽器,你自己登入、回終端機按 Enter,cookie 與 localStorage 存成 Playwright 的 storage state
+    (預設 `.parity/auth.json`)。設定檔寫 `"auth": { "storageState": "…" }`,之後每一頁開之前都先載入。密碼不經過 Parity;
+    存下來的檔就是登入狀態,git 沒忽略它時會警告。
+  - `auth.headers`:每個請求多帶的標頭(例如 Authorization),值可寫 `env:NAME`。
+  - `targets[].steps`:頁面載完、量測之前依序執行 `click`、`hover`、`fill`(值可寫 `env:NAME`)、`press`、`waitFor`、`wait`。
+    `check`、`snapshot`、`baseline save`、`serve`、`parity mcp` 都套,快照與之後的 check 看到同一個狀態。每步最多等 10 秒;失敗就 exit 2、
+    說是第幾步(不印 fill 的值)。寫錯的步驟載入時就 exit 2。
+  - `cdp:` 的 target 不套 `auth`,有 `steps` 是設定錯誤(不在使用者活著的 app 裡亂點)。
+  - `parity bug-report` 的設定摘要多一行:有沒有 storageState、幾個標頭、幾個 target 有步驟——不帶路徑、標頭名或值、selector。
+  *New: pages behind a login and pages in a particular state. `parity login` opens a browser for you to sign in and saves the session as a
+  Playwright storage state that `auth.storageState` loads before every page; `auth.headers` adds headers (values may be `env:NAME`);
+  `targets[].steps` (click, hover, fill, press, waitFor, wait) put the page in the state to measure, for check, snapshot, baseline, serve
+  and mcp alike.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

@@ -35,6 +35,9 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
             return await CaptureAttachedAsync(reference);
 
         var browser = await GetBrowserAsync();
+        if (reference.StorageStatePath is { } state && !File.Exists(state))
+            throw new InvalidOperationException(
+                $"the login state file does not exist: {state} — run `parity login` to sign in once and save it.");
         var page = await browser.NewPageAsync(new BrowserNewPageOptions
         {
             ViewportSize = new ViewportSize
@@ -42,6 +45,8 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                 Width = reference.ViewportWidth ?? 1280,
                 Height = reference.ViewportHeight ?? 800,
             },
+            StorageStatePath = reference.StorageStatePath,
+            ExtraHTTPHeaders = reference.ExtraHeaders is { Count: > 0 } headers ? headers : null,
         });
         try
         {
@@ -60,6 +65,7 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                 await page.WaitForLoadStateAsync(LoadState.Load, new() { Timeout = 5_000 });
                 await page.WaitForTimeoutAsync(500);
             }
+            await RunStepsAsync(page, reference);
             return await CaptureFromPageAsync(page, reference);
         }
         finally
@@ -99,6 +105,71 @@ public sealed class WebImplementationSource(WebCaptureOptions? options = null) :
                   $"no page at the CDP endpoint has a URL containing \"{pageMatch}\"; available: {string.Join(", ", pages.Select(p => p.Url))}");
 
         return await CaptureFromPageAsync(page, reference);
+    }
+
+    /// <summary>單一步驟的等待上限:選單、分頁、彈窗幾秒內就該出現,等不到多半是 selector 寫錯。</summary>
+    internal const float StepTimeoutMs = 10_000;
+
+    /// <summary>
+    /// 設定檔的 steps(2.5.0):頁面載完、凍結動畫之前依序執行。selector 對到好幾個時用第一個。
+    /// 失敗就整個擷取失敗(exit 2),訊息說是第幾步、哪個動作——頁面沒到指定狀態就量,量到的是錯的畫面。
+    /// 做完再等一下網路安靜(點了分頁常會載資料),等不到不算錯。
+    /// </summary>
+    private static async Task RunStepsAsync(IPage page, ImplRef reference)
+    {
+        if (reference.Steps is not { Count: > 0 } steps) return;
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            try
+            {
+                var target = step.Selector is null ? null : page.Locator(step.Selector).First;
+                switch (step.Action)
+                {
+                    case "click": await target!.ClickAsync(new() { Timeout = StepTimeoutMs }); break;
+                    case "hover": await target!.HoverAsync(new() { Timeout = StepTimeoutMs }); break;
+                    case "fill": await target!.FillAsync(step.Value ?? "", new() { Timeout = StepTimeoutMs }); break;
+                    case "waitFor": await target!.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = StepTimeoutMs }); break;
+                    case "press":
+                        if (target is null) await page.Keyboard.PressAsync(step.Value!);
+                        else await target.PressAsync(step.Value!, new() { Timeout = StepTimeoutMs });
+                        break;
+                    case "wait": await page.WaitForTimeoutAsync(step.Milliseconds ?? 0); break;
+                    default: throw new InvalidOperationException($"unknown step action \"{step.Action}\"");
+                }
+            }
+            catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+            {
+                // Playwright 的訊息很長(附呼叫紀錄),只留第一行
+                var first = ex.Message.Split('\n', 2)[0].Trim();
+                throw new InvalidOperationException($"{reference.Url}: step {i + 1} ({step.Describe()}) failed: {first}", ex);
+            }
+        }
+        try { await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new() { Timeout = 5_000 }); }
+        catch (TimeoutException) { /* 長輪詢的頁面永遠不安靜;步驟已經做完,照常量 */ }
+    }
+
+    /// <summary>
+    /// <c>parity login</c>(2.5.0):開一個看得見的瀏覽器到 <paramref name="url"/>,使用者自己登入,
+    /// <paramref name="waitForUser"/> 回來之後把這個分頁的 cookie 與 localStorage 存成 storage state。
+    /// 使用者在那之前把視窗關掉 → 什麼都不寫,丟錯說明。
+    /// </summary>
+    public async Task RecordLoginAsync(string url, string outPath, Func<Task> waitForUser, CancellationToken ct = default)
+    {
+        var browser = await GetBrowserAsync();
+        await using var context = await browser.NewContextAsync();
+        var page = await context.NewPageAsync();
+        await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.Load, Timeout = _options.TimeoutMs });
+
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        page.Close += (_, _) => closed.TrySetResult();
+        var user = waitForUser();
+        if (await Task.WhenAny(user, closed.Task).WaitAsync(ct) != user || page.IsClosed)
+            throw new InvalidOperationException("the browser window was closed before you confirmed — nothing was saved. Run `parity login` again.");
+        await user;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
+        await context.StorageStateAsync(new BrowserContextStorageStateOptions { Path = outPath });
     }
 
     /// <summary>共用的擷取:在給定頁面上跑擷取腳本 → RenderedNode(啟動導頁與 CDP attach 兩條路都用)。</summary>

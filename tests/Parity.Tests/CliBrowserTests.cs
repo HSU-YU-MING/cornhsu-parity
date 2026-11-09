@@ -676,6 +676,33 @@ public class CliBrowserTests
             .ToList();
     }
 
+    // ---------- 頁面狀態:snapshot 與 check 套同一組步驟 ----------
+
+    [Fact]
+    public async Task Snapshot_and_check_both_run_the_target_steps()
+    {
+        // 2.5.0:選單要點開才看得到。快照照設定檔的步驟點開後拍;check 也點開 → 跟快照一致、過。
+        // 拿掉步驟再 check:面板沒打開,快照裡的面板節點配不到 → 不會是 0
+        using var dir = new TempDir();
+        dir.Write("page.html", Page("""
+            <button id="open" onclick="document.getElementById('panel').style.display='block'">Menu</button>
+            <div id="panel" style="display:none; width:240px; height:120px; background:#eef">Panel content</div>
+            """));
+        const string steps = """ "steps": [ { "click": "#open" }, { "waitFor": "#panel" } ] """;
+        var snap = await Cli.RunAsync("snapshot", "--config", dir.Write("snap.config.json", $$"""{ "targets": [{ "route": "/", "url": "./page.html", {{steps}} }] }"""));
+        if (Cli.BrowserMissing(snap)) { Console.WriteLine(Skipped); return; }
+        Assert.Equal(0, snap.ExitCode);
+        Assert.Contains("Panel content", File.ReadAllText(dir.File("parity.snapshot.json")));
+
+        var withSteps = await Cli.RunAsync("check", "--config", dir.Write("parity.config.json",
+            $$"""{ "designFile": "parity.snapshot.json", "gate": { "failOnUnmatched": ["*"] }, "targets": [{ "route": "/", "frame": "/", "url": "./page.html", {{steps}} }] }"""));
+        Assert.Equal(0, withSteps.ExitCode);
+
+        var without = await Cli.RunAsync("check", "--config", dir.Write("plain.config.json",
+            """{ "designFile": "parity.snapshot.json", "gate": { "failOnUnmatched": ["*"] }, "targets": [{ "route": "/", "frame": "/", "url": "./page.html" }] }"""));
+        Assert.NotEqual(0, without.ExitCode);
+    }
+
     // ---------- mcp:真的行程、真的 stdio ----------
 
     [Fact]

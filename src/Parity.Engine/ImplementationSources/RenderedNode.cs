@@ -148,6 +148,18 @@ public sealed record ImplRef(
     /// 探測性擷取設 false,截圖永遠屬於被凍結的那一拍。
     /// </summary>
     public bool CaptureScreenshot { get; init; } = true;
+
+    /// <summary>
+    /// 登入態(2.5.0):Playwright 的 storage state 檔(cookie + localStorage),開頁前載入。<c>parity login</c> 產生。
+    /// cdp: 接現成視窗時不用(那個視窗本來就是登入的狀態)。
+    /// </summary>
+    public string? StorageStatePath { get; init; }
+
+    /// <summary>每個請求多帶的 HTTP 標頭(2.5.0,例如 Authorization)。值已解析過 env:,不進任何輸出。</summary>
+    public IReadOnlyDictionary<string, string>? ExtraHeaders { get; init; }
+
+    /// <summary>頁面載完後、量測之前依序做的步驟(2.5.0)。cdp: 接現成視窗時不准有(設定檔載入時就擋)。</summary>
+    public IReadOnlyList<PageStep>? Steps { get; init; }
 }
 
 /// <summary>讀不懂的顏色:哪一個擷取欄位、原本的計算值。</summary>
