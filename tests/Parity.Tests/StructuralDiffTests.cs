@@ -32,6 +32,41 @@ public class StructuralDiffTests
         return Engine.StructuralDiffs(root, Rendered("body", children: renderedRow), pairs);
     }
 
+    // ---------- 快照模式(清單 #7:更正文件)----------
+
+    /// <summary>
+    /// 快照沒有自動排版資訊,但會記 padding;StructuralDiffs 對「自動排版**或有內距**」的容器比子元件順序,
+    /// 所以有內距的容器在快照模式也會報 childOrder(論文評估快照模式:順序對調 24/107 報了)。
+    /// 對齊(mainAxisOffset、crossAxisOffset)要自動排版,快照模式永遠不會有。
+    /// </summary>
+    private static Dictionary<string, List<PropDiff>> SnapshotRow(Insets padding, double[] renderedX)
+    {
+        RenderedNode Page(double[] xs) => Rendered("body", box: new Box(0, 0, 800, 600), children:
+            Rendered("#row", box: new Box(0, 0, 400, 60), padding: padding,
+                children: xs.Select((x, i) => Rendered($"#row > div:nth-of-type({i + 1})", box: new Box(x, 10, 80, 40))).ToArray()));
+
+        var design = Parity.Engine.DesignSources.Snapshot.SnapshotBuilder.ToFrame(Page([10, 110, 210]), "/");
+        var now = Page(renderedX);
+        return Engine.StructuralDiffs(design, now, Matcher.Match(design, now).Pairs);
+    }
+
+    [Fact]
+    public void A_snapshot_container_with_padding_reports_child_order()
+    {
+        var result = SnapshotRow(new Insets(10, 10, 10, 10), [210, 110, 10]);
+
+        var diff = Assert.Single(result.SelectMany(r => r.Value));
+        Assert.Equal("childOrder", diff.Prop);
+    }
+
+    [Fact]
+    public void A_snapshot_container_without_padding_does_not_and_alignment_never_appears()
+    {
+        Assert.Empty(SnapshotRow(default, [210, 110, 10]).SelectMany(r => r.Value));
+        Assert.DoesNotContain(SnapshotRow(new Insets(10, 10, 10, 10), [20, 110, 210]).SelectMany(r => r.Value),
+            d => d.Prop is "mainAxisOffset" or "crossAxisOffset");
+    }
+
     // ---------- 順序 ----------
 
     [Fact]

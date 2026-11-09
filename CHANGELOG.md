@@ -115,6 +115,13 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   outline". A Figma node only says "no outline" when it is a box with no visible stroke. On the thesis corpus in snapshot mode, injected
   outlines went from 0/22 to 22/22 reported.*
 
+- **文件:更正「快照模式不會出現 `childOrder`」**(行為沒變)。`docs/野生實查-2026-11-05-新比對項目.md` 這樣寫,但論文評估的快照模式把子元件
+  對調,107 個案例有 24 個報了 `childOrder`。原因:子元件順序對「自動排版**或有內距**」的容器都比,而快照會記有內距容器的 padding。
+  會一直不出現的只有對齊(`mainAxisOffset`、`crossAxisOffset`),那要自動排版資訊。實查文件與兩份 README 的說明已更正,
+  `StructuralDiffTests` 補了快照模式的兩條。
+  *Docs: snapshots do report `childOrder` for containers with padding (child order is compared for auto-layout or padded containers);
+  only alignment needs auto-layout and never appears in snapshot mode.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、
