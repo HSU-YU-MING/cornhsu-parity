@@ -173,10 +173,105 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
                 if (IsAutoLayout(parent))
                     CompareAlignment(parent, rendered, kids, matched, horizontal, skipMainAxis: order is not null, DiffsOf);
             }
+            else if (rendered is not null)
+                CompareTextRelations(parent, rendered, renderedBy, DiffsOf);
+            if (rendered is not null && !ReferenceEquals(parent, designRoot))
+                CompareTextContainment(parent, rendered, renderedBy, DiffsOf);
             foreach (var c in parent.Children) Walk(c, renderedBy.GetValueOrDefault(c.Id));
         }
         Walk(designRoot, renderedRoot);
         return result;
+    }
+
+    /// <summary>
+    /// 文字的相對關係(清單 #8,2.5.0)。文字刻意不比位移(Figma 的文字框 ≠ 瀏覽器的,比了狂誤報),所以文字被移走大多沒反應
+    /// (論文評估快照模式只抓到 8.5%)。改比「誰在誰上面、誰在誰左邊」:同一層、至少一個是文字的兩個兄弟,
+    /// 設計稿裡明確分開(隔 PositionPx 以上),頁面上卻明確反過來,才報。只是靠近、部分重疊都不報;只移動、關係沒變的照樣抓不到。
+    /// 只在自由擺放的容器裡比:自動排版或有內距的容器已經比子元件順序(childOrder),再比就重複了。
+    /// 每個節點最多一條,報在「相對父層位移比較大」的那一個(比較可能是被移動的)。軟落差。
+    /// </summary>
+    private void CompareTextRelations(
+        DesignNode parent, RenderedNode rendered, Dictionary<string, RenderedNode> renderedBy, Func<string, List<PropDiff>> diffsOf)
+    {
+        var kids = parent.Children
+            .Where(c => renderedBy.TryGetValue(c.Id, out var r) && !r.OutOfFlow
+                && !string.Equals(c.LayoutPositioning, "ABSOLUTE", StringComparison.OrdinalIgnoreCase))
+            .Select(c => (Design: c, Rendered: renderedBy[c.Id]))
+            .ToList();
+        if (kids.Count < 2 || kids.All(k => k.Design.Type != DesignNodeType.Text)) return;
+
+        var g = _tol.PositionPx;
+        // 相對父層的位移改變了多少:用來判斷是誰被移動
+        double Moved((DesignNode Design, RenderedNode Rendered) k)
+            => Math.Abs((k.Design.Box.X - parent.Box.X) - (k.Rendered.Box.X - rendered.Box.X))
+             + Math.Abs((k.Design.Box.Y - parent.Box.Y) - (k.Rendered.Box.Y - rendered.Box.Y));
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var i = 0; i < kids.Count; i++)
+            for (var j = i + 1; j < kids.Count; j++)
+            {
+                var (a, b) = (kids[i], kids[j]);
+                if (a.Design.Type != DesignNodeType.Text && b.Design.Type != DesignNodeType.Text) continue;
+                if (Flipped(a.Design.Box, b.Design.Box, a.Rendered.Box, b.Rendered.Box, g) is not { } flipped) continue;
+                var (expected, actual) = flipped;
+                var (mover, other, flip) = Moved(b) > Moved(a) ? (b, a, true) : (a, b, false);
+                if (!reported.Add(mover.Design.Id)) continue;
+                SoftDiff(diffsOf(mover.Design.Id), "relation",
+                    $"{(flip ? Opposite(expected) : expected)} {other.Design.Name}", $"{(flip ? Opposite(actual) : actual)} {other.Design.Name}");
+            }
+    }
+
+    /// <summary>
+    /// 設計稿裡 a 相對 b 明確在哪一邊、頁面上明確在相反那一邊:回傳 (設計上的關係, 頁面上的關係),例如 ("above", "below")。
+    /// 「明確」= 兩個框之間隔 g 以上,不重疊。兩軸都沒反過來回 null。
+    /// </summary>
+    private static (string Expected, string Actual)? Flipped(Box da, Box db, Box ra, Box rb, double g)
+    {
+        bool Above(Box x, Box y) => x.Y + x.H + g <= y.Y;
+        bool LeftOf(Box x, Box y) => x.X + x.W + g <= y.X;
+        if (Above(da, db) && Above(rb, ra)) return ("above", "below");
+        if (Above(db, da) && Above(ra, rb)) return ("below", "above");
+        if (LeftOf(da, db) && LeftOf(rb, ra)) return ("left of", "right of");
+        if (LeftOf(db, da) && LeftOf(ra, rb)) return ("right of", "left of");
+        return null;
+    }
+
+    private static string Opposite(string relation) => relation switch
+    {
+        "above" => "below",
+        "below" => "above",
+        "left of" => "right of",
+        _ => "left of",
+    };
+
+    /// <summary>
+    /// 文字跑出容器(清單 #8):設計稿裡文字在父層的框裡,頁面上跟父層的框完全沒有交集。只是溢出一點(長文字)還有交集,不報。軟落差。
+    /// 根(frame)不算父層:頁面的 body 跟設計 frame 的高度本來就常不一樣。
+    /// 兩段以上、而且至少一半的文字同時跑出去:比較可能是父層自己配錯了元素,不是每段字都被移走(評估語料實測:
+    /// 一個配錯的容器底下 13 段配對正確的字全被報出來),這時一條都不報。
+    /// </summary>
+    private void CompareTextContainment(
+        DesignNode parent, RenderedNode rendered, Dictionary<string, RenderedNode> renderedBy, Func<string, List<PropDiff>> diffsOf)
+    {
+        if (parent.Box.W <= 0 || parent.Box.H <= 0) return;
+        var texts = parent.Children
+            .Where(c => c.Type == DesignNodeType.Text && renderedBy.TryGetValue(c.Id, out var r) && !r.OutOfFlow && !ReferenceEquals(r, rendered))
+            .Select(c => (Design: c, Rendered: renderedBy[c.Id]))
+            .ToList();
+        var outside = texts.Where(t => Inside(t.Design.Box, parent.Box, _tol.SizePx) && !Intersects(t.Rendered.Box, rendered.Box)).ToList();
+        if (outside.Count >= 2 && outside.Count * 2 >= texts.Count) return;
+        foreach (var (child, _) in outside)
+        {
+            var diffs = diffsOf(child.Id);
+            if (diffs.Any(d => d.Prop == "relation")) continue;
+            SoftDiff(diffs, "relation", $"inside {parent.Name}", $"outside {parent.Name}");
+        }
+
+        static bool Inside(Box inner, Box outer, double tol)
+            => inner.X >= outer.X - tol && inner.Y >= outer.Y - tol
+            && inner.X + inner.W <= outer.X + outer.W + tol && inner.Y + inner.H <= outer.Y + outer.H + tol;
+        static bool Intersects(Box x, Box y)
+            => x.X < y.X + y.W && y.X < x.X + x.W && x.Y < y.Y + y.H && y.Y < x.Y + x.H;
     }
 
     private static bool IsAutoLayout(DesignNode n)

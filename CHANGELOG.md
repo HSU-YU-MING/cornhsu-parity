@@ -133,6 +133,22 @@ baseline keys include the layer name, so re-save the baseline. Existing snapshot
   *`fontsNotLoaded` lists web fonts the page uses that failed to load (capture waits up to 3 s for `document.fonts.ready`). `check` and
   the Markdown report warn that text was measured with a fallback font. It never affects the gate or the score.*
 
+- **新增:文字的相對關係**(`diffs[].prop` 多 `relation`,軟落差;minor)。文字的位置刻意不比 px(Figma 的文字框跟瀏覽器的不一樣,比了狂誤報),
+  所以文字被移走以前大多看不出來(論文評估的快照模式只抓到 8.5%)。改比關係(X-PERT、Galen 的做法):
+  - 自由擺放的容器裡,同一層、至少一個是文字的兩個兄弟:設計稿裡明確分開(隔 `PositionPx` 以上)、頁面上明確反過來才報,
+    例如期望 `below Title`、實際 `above Title`。只是靠近、部分重疊都不報。報在相對父層位移較大的那一個(比較可能是被移動的),每個節點最多一條。
+    自動排版或有內距的容器已經比 `childOrder`,不重複。
+  - 文字整個跑出容器(跟容器的框完全沒有交集)也報:`inside Card` → `outside Card`。只是溢出一點不算;一個容器有兩段以上、
+    而且至少一半的文字同時跑出去,比較可能是容器自己配錯了元素,一條都不報(評估語料實測:一個配錯的容器底下 13 段字全被報出來)。
+  - **限制**:只移動、關係都沒變的照樣抓不到(Galen 論文實測這種漏報超過 30%)。
+  - **實測**(論文評估語料,植入照舊):移位錯誤的直接回報,快照模式 8.5% → **51.9%**;照網頁 class 命名 0 → 22 個、模擬 Figma 命名 1 → 19 個(共 106 個)。
+    硬落差、紅燈頁都沒變;沒植入錯誤的基準頁,照網頁 class 命名不多任何提醒,模擬 Figma 命名多 1 條(落在一個本來就配錯的節點上),
+    快照模式多 6 條(pydocs 的版本選單在拍快照與檢查之間被頁面的腳本從頁尾搬到頁首,頁面真的不一樣)。
+  - 匿名統計:`relation` 進無量值家族(只有條數)。
+  *Text nodes are now compared on relations instead of pixels: two siblings (at least one text) clearly apart in the design and clearly
+  the other way round on the page, or a text that ends up entirely outside its container, give a soft `relation` diff. On the thesis
+  corpus, injected moves reported in snapshot mode went from 8.5% to 51.9%.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、

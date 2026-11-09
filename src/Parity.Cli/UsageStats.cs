@@ -140,7 +140,7 @@ internal static class UsageStats
         ("opacity", RatioEdges), ("image", RatioEdges),
         ("lineCount", LineEdges),
         ("fontFamily", null), ("text", null), ("childOrder", null),
-        ("fontStyle", null), ("textDecoration", null), ("textTransform", null), ("textAlign", null),
+        ("fontStyle", null), ("textDecoration", null), ("textTransform", null), ("textAlign", null), ("relation", null),
     ];
 
     /// <summary>
