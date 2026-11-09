@@ -63,7 +63,7 @@
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報) |
 | 設計來源 | 4 種:Figma API、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
-| 測試 | **1639 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
+| 測試 | **1675 條**,涵蓋 CIEDE2000 標準測資集(Sharma)、配對消歧、位置誤報防護、圖片取樣、真瀏覽器擷取回歸 |
 | CI 實證 | GitHub Action 以**外部 repo 跑真實 PR** 驗證:擋 PR、自動留言(原地更新不洗版)、baseline 回歸把關 |
 | 真實驗證 | **cornhsu.com 全站 26 頁由 Parity 自己守門**——dogfooding 已揪出並修掉三個 flaky 根因(最新一個:捲動觸發的進場動畫,見 0.11.1) |
 
@@ -100,7 +100,8 @@ dotnet tool install -g Cornhsu.Parity
 完整說明在[匿名使用統計](#匿名使用統計)。
 
 - **預設打開,CI 也送**:每次 `parity check` 跑出報告(exit 0、1 或 3)之後,送一筆請求到
-  `https://stats.cornhsu.com/v1/parity` —— .NET 工具與 npm 套件都一樣。開發版(版本以 `0.0.0-` 開頭的)永遠不送。
+  `https://stats.cornhsu.com/v1/parity` —— .NET 工具與 npm 套件都一樣。開發版(版本以 `0.0.0-` 開頭的)永遠不送,
+  透過 `parity mcp` 跑的 check 也不送。
 - **送什麼 —— 只有計數與區間**:工具版本、作業系統、是不是在 CI、還原度分數、gate 有沒有失敗、頁數、設計來源的種類、
   設計節點與配對節點的總數、各嚴重度的落差數、每個量測屬性有幾筆落差、差多少(分區間)、沒配對到的設計節點依原因的計數,
   以及開了 `compare.extras` 時找到幾個多餘元素。沒有 ID,除非使用者自己在設定檔加一個。
@@ -478,6 +479,32 @@ parity map              # 互動配對模式:點未配對圖層 → 點截圖上
 - 截圖疊框視圖:實線 = 實作框(顏色 = 嚴重度)、藍虛線 = 設計框、紅虛線 = 未配對
 - **只綁 127.0.0.1**:報告含站點結構,不讓區網掃到
 - UI 是零建置的靜態 SPA,dotnet tool 不需要 node 工具鏈
+
+## 給 AI agent 用:`parity mcp`(實驗性)
+
+`parity mcp` 在 stdin/stdout 上跑一個 [MCP](https://modelcontextprotocol.io/) server,讓改介面的 agent(Claude Code、Cursor、
+VS Code……)自己拿設計稿驗收——跑的就是 `parity check`,用專案自己的 `parity.config.json`,不需要 agent 帶設計資料。
+
+```sh
+claude mcp add parity -- parity mcp                    # dotnet tool
+claude mcp add parity -- npx -y cornhsu-parity mcp     # npm
+```
+
+其他用戶端在 MCP 設定裡填同一個指令(`"command": "parity", "args": ["mcp"]`)。在專案資料夾裡啟動,或加 `--config <path>`。
+
+| 工具 | 做什麼 |
+|---|---|
+| `parity_list_targets` | 設定檔裡的頁面、設計來源、gate 條件、有沒有報告。不開瀏覽器。 |
+| `parity_check` | 跑一次 check(可以只跑一個 `target`,或 `baseline: true` 走回歸模式)。回傳結論——`pass` / `fail` / `untrusted`,附 `parity check` 會給的 exit code——分數、最重要的落差(`limit`,預設 20 筆)與各自的建議 CSS 修法、未配對節點,以及告訴 agent 下一步做什麼的 `next`。會寫 `.parity/report.json`。 |
+| `parity_get_report` | 不重跑,翻上一份報告:`route`、`prop`、`minSeverity`、`includeSoft`、`offset`、`limit`。 |
+
+- 結果放在 `structuredContent`,同一份 JSON 也放一份在 text 區塊。參數錯、設定檔壞了、瀏覽器沒裝,回的是工具錯誤(`isError`)
+  並附 `next` 提示,不是協定錯誤。
+- 兩個 MCP 世代都接:2026-07-28 版(沒有握手、`server/discover`、版本放在 `_meta`),以及 2025-11-25 以前的 `initialize` 握手。
+- 這裡跑的 check **不送匿名統計**:agent 每改一次就重跑一次,同一個專案會被重複計數。
+- 圖層名、selector、期望值與實際值來自設計檔與頁面。server 的說明會請 agent 把它們當資料、不當指令;agent 也不該自己加
+  `accept` 條目——結果裡會講明。
+- **實驗性**:標記為穩定之前,工具名、參數與結果欄位可能在 2.x 的 minor 版變動。Parity 其他凍結的介面不受影響。
 
 ## 進 CI(M4)
 

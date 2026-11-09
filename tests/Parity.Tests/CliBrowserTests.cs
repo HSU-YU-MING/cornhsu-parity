@@ -676,6 +676,80 @@ public class CliBrowserTests
             .ToList();
     }
 
+    // ---------- mcp:真的行程、真的 stdio ----------
+
+    [Fact]
+    public async Task Mcp_check_over_stdio_gives_the_same_verdict_as_the_cli_and_keeps_stdout_clean()
+    {
+        // 2.5.0(實驗性):agent 透過 MCP 跑 parity_check。獨立行程才測得到 stdout:掃描途中的任何 Console.WriteLine
+        // 混進 stdout 都會打壞協定,所以每一行都要是 JSON-RPC。BoxProject 的 width 300 → 200 是 critical:exit 1 / fail
+        using var dir = new TempDir();
+        BoxProject(dir);
+        var host = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        var psi = new ProcessStartInfo(string.IsNullOrEmpty(host) || !File.Exists(host) ? "dotnet" : host)
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = dir.Path,
+            StandardInputEncoding = new UTF8Encoding(false),
+            StandardOutputEncoding = Encoding.UTF8,
+        };
+        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "parity.dll"));
+        psi.ArgumentList.Add("mcp");
+        psi.Environment["DO_NOT_TRACK"] = "1";
+        using var p = Process.Start(psi)!;
+        var stderr = p.StandardError.ReadToEndAsync();
+
+        async Task<JsonElement> Send(string line)
+        {
+            await p.StandardInput.WriteLineAsync(line);
+            await p.StandardInput.FlushAsync();
+            var reply = await p.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromMinutes(2));
+            Assert.NotNull(reply);
+            return JsonDocument.Parse(reply).RootElement.Clone(); // 不是 JSON 就在這裡炸:stdout 被汙染了
+        }
+
+        try
+        {
+            var init = await Send("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}""");
+            Assert.Equal("2025-06-18", init.GetProperty("result").GetProperty("protocolVersion").GetString());
+            await p.StandardInput.WriteLineAsync("""{"jsonrpc":"2.0","method":"notifications/initialized"}""");
+
+            var check = (await Send("""{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"parity_check","arguments":{}}}"""))
+                .GetProperty("result");
+            var s = check.GetProperty("structuredContent");
+            if (check.GetProperty("isError").GetBoolean() && s.GetProperty("error").GetString()!.Contains("install-browser"))
+            {
+                Console.WriteLine(Skipped);
+                return;
+            }
+            Assert.False(check.GetProperty("isError").GetBoolean(), s.ToString());
+            Assert.Equal(("fail", 1), (s.GetProperty("verdict").GetString(), s.GetProperty("exitCode").GetInt32()));
+            var gap = s.GetProperty("gaps").GetProperty("items")[0];
+            Assert.Equal(("zz", "width", "300", "200", "critical"), (gap.GetProperty("layer").GetString(), gap.GetProperty("prop").GetString(),
+                gap.GetProperty("expected").GetString(), gap.GetProperty("actual").GetString(), gap.GetProperty("severity").GetString()));
+            Assert.True(File.Exists(dir.File(".parity", "report.json")));
+
+            // 同一份報告翻頁:不重跑
+            var page = await Send("""{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"parity_get_report","arguments":{"prop":"width"}}}""");
+            Assert.Equal(1, page.GetProperty("result").GetProperty("structuredContent").GetProperty("gaps").GetProperty("total").GetInt32());
+
+            // CLI 對同一頁給同樣的結論
+            var cli = await Cli.RunAsync("check", "--config", dir.File("parity.config.json"));
+            Assert.Equal(1, cli.ExitCode);
+        }
+        finally
+        {
+            p.StandardInput.Close(); // stdin 關掉 = 結束
+            if (!p.WaitForExit(30_000)) p.Kill(entireProcessTree: true);
+        }
+        Assert.Equal(0, p.ExitCode);
+        Assert.Contains("MCP server on stdio", await stderr);
+    }
+
     // ---------- serve:只綁 loopback + Host / Origin 防線 ----------
 
     [Fact]

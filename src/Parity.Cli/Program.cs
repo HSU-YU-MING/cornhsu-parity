@@ -29,6 +29,7 @@ try
         "init" => InitCommand.Run(rest),
         "install-browser" => InstallBrowserCommand.Run(rest),
         "bug-report" => BugReportCommand.Run(rest),
+        "mcp" => await McpCommand.RunAsync(rest),
         "help" or "--help" or "-h" => HelpCommand.Run(),
         "version" or "--version" => VersionCommand.Run(),
         _ => UnknownCommand(command),
@@ -315,6 +316,36 @@ internal static class CheckCommand
 
 internal static class ReportCommand
 {
+    /// <summary>讀 report.json(parity report 與 MCP 的 parity_get_report 共用):形狀錯、方向值錯、比自己新的報告,都給看得懂的錯。</summary>
+    internal static ReportDocument LoadReport(string inPath)
+    {
+        ReportDocument doc;
+        try
+        {
+            doc = JsonSerializer.Deserialize<ReportDocument>(File.ReadAllText(inPath), ReportJson.Indented)
+                ?? throw new InvalidOperationException($"could not parse report: {inPath}");
+        }
+        catch (ReportContractException ex)
+        {
+            // 形狀認得、但某個欄位違反契約(例如 direction 不是 forward/reverse):說出真正的原因,不要猜「舊格式」
+            throw new InvalidOperationException($"{inPath}: {ex.Message}");
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException(
+                $"unrecognized report format: {inPath} (likely an older format; re-run `parity check` to regenerate)");
+        }
+        _ = doc.Reports
+            ?? throw new InvalidOperationException($"report has no `reports` field: {inPath} (re-run `parity check`)");
+        // 比自己新的報告:拒收(2.0.0 起;與 snapshot 讀端、push、Parity.Server 一致)。1.x 照讀,
+        // 新版加的欄位被靜靜丟掉,重生的 Markdown 可能不完整
+        if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
+            throw new InvalidOperationException(
+                $"{inPath} has report schemaVersion {doc.SchemaVersion}, which is newer than this Parity understands " +
+                $"({ReportDocument.CurrentSchemaVersion}) — it was written by a newer Parity; render it with that version.");
+        return doc;
+    }
+
     /// <summary>
     /// parity report:從既有 report.json 重生 Markdown,免重掃(重掃要開瀏覽器,幾十秒;
     /// 這裡只是重排版,毫秒級)。CI 已上傳 report.json artifact 時,本機也能重現同一份報告。
@@ -333,30 +364,8 @@ internal static class ReportCommand
         if (!File.Exists(inPath))
             throw new FileNotFoundException($"report not found: {inPath} (run `parity check` first, or pass --in)", inPath);
 
-        ReportDocument doc;
-        try
-        {
-            doc = JsonSerializer.Deserialize<ReportDocument>(File.ReadAllText(inPath), ReportJson.Indented)
-                ?? throw new InvalidOperationException($"could not parse report: {inPath}");
-        }
-        catch (ReportContractException ex)
-        {
-            // 形狀認得、但某個欄位違反契約(例如 direction 不是 forward/reverse):說出真正的原因,不要猜「舊格式」
-            throw new InvalidOperationException($"{inPath}: {ex.Message}");
-        }
-        catch (JsonException)
-        {
-            throw new InvalidOperationException(
-                $"unrecognized report format: {inPath} (likely an older format; re-run `parity check` to regenerate)");
-        }
-        var reports = doc.Reports
-            ?? throw new InvalidOperationException($"report has no `reports` field: {inPath} (re-run `parity check`)");
-        // 比自己新的報告:拒收(2.0.0 起;與 snapshot 讀端、push、Parity.Server 一致)。1.x 照讀,
-        // 新版加的欄位被靜靜丟掉,重生的 Markdown 可能不完整
-        if (doc.SchemaVersion > ReportDocument.CurrentSchemaVersion)
-            throw new InvalidOperationException(
-                $"{inPath} has report schemaVersion {doc.SchemaVersion}, which is newer than this Parity understands " +
-                $"({ReportDocument.CurrentSchemaVersion}) — it was written by a newer Parity; render it with that version.");
+        var doc = LoadReport(inPath);
+        var reports = doc.Reports;
 
         var tokens = TokensFile.LoadForHints(config);
         // check --reverse 寫出的報告期望/實際已對調:不做 gate,照 check --reverse 的樣子標明(2.0.0 起有方向欄位)
@@ -765,6 +774,7 @@ internal static class Usage
         public static readonly string[] Init = [];
         public static readonly string[] InstallBrowser = ["--with-deps"];
         public static readonly string[] BugReport = ["--config=", "--open"];
+        public static readonly string[] Mcp = ["--config="];
     }
 
     public const string Check = """
@@ -870,11 +880,42 @@ internal static class Usage
               (shown as <path>) or environment variable values.
         """;
 
+    public const string Mcp = """
+          parity mcp [--config <path>]
+              (experimental) Run an MCP server on stdin/stdout so an AI agent (Claude Code, Cursor, VS Code…) can check
+              its UI changes against the design. Tools: parity_list_targets, parity_check, parity_get_report.
+              Register it with your agent, e.g.: claude mcp add parity -- parity mcp
+              --config <path>  Default config for the tools (otherwise the nearest parity.config.json above the
+                               working directory; each call may pass its own).
+              Tool names, arguments and results may change in a 2.x minor release until this is marked stable.
+              Checks run from MCP write .parity/report.json like `parity check` but never send anonymous usage statistics.
+        """;
+
     /// <summary>子指令 --help:印該指令的用法,exit 0。</summary>
     public static int Print(string usage)
     {
         Console.WriteLine("Usage:");
         Console.WriteLine(usage);
+        return 0;
+    }
+}
+
+internal static class McpCommand
+{
+    /// <summary>
+    /// parity mcp:stdio 上的 MCP server(McpServer + McpTools)。stdout 只能有協定訊息,所以先把 Console.Out 整個轉到 stderr——
+    /// 掃描途中任何地方的 Console.WriteLine(提示、警告)都不會混進協定。協定訊息另外直接寫原本的 stdout。
+    /// </summary>
+    public static async Task<int> RunAsync(string[] args)
+    {
+        var opts = CliOptions.Parse(args, Usage.Flags.Mcp);
+        if (opts.ContainsKey("--help")) return Usage.Print(Usage.Mcp);
+        var protocol = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { NewLine = "\n" };
+        Console.SetOut(Console.Error);
+        using var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        var tools = new McpTools(opts.GetValueOrDefault("--config"), Directory.GetCurrentDirectory());
+        Console.Error.WriteLine($"parity mcp {VersionCommand.Describe()}: MCP server on stdio (Ctrl+C or close stdin to stop)");
+        await new McpServer(tools, protocol).RunAsync(input);
         return 0;
     }
 }
@@ -888,7 +929,7 @@ internal static class HelpCommand
         foreach (var usage in new[]
         {
             Usage.Check, Usage.Report, Usage.Push, Usage.Snapshot, Usage.Serve, Usage.Map,
-            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser, Usage.BugReport,
+            Usage.Lint, Usage.Baseline, Usage.Init, Usage.InstallBrowser, Usage.BugReport, Usage.Mcp,
         })
             Console.WriteLine(usage);
         Console.WriteLine("\nExit codes: 0 = pass; 1 = diffs exceed the gate threshold; 2 = execution error; " +
