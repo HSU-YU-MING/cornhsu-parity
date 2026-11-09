@@ -164,10 +164,11 @@ public class PageSetupCaptureTests
             $"<!doctype html><html><head><meta charset=\"utf-8\"></head><body style=\"margin:0\">{body}</body></html>", "text/html; charset=utf-8");
         app.MapGet("/", (HttpRequest r) => Page(r.Cookies["session"] == "abc" ? "<h1>signed in</h1>" : "<h1>signed out</h1>"));
         app.MapGet("/header", (HttpRequest r) => Page(r.Headers["X-Parity-Test"] == "yes" ? "<h1>header ok</h1>" : "<h1>no header</h1>"));
-        // 登入頁:一載入就由伺服器種 cookie(模擬登入完成)
+        // 登入頁:一載入就由伺服器種 cookie(模擬登入完成)。照真實網站的寫法帶 Secure:
+        // Chromium 把 127.0.0.1 當安全來源,http 上照樣收發——存下來的 storage state 也要帶得回去
         app.MapGet("/login", (HttpResponse res) =>
         {
-            res.Cookies.Append("session", "abc", new CookieOptions { Path = "/", HttpOnly = true });
+            res.Cookies.Append("session", "abc", new CookieOptions { Path = "/", HttpOnly = true, Secure = true });
             return Page("<h1>welcome</h1>");
         });
         app.MapGet("/menu", () => Page("""
