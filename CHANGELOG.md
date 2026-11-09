@@ -49,6 +49,21 @@ size start being compared; real differences there are new to your baseline.*
   the wrapper around it, whichever is closest to the frame's size; ties, no fit, or a single inner layer that fits as well leave it
   unmatched. Two report nodes can now share a selector.*
 
+- **修正:容器推論不再停在太裡面那一層**(六面都沒動,`matchedBy` 仍是 `auto-container`;配對規則演進,minor)。
+  以前配不到的容器一律配到「已配對子孫的最近共同祖先」,而那常常是有內距的卡片裡面再包一層的 wrapper:配錯一層,容器的寬高、
+  內距、背景色全部報假落差。評估語料裡配錯的容器 235 個,229 個是答案在外面,多半就外面一層。
+  - 現在從最近共同祖先往外,挑大小最接近設計框的那一層。碰到已經代表別的設計節點、或裡面有別的已配對節點的那層就停(那是更大的容器)。
+  - 一樣近時留裡面那層:巢狀的同尺寸 wrapper 很常見,評估語料裡這時答案多半是裡面那層,也就是以前的結果。
+  - 沒有一層過尺寸防線(面積差 16 倍以內)就不配——以前不檢查,評估語料裡這種全是配錯的。設計框沒有大小(手寫 JSON 不寫 box)時照舊。
+  - **實測**(同一份評估語料,跟上一條之後比):照網頁 class 命名的條件下,容器配對正確率 79.0% → 97.6%、**基準頁假硬落差 198 → 0、
+    CI 會紅的頁面 10 → 0**(共 22 頁)。模擬 Figma 命名的條件下,容器配對正確率 71.9% → 97.2%、配錯 232 → 52、基準頁假硬落差 739 → 128、
+    CI 會紅的頁面 20 → 14。沒有任何原本配對正確的節點變錯。
+  - **這一批三項合起來**(跟 2.4.0 比):照網頁 class 命名,配錯 531 → 11、基準頁假硬落差 1,700 → 0;模擬 Figma 命名,配對正確
+    3,737 → 4,302、配錯 256 → 52、基準頁假硬落差 769 → 128。語料是模擬的,分數變好不等於真實 Figma 變準。
+  *Container inference no longer stops at the lowest common ancestor: it walks outward and takes the layer closest to the design
+  frame's size, stopping at a layer that stands for another design node or holds other matched content; ties keep the inner layer, and
+  no plausibly sized layer leaves the container unmatched.*
+
 ## 2.4.0 — 2026-11-09
 
 > **內距由子元素的 margin 撐出來時不再誤報;npm 發版不再有裝不起來的空窗。** 設計稿的 padding 在頁面上寫成裡面元素的 margin、
