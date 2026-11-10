@@ -2,7 +2,10 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
-## 未發佈
+## 2.5.2 — 2026-11-10
+
+> **修正軟落差的一種誤報:文字元素的邊框跟自己底色同色時,不再報「1px → 0」。** 其他沒變,設定檔不用改。
+> *Fix: a text element whose border matches its own background is no longer reported as "border 1px → 0". Nothing else changed.*
 
 ### 修正
 
