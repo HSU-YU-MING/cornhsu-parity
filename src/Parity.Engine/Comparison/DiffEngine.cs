@@ -628,7 +628,11 @@ public sealed class DiffEngine(Tolerances tolerances, TextComparison compareText
         if (d.Opacity is { } opacity && r.Opacity is { } actualOpacity && Math.Abs(opacity - actualOpacity) > OpacityTolerance)
             SoftDiff(diffs, "opacity", Fmt(opacity), Fmt(actualOpacity), delta: Math.Round(Math.Abs(opacity - actualOpacity), 2), tolerance: OpacityTolerance);
 
-        if (d.BorderWidth is { } designedWidth && r.BorderWidth is { } renderedWidth)
+        // 設計端是文字節點、頁面那一邊的邊框又跟自己底色同色:設計端不知道這個元素的底色(文字節點的 Fill 是字色),
+        // 判斷不了那條邊框看不看得見,就不比。只在頁面那一邊把它算成「沒有邊框」的話,同一個元素兩邊答案不同——
+        // 作者網站的小型介面示意(底色與邊框同一個色、只差透明度的格式按鈕)五頁一起報「邊框 1px → 0」(2026-11-10 實測)
+        if (d.BorderWidth is { } designedWidth && r.BorderWidth is { } renderedWidth
+            && !(d.Type == DesignNodeType.Text && BlendsIn(r.BorderColor, r.Background)))
         {
             // 跟自己底色同色的邊框看不出來,算沒有邊框。對真實 Figma 實測抓到的:Ant Design 的設計稿邊框與底色同色,
             // 頁面是透明邊框,兩邊看起來一模一樣。文字節點的 Fill 是字色,不是底色,不算

@@ -2,6 +2,17 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 未發佈
+
+### 修正
+
+- **文字元素的邊框不再誤報「1px → 0」。** 「邊框跟自己底色同色 = 看不見、算沒有邊框」這條規則,設計端遇到文字節點不套
+  (文字節點的 Fill 是字色,不是底色),頁面那一邊卻照套——同一個元素兩邊答案不同。快照模式最明顯:底色與邊框同一個色
+  (只差透明度)的小按鈕,設計端記 1px、頁面端算成 0。現在設計端是文字節點、頁面邊框又跟自己底色同色時,邊框不比
+  (設計端判斷不了那條邊框看不看得見,寧可不比也不誤報)。作者網站 26 頁實測:5 頁 15 筆軟落差 → 0,沒有新增的落差。
+  *Fix: a text node's border is no longer reported as "1px → 0" when the page's border matches its own background — the design
+  side could not apply the same "invisible border" rule (a text node's fill is its text colour), so the two sides disagreed.*
+
 ## 2.5.1 — 2026-11-10
 
 > **修正 `parity snapshot --target`:只重拍那一頁,不再把整份多頁快照換成那一頁。** 其他沒變,設定檔不用改。
