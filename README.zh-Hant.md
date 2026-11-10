@@ -61,7 +61,7 @@
 
 | | |
 |---|---|
-| 發佈 | NuGet 共 35 版(v0.1.0 → v2.5.1),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
+| 發佈 | NuGet 共 36 版(v0.1.0 → v2.5.2),推 tag 即以 OIDC Trusted Publishing 自動上架,repo 內零長效金鑰 |
 | 比對維度 | 尺寸、內距、間距、字體、顏色(CIEDE2000 ΔE)、相對位置——**刻意不比絕對座標**(彈性版面下必然誤報)——另有只提醒、不擋的軟落差:文字、字型、邊框、外框、陰影、漸層、圖片內容與顏色、文字跑出容器 |
 | 設計來源 | 5 種:Figma API、Figma `.fig` 檔(不走 API)、畫面快照、圖片 + 標註(像素取樣,任何工具匯出 PNG 即可)、JSON |
 | 實作端 | 網頁(含 **Shadow DOM / 同源 iframe / RWD 多斷點**)+ **Electron**(以 CDP attach 活視窗) |
