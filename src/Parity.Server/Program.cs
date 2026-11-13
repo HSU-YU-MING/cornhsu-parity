@@ -95,6 +95,23 @@ var publicUrl = ServerSettings.PublicUrl(app.Configuration);
 using (var scope = app.Services.CreateScope())
     scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.Migrate();
 
+// 安全標頭。CSP 的 script-src 'self' 同時擋掉 javascript: URI,是 RepoUrl 驗證之外的第二道;
+// 兩道都要,因為資料庫裡可能已經有驗證上線前存進去的值。
+// style-src 放寬到 unsafe-inline:React 的 style={{…}} 是 DOM 屬性不受 CSP 管,但打包工具
+// 可能注入 <style>;img-src 收 data:/blob: 給截圖用。前端沒有任何外部來源(查過 web/index.html
+// 與 web/src:只有 figma.com,而那是 <a href> 的目標不是載入的資源)。
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["Content-Security-Policy"] =
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; " +
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -358,7 +375,7 @@ app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
             "pass" => false,
             _ => null,
         },
-        RepoUrl: Header(request, "X-Parity-Repo-Url"));
+        RepoUrl: RepoUrl(request));
 
     Run run;
     try
@@ -403,6 +420,19 @@ app.MapPost("/api/runs", async (HttpRequest request, ServerDbContext db) =>
         pages = run.Pages.Count,
         url = $"/runs/{run.Id}",
     }, statusCode: StatusCodes.Status201Created);
+
+    // push 端送來的 repo 網址會被前端拼進 <a href>(RunHead.tsx / RunsList.tsx),所以形狀要在入口就收斂:
+    // 不驗的話,拿到 CI token 的人可以送 javascript:… ,等有登入的 Owner 點那個 commit 連結,
+    // 就以他的 session 在儀表板上執行——而 CI token 的信任層級本來低於人的 session(見上面的讀取端點註解),
+    // 這條路會把兩者拉平。React 不會幫你擋 javascript: href(只在 dev 模式印警告)。
+    // 規則與 ServerSettings.PublicUrl 一致:絕對的 http(s) 網址,否則當成沒給。
+    static string? RepoUrl(HttpRequest r)
+    {
+        if (Header(r, "X-Parity-Repo-Url") is not { } value) return null;
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? value
+            : null;
+    }
 
     static string? Header(HttpRequest r, string name)
         => r.Headers.TryGetValue(name, out var v) && !string.IsNullOrWhiteSpace(v) ? v.ToString() : null;
