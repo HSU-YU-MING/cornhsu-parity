@@ -2,6 +2,30 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 2.5.3 — 2026-11-13
+
+**設定檔打錯字不再靜默吞掉。** 對外契約、CLI 與 exit code 不變;**不是**硬錯誤,見下面的取捨。
+
+- **設定檔裡不認得的屬性會被列出來警告**(影響所有版本)。`System.Text.Json` 預設把不認得的
+  欄位丟掉,所以 `{"tolerances": {"sizePx": 4}}` 打成 `{"tolerances": {"sizePix": 4}}` 時
+  **載入完全沒有任何訊息**,公差其實還是預設的 2 —— 使用者以為自己放寬了標準而其實沒有,
+  然後對著紅燈找半天。現在會印:
+
+  ```
+  warning: parity.config.json: unknown properties "tolerances.sizePix", "targets[0].widht"
+           — ignored, so the default is in effect. Check the spelling against docs/config-schema.md
+  ```
+
+  **陣列元素也會檢查,而且指出是第幾筆**(`targets[0].widht`)——`targets` 與 `accept` 每一筆
+  都要寫 route / frame / width / height,那正是最容易打錯的地方。
+
+  刻意**不**檢查 `auth.headers`(鍵是你自訂的 HTTP 標頭名)與 `targets[].steps`(自由格式,
+  而且它本來就有自己的硬驗證)。檢查它們會把你每一個合法的鍵都當成拼錯。
+
+  ⚠ **為什麼是警告而不是錯誤**:改成載入失敗,會讓原本跑得動的設定檔突然變 exit 2 ——
+  那是破壞「設定 schema」這個凍結面,要等 3.0。在那之前:照樣載入、照樣用預設值跑,
+  但把拼錯的鍵講出來。警告印在 stderr,不影響報告輸出,MCP server 的 stdout 協定也不受影響。
+
 ## 2.5.2 — 2026-11-10
 
 > **修正軟落差的一種誤報:文字元素的邊框跟自己底色同色時,不再報「1px → 0」。** 其他沒變,設定檔不用改。
