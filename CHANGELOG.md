@@ -2,6 +2,25 @@
 
 版本規則:1.0.0 起依語意化版本與「演進條款」(見 1.0.0 節;2.0.0 節重申它適用於 2.x);0.x 期間為新功能升 minor、修正升 patch。
 
+## 2.5.4 — 2026-11-13
+
+**只動發版流程與 CI。工具本身一個字都沒改,報告與 finding 完全相同。**
+兩項都是把姊妹專案 PolyMigrate 已經在做、而這邊漏掉的做法補回來。
+
+- **發版流程:npm 發佈前先擋 npm token**(none)。`release.yml` 新增一個排在所有發佈動作之前的守門:
+  環境變數或 `.npmrc` 裡出現 npm 認證設定就直接失敗。兩件事讓它有必要,都是 PolyMigrate 2.1.0 實際踩到的:
+  `NPM_TOKEN` 這類 secret 平常是休眠的,但只要有人加了同名的,npm 就會**安靜地繞過信任發布**、
+  回到長效金鑰;而 token 認證與 provenance 互斥——workflow 有 `id-token: write` 時 npm 會自動嘗試簽
+  provenance,認證若走 token,憑證申請就 403(`CA_CREATE_SIGNING_CERTIFICATE_ERROR`)。
+  守門排在三個階段之前,失敗時一包都還沒出去。
+
+- **發版流程:一個平台包發失敗,不再擋住排在它後面的**(none)。
+  `scripts/publish-npm-packages.sh` 的 `platform` 階段原本靠 `set -e`,第一包失敗就整個中止,
+  於是一次失敗要重跑很多趟才推得完(PolyMigrate 2.1.0 的教訓)。現在後面的照樣試,
+  **但整個階段仍然失敗**——入口套件絕不會在平台包不齊的情況下發出去,錯誤訊息會指名是哪幾包。
+  為此 `set -euo pipefail` 改成 `set -uo pipefail`,每個失敗點改為明寫;
+  順帶補上「`version` 讀不出來就停」(拿掉 `-e` 之後它會帶著空字串往下跑)。
+
 ## 2.5.3 — 2026-11-13
 
 **設定檔打錯字不再靜默吞掉。** 對外契約、CLI 與 exit code 不變;**不是**硬錯誤,見下面的取捨。

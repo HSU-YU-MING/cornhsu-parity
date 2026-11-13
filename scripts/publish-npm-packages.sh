@@ -23,8 +23,12 @@
 #
 # 冪等:已存在的版本跳過而不是報錯,發到一半失敗時直接重跑 job 即可。這是 v0.9.6 實際踩到的狀況:
 # 四個平台包發成功、主套件因未設定而 ENEEDAUTH,當時無法直接重跑。
+# 單一平台包失敗不會擋住排在它後面的(PolyMigrate 2.1.0 的教訓:否則一次失敗要重跑很多趟才推得完),
+# 但整個 platform 階段結束時仍然失敗,入口套件因此不會在平台包不齊的情況下發出去。
 # 不帶任何 token:npm CLI 在每次 publish 時用 GitHub 的 OIDC 換短效金鑰(見 release.yml 的說明)。
-set -euo pipefail
+#
+# 刻意用 set -uo pipefail 而不是 -euo:失敗要一處一處明寫,免得「某個指令回非零」默默中止整個迴圈。
+set -uo pipefail
 
 phase="${1:?用法:publish-npm-packages.sh <platform|wait|entry> <目錄>}"
 dist="${2:?缺目錄}"
@@ -39,6 +43,7 @@ entry="$dist/cornhsu-parity"
 field() { node -p "require(require('node:path').resolve(process.argv[1]))['$2']" "$1" | tr -d '\r'; }
 
 version=$(field "$entry/package.json" version)
+[ -n "$version" ] || { echo "✗ 讀不出 $entry/package.json 的 version" >&2; exit 1; }
 
 # 平台子套件以入口套件自己寫的為準,不另外維護一份清單——發的就是使用者安裝時會去要的那幾個
 names=()
@@ -74,6 +79,7 @@ publish_one() {
   fi
   printf '%s\n' "$out"
   echo "::endgroup::"
+  return 0
 }
 
 # npm install 實際讀的清單裡,這一版的壓縮檔網址。名稱裡的 / 要編碼;還沒有這一版就是空字串
@@ -119,12 +125,24 @@ wait_all() {
 
 case "$phase" in
   platform)
-    for name in "${names[@]}"; do publish_one "$(dir_of "$name")"; done ;;
+    # 一包失敗不擋住後面的,但整個階段要失敗 —— 入口套件絕不能在平台包不齊的情況下發出去
+    failed=()
+    for name in "${names[@]}"; do
+      publish_one "$(dir_of "$name")" || failed+=("$name@$version")
+    done
+    if [ "${#failed[@]}" -gt 0 ]; then
+      echo "✗ ${#failed[@]} 個平台子套件沒發出去:${failed[*]}" >&2
+      echo "  入口套件不會發,使用者仍然裝到上一版。修好原因後重跑本 job(已發佈的會跳過);" >&2
+      echo "  若失敗原因是認證,先到 npmjs 確認該套件的信任發布設定(repo、workflow release.yml)。" >&2
+      exit 1
+    fi
+    echo "✓ ${#names[@]} 個平台子套件都在 registry 上了" ;;
   wait)
-    wait_all "$settle_sec" ;;
+    wait_all "$settle_sec" || exit 1 ;;
   entry)
-    wait_all 0
-    publish_one "$entry" ;;
+    wait_all 0 || exit 1
+    publish_one "$entry" || exit 1
+    echo "✓ 入口套件 cornhsu-parity@$version 已發佈" ;;
   *)
     echo "✗ 不認得的階段 $phase(platform|wait|entry)" >&2; exit 2 ;;
 esac

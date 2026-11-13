@@ -296,6 +296,19 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
 - **auto-name 通用名假配對**(ROADMAP 有完整留帳):「Content」這種通用圖層名會撞到
   無關頁面的 `#content`。尺寸合理性防線(面積比 >16 拒配)只擋得住量級差很多的;
   **`auto-container`(LCA 推論)不經這道防線**。要根治得上語意層，動工前先蒐集更多野生樣本。
+- **CLI 沒有 Ctrl-C 處理,而且刻意維持現狀(2026-11-13 查證)。** `Program.cs` 沒有 `Console.CancelKeyPress`,
+  主要指令(`check` / `lint` / `snapshot`)也沒有鋪 `CancellationToken`——只有 `McpServer`、`ScanSession`、
+  `ServeCommand` 這些長駐型的有。
+  - **不要照搬 PolyMigrate 的做法。** 那邊的 `Console.CancelKeyPress` 是**合作式取消**的一環:
+    處理器設 `e.Cancel = true` 並觸發 cts,而整支 CLI 吃那個 token(`Cli.RunAsync(args, cts.Token)`),
+    每個指令在下一個檢查點停下、乾淨回 130。這邊沒有那層鋪設,只掛處理器的話 Ctrl-C 會被吃掉而**沒有任何東西會停**——
+    使用者按了沒反應,比現在更糟。要做就得先把 token 鋪過整個指令面,那是獨立的一件事。
+  - **擔心的「孤兒瀏覽器行程」已經實測排除。** 跑 `parity snapshot`(headless,10 個目標)到一半,
+    用 `Stop-Process -Force` 把 parity.exe 砍掉(比 Ctrl-C 更極端,完全沒有收尾機會),
+    剛啟動時砍與第 8 秒砍各試一次:**兩次都在 2～3 秒內 Chromium(4 個行程)與 driver node 全部自己消失**。
+    Playwright 的 driver 會在父行程死掉時收掉自己開的瀏覽器,`WebImplementationSource.DisposeAsync` 沒跑到也不會留東西。
+  - 所以現狀的唯一代價是 Ctrl-C 的結束碼不好看(Windows 上 0xC000013A),而 CI 一律讀成失敗——是安全的方向。
+    npm 啟動腳本因此也**不要**加 PolyMigrate 那個 `process.on("SIGINT", () => {})`:它的前提是子行程會自己乾淨收尾回 130。
 - `Parity.Server.Data` 目前是 SQLite。**2026-10-26 決定部署也維持 SQLite、單一實例**(備份是一個檔、
   登入序列化只在單一行程內剛好成立、migrations 不必重生);要多實例時再換供應商(PostgreSQL 之類),
   屆時 migrations 重生、登入序列化改到 db 層——已知的一次性成本。

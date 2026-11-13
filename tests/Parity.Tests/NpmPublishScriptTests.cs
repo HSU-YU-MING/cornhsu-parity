@@ -316,6 +316,43 @@ public class NpmPublishScriptTests
     }
 
     [Fact]
+    public async Task One_broken_platform_package_does_not_stop_the_rest()
+    {
+        // 壞掉的是排在**前面**那一包。以前 set -e 會讓迴圈當場中止,排在後面的根本沒機會發,
+        // 於是一次失敗要重跑很多趟才推得完(PolyMigrate 2.1.0 的教訓)。
+        // 現在後面的照樣試,但整個階段仍然失敗 —— 入口套件絕不能在平台包不齊的情況下發出去。
+        await using var registry = await Registry.StartAsync();
+        using var work = new Workspace();
+        work.Broken("parity-win32-x64");
+
+        var r = work.Run("platform", registry);
+
+        // Published 記的是「npm publish 被呼叫過哪些資料夾」,不是哪些成功。
+        // 兩個都在,正是「第一個失敗之後迴圈沒有中止」的證據——舊行為只會有 win32-x64 一個。
+        Assert.Equal(["parity-win32-x64", "parity-linux-x64"], work.Published);
+        Assert.Equal(1, r.ExitCode);
+        Assert.Contains("ENEEDAUTH", r.Err);
+        Assert.Contains("parity-win32-x64", r.Err);          // 失敗清單要指名是哪一包
+        Assert.DoesNotContain("cornhsu-parity", work.Published);   // 入口套件連試都不該試
+    }
+
+    [Fact]
+    public void The_token_guard_runs_before_anything_is_published()
+    {
+        // npm token 與 provenance 互斥:走 token 認證時憑證申請會 403
+        // (CA_CREATE_SIGNING_CERTIFICATE_ERROR,PolyMigrate 2.1.0 實際踩到)。更麻煩的是
+        // NPM_TOKEN 這類 secret 平常休眠,一旦有人加了同名的,npm 就安靜地繞過信任發布。
+        // 守門排在三個階段之前,失敗時一包都還沒出去。
+        var release = Repo.Read(".github", "workflows", "release.yml");
+
+        var guard = release.IndexOf("Refuse to publish with an npm token", StringComparison.Ordinal);
+        var first = release.IndexOf("publish-npm-packages.sh platform", StringComparison.Ordinal);
+
+        Assert.True(guard >= 0, "release.yml 少了 npm token 守門");
+        Assert.True(guard < first, "守門要排在第一個發佈階段之前");
+    }
+
+    [Fact]
     public void Release_publishes_platforms_then_waits_then_publishes_the_entry()
     {
         var release = Repo.Read(".github", "workflows", "release.yml").Replace("\r\n", "\n");

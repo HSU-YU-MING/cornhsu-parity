@@ -226,6 +226,31 @@ jobs:
       # npm 不報錯、默默跳過,裝完一執行才 exit 2,npx 還會把半成品留在快取(2.3.1 的 win32-x64 有一小時裝不起來)。
       # 所以子套件先發 → 等到壓縮檔真的下載得到 → 入口套件最後發(細節見 scripts/publish-npm-packages.sh)。
       # 逾時或失敗:入口套件還沒發,使用者照樣裝到上一版;晚一點重跑這個 job(已發佈的會跳過)。
+      # 守門排在所有發佈動作之前,失敗時一包都還沒出去。
+      # 兩件事讓這個守門有必要(都是 PolyMigrate 2.1.0 實際踩到的):
+      #   - NPM_TOKEN 這類 secret 平常是休眠的,但只要有人加了同名的,npm 就會安靜地
+      #     繞過信任發布、回到長效金鑰——發得出去,但 repo 從此有一把長效金鑰在流通。
+      #   - token 認證和 provenance 互斥:workflow 有 id-token: write 時 npm 會自動嘗試簽
+      #     provenance,認證若走 token,憑證申請就 403(CA_CREATE_SIGNING_CERTIFICATE_ERROR)。
+      - name: Refuse to publish with an npm token
+        run: |
+          set -uo pipefail
+          # 只看有沒有,不印出內容
+          for v in $(compgen -e); do
+            case "${v,,}" in
+              npm_token|node_auth_token|npm_config_*auth*)
+                echo "::error::環境變數 $v 看起來是 npm token;npm 只走 OIDC 信任發布,請拿掉它"
+                exit 1 ;;
+            esac
+          done
+          for f in ~/.npmrc .npmrc "${NPM_CONFIG_USERCONFIG:-}"; do
+            if grep -qs '_auth' "$f"; then
+              echo "::error::$f 裡有 npm 認證設定(_auth / _authToken);npm 只走 OIDC 信任發布,請拿掉它"
+              exit 1
+            fi
+          done
+          echo "認證:OIDC 信任發布"
+
       - name: Publish the npm platform packages (OIDC trusted publishing)
         run: bash scripts/publish-npm-packages.sh platform npm/dist
 
