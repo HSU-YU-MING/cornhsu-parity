@@ -138,6 +138,86 @@ public sealed class ParityConfig
     [JsonIgnore]
     public string? SourcePath { get; private set; }
 
+    /// <summary>
+    /// 設定檔裡不屬於這個 schema 的屬性(完整路徑,例如 <c>tolerances.sizePix</c>、<c>targets[1].widht</c>)。
+    /// <see cref="Load"/> 填,空的就是沒問題。
+    ///
+    /// <para><b>刻意只是「列出來」而不是載入失敗</b>:報錯會讓原本載入得了的設定檔變成 exit 2,
+    /// 那是破壞設定 schema 這個凍結面 = major。只警告是 patch。所以 3.0 之前都是警告,
+    /// 由 <c>Program.cs</c> 印黃字。見 <c>FindUnknown</c> 與
+    /// <c>ConfigSchemaTests.Unknown_and_snake_case_fields_are_silently_ignored</c>。</para>
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> UnknownProperties { get; private set; } = [];
+
+    /// <summary>
+    /// 設定檔裡所有不是這個 schema 的屬性,連完整路徑一起回報。
+    ///
+    /// <para>搬自 XamlContrast 的 <c>Config.FindUnknown</c>(純反射、與 schema 無關,所以加欄位時
+    /// 不用回來改這裡),規則與反序列化同一套:不分大小寫、只認<b>可寫入且沒有 <see cref="JsonIgnoreAttribute"/></b>
+    /// 的公開屬性。<c>$schema</c> 是 JSON 編輯器的慣例,只在最外層放行。</para>
+    ///
+    /// <para><b>比 XamlContrast 那份多走陣列元素。</b>Parity 的 <c>targets</c> 與 <c>accept</c> 是物件陣列,
+    /// 而那正是最容易打錯字的地方(每個 target 都要寫 route / width / height)。
+    /// 路徑會寫成 <c>targets[0].widht</c>,直接指到那一筆。</para>
+    ///
+    /// <para>刻意<b>不</b>走進集合型別本身:<c>auth.headers</c> 是 <c>Dictionary&lt;string, string&gt;</c>
+    /// (鍵是使用者自訂的 HTTP 標頭名)、<c>targets[].steps</c> 是 <c>List&lt;JsonElement&gt;</c>(自由格式),
+    /// 走進去會把使用者每一個合法的鍵都當成拼錯。</para>
+    /// </summary>
+    private static List<string> FindUnknown(string json)
+    {
+        var unknown = new List<string>();
+        using var doc = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            CommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+        });
+        Walk(doc.RootElement, typeof(ParityConfig), "");
+        return unknown;
+
+        // 「區段」= 這個組件裡自己定義的設定類別。排除 string 與任何集合:
+        // 前者是 class、後者會讓我們走進使用者自訂的鍵。
+        static bool IsSection(Type t) =>
+            t.IsClass && !t.IsAbstract && t != typeof(string) &&
+            t.Assembly == typeof(ParityConfig).Assembly &&
+            !typeof(System.Collections.IEnumerable).IsAssignableFrom(t);
+
+        // List<TargetConfig> / TargetConfig[] → TargetConfig;其他(含 Dictionary)→ null
+        static Type? ElementSection(Type t)
+        {
+            var element = t.IsArray ? t.GetElementType()
+                : t.IsGenericType && t.GetGenericTypeDefinition() == typeof(List<>) ? t.GetGenericArguments()[0]
+                : null;
+            return element is not null && IsSection(element) ? element : null;
+        }
+
+        void Walk(JsonElement obj, Type type, string path)
+        {
+            if (obj.ValueKind != JsonValueKind.Object) return;
+            foreach (var p in obj.EnumerateObject())
+            {
+                if (path.Length == 0 && p.Name == "$schema") continue;
+                var prop = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                    .FirstOrDefault(pi => pi.SetMethod is not null &&
+                                          !pi.IsDefined(typeof(JsonIgnoreAttribute), inherit: true) &&
+                                          string.Equals(pi.Name, p.Name, StringComparison.OrdinalIgnoreCase));
+                if (prop is null) { unknown.Add(path + p.Name); continue; }
+
+                if (IsSection(prop.PropertyType))
+                {
+                    Walk(p.Value, prop.PropertyType, path + p.Name + ".");
+                }
+                else if (ElementSection(prop.PropertyType) is { } element && p.Value.ValueKind == JsonValueKind.Array)
+                {
+                    var index = 0;
+                    foreach (var item in p.Value.EnumerateArray())
+                        Walk(item, element, $"{path}{p.Name}[{index++}].");
+                }
+            }
+        }
+    }
+
     private InvalidOperationException NullSection(string field, string expected)
         => new($"config {SourcePath ?? "(in memory)"}: \"{field}\" is null — it must be {expected}.");
 
@@ -153,8 +233,34 @@ public sealed class ParityConfig
         if (!File.Exists(path))
             throw new FileNotFoundException(
                 $"config file not found: {path} (run `parity init` to generate a template)", path);
-        var config = JsonSerializer.Deserialize<ParityConfig>(File.ReadAllText(path), SerializerOptions)
+        var text = File.ReadAllText(path);
+        var config = JsonSerializer.Deserialize<ParityConfig>(text, SerializerOptions)
             ?? throw new InvalidOperationException($"could not parse config file: {path}");
+
+        // 不認得的屬性要讓人知道(2026-11-13)。
+        //
+        // ⚠ System.Text.Json 預設靜默丟掉不認得的欄位,所以 {"tolerances": {"sizePx": 4}} 打成
+        //   {"tolerances": {"sizePix": 4}} 載入時**完全沒有任何訊息**,公差其實還是預設的 2 ——
+        //   使用者以為自己放寬了標準而其實沒有,然後對著紅燈找半天。
+        //   XamlContrast 的 Config.cs 有同一道關,它的理由寫得很好:
+        //   「{"strictPallete": true} 載入時沒有錯誤,色盤保險其實沒開」。
+        //
+        // ⚠⚠ 但這裡**只記下、不丟例外**,與 XamlContrast 不同。
+        //   理由是 ConfigSchemaTests.Unknown_and_snake_case_fields_are_silently_ignored 自己寫的:
+        //   「改成『未知欄位報錯』會讓原本載入得了的設定檔變 exit 2 = major;只印警告則是 patch」。
+        //   設定 schema 是 2.0.0 的六個凍結面之一,所以「報錯」要等 3.0。
+        //   在那之前:照樣載入、照樣用預設值跑,但把拼錯的鍵列出來給人看。
+        config.UnknownProperties = FindUnknown(text);
+        // 警告印在這裡而不是各個呼叫點:Load 有十個呼叫點(check / baseline / push / bug-report /
+        // MCP / scan session …),逐一加等於留九個漏掉的機會。印到 **stderr** ——
+        // MCP server 的協定走 stdout,stderr 不會干擾它;報告輸出也不受影響。
+        if (config.UnknownProperties.Count > 0)
+        {
+            var names = string.Join(", ", config.UnknownProperties.Select(u => $"\"{ConsoleText.Safe(u)}\""));
+            Console.Error.WriteLine(
+                $"\x1b[33mwarning: {ConsoleText.Safe(path)}: unknown propert{(config.UnknownProperties.Count == 1 ? "y" : "ies")} " +
+                $"{names} — ignored, so the default is in effect. Check the spelling against docs/config-schema.md\x1b[0m");
+        }
         config.BaseDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
         config.SourcePath = path;
         config.Validate(path);

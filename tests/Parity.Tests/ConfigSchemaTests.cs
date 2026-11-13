@@ -501,6 +501,117 @@ public class ConfigSchemaTests
 
         Assert.Equal(Path.Combine("x", "repo", expectedRelative), BaselineCommand.BaselineDbPath(config));
     }
+
+    // ---------- 不認得的屬性:照樣載入,但要點名 ----------
+    //
+    // System.Text.Json 預設靜默丟掉不認得的欄位,所以打錯字的設定「載入成功」而值其實沒生效 ——
+    // 使用者以為自己改了標準而其實沒有。
+    //
+    // ⚠ 這些測試刻意斷言「**照樣載入成功**、只是把拼錯的鍵列出來」,不是斷言拋例外。
+    //   理由在上面 Unknown_and_snake_case_fields_are_silently_ignored 的註解:
+    //   報錯會讓原本載入得了的設定檔變 exit 2,那是破壞設定 schema 這個凍結面 = major。
+    //   要改成硬錯誤,等 3.0,而且那時這幾條要跟著改。
+
+    [Theory]
+    [InlineData("""{ "figmaFileKey": "k", "designFil": "a.fig" }""", "designFil")]
+    [InlineData("""{ "figmaFileKey": "k", "tolerances": { "sizePix": 4 } }""", "tolerances.sizePix")]
+    [InlineData("""{ "figmaFileKey": "k", "gate": { "failOnn": [] } }""", "gate.failOnn")]
+    [InlineData("""{ "figmaFileKey": "k", "compare": { "positon": "absolute" } }""", "compare.positon")]
+    [InlineData("""{ "figmaFileKey": "k", "auth": { "storagestat": "s.json" } }""", "auth.storagestat")]
+    [InlineData("""{ "stats": { "sahre": false } }""", "stats.sahre")]
+    public void Unknown_properties_are_listed_with_their_full_path(string json, string expected)
+    {
+        var config = LoadJson(json);   // 照樣載入成功
+
+        Assert.Equal([expected], config.UnknownProperties);
+    }
+
+    /// <summary>值維持預設——點名不等於生效,這兩件要同時成立才有意義。</summary>
+    [Fact]
+    public void A_misspelt_key_is_named_and_the_default_still_applies()
+    {
+        var config = LoadJson("""{ "figmaFileKey": "k", "tolerances": { "sizePix": 9 } }""");
+
+        Assert.Equal(["tolerances.sizePix"], config.UnknownProperties);
+        Assert.Equal(2, config.Tolerances.SizePx);   // 1.0 凍結的預設值,不是 9
+    }
+
+    /// <summary>陣列元素裡的打錯字也要抓到,而且要指出是第幾筆——
+    /// targets 每一筆都要寫 route/frame/width/height,那是最容易打錯的地方。
+    /// (這一點比 XamlContrast 那份多做:它只走物件、不走陣列元素。)</summary>
+    [Fact]
+    public void Unknown_properties_inside_arrays_carry_their_index()
+    {
+        var config = LoadJson("""
+            {
+              "figmaFileKey": "k",
+              "targets": [
+                { "route": "/", "frame": "Home" },
+                { "route": "/about", "frame": "About", "widht": 1280 }
+              ]
+            }
+            """);
+
+        Assert.Equal(["targets[1].widht"], config.UnknownProperties);
+    }
+
+    /// <summary>一次列完所有的,不要修一個跑一次。</summary>
+    [Fact]
+    public void Every_unknown_property_is_listed_at_once()
+    {
+        var config = LoadJson("""
+            { "figmaFileKey": "k", "nope": 1, "tolerances": { "sizePix": 4 }, "alsoNope": true }
+            """);
+
+        Assert.Equal(["nope", "tolerances.sizePix", "alsoNope"], config.UnknownProperties);
+    }
+
+    /// <summary>
+    /// 刻意不走進去的三種,一個都不可以被誤判:<c>$schema</c>(JSON 編輯器的慣例)、
+    /// <c>auth.headers</c>(鍵是使用者自訂的 HTTP 標頭名)、<c>targets[].steps</c>。
+    /// 走進前兩個的話,使用者每一個合法的鍵都會變成「拼錯」—— 那比不檢查更糟。
+    ///
+    /// <para><c>steps</c> 不走進去也沒有損失:它是 <c>List&lt;JsonElement&gt;</c>,但有自己的
+    /// 驗證器 <c>PageSteps.Parse</c>(「每一步剛好要有一個動作」),而且那個是**硬錯誤**,
+    /// 比這裡的警告更嚴格。重複檢查只會讓訊息變兩份。</para>
+    /// </summary>
+    [Fact]
+    public void Schema_hint_user_headers_and_free_form_steps_are_not_mistaken_for_typos()
+    {
+        var config = LoadJson("""
+            {
+              "$schema": "https://example.com/parity.schema.json",
+              "figmaFileKey": "k",
+              "auth": { "headers": { "X-Whatever-I-Want": "1", "widht": "not a typo here" } },
+              "targets": [
+                { "route": "/", "frame": "Home", "steps": [ { "click": "#open" } ] }
+              ]
+            }
+            """);
+
+        Assert.Empty(config.UnknownProperties);
+        Assert.Equal(2, config.Auth.Headers!.Count);
+    }
+
+    /// <summary>[JsonIgnore] 的屬性不是設定面的一部分,寫在 config 裡要被點名——
+    /// 否則使用者會以為 baseDirectory 設得動(反序列化其實不會填它)。</summary>
+    [Fact]
+    public void JsonIgnored_properties_are_not_settable_from_the_config_file()
+    {
+        var config = LoadJson("""{ "figmaFileKey": "k", "baseDirectory": "/somewhere" }""");
+
+        Assert.Equal(["baseDirectory"], config.UnknownProperties);
+    }
+
+    /// <summary>大小寫不分,與反序列化同一套規則——這個不可以變成誤報。</summary>
+    [Fact]
+    public void Case_differences_are_not_typos()
+    {
+        var config = LoadJson("""{ "FigmaFileKey": "k", "TOLERANCES": { "SizePx": 4 } }""");
+
+        Assert.Empty(config.UnknownProperties);
+        Assert.Equal(4, config.Tolerances.SizePx);
+    }
 }
 
 /// <summary>designToken 的解析會讀環境變數(行程共用狀態),所以單獨放進不平行的集合。</summary>
@@ -544,4 +655,5 @@ public class ConfigTokenResolutionTests
 
         Assert.Equal("fallback", new ParityConfig { DesignToken = designToken }.ResolveToken());
     }
+
 }
