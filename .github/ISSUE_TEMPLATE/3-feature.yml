@@ -11,6 +11,14 @@ body:
 
         Write in English or 中文, whichever is easier.
 
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the [existing issues](https://github.com/HSU-YU-MING/cornhsu-parity/issues?q=is%3Aissue) and this hasn't been reported.
+          required: true
+
   - type: textarea
     id: problem
     attributes:
