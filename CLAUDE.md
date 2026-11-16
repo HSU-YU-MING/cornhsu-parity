@@ -270,8 +270,13 @@ check 端(`ScanSession`)從快照讀出來傳進擷取。**只改一端 selector
   而且伺服器的參考圖只准到 `Parity.Report`);契約的對照組是 `tests/Parity.Tests/Golden/xamlcontrast.v6.json`
   (XamlContrast 對自己的 demo 實跑的輸出)——那邊的 JSON 加欄位不影響,改名或升 schemaVersion 要回來改。
   XamlContrast 的「跟上次比」在 `ContrastCompare`:比法照它的 `Baseline.Compare`(鍵 `file|element|fg|bg`、0.01 的容差),
-  同樣是手刻的鏡像——**XamlContrast 遞增 `keyVersion`(改了產生鍵的方式)時這裡要一起看**。`/changes` 依 run 的工具
-  回兩種形狀(parity 的 `RunChanges`、XamlContrast 的 `ContrastChanges`),前端照 run 的 tool 讀。
+  同樣是手刻的鏡像——**XamlContrast 遞增 `keyVersion`(改了產生鍵的方式)時這裡要一起看**:鍵的**欄位**沒變所以
+  比法不必動,但要去 `ContrastCompare.KeyVersionOf` 加那一版的邊界(目前:1.6.0 起 = 2、之前 = 1,
+  `0.0.0-*` 與讀不懂的一律 null,不猜)。沒加的話跨版本的兩筆 run 會冒出一整排假的「新增」與「修好」,
+  而使用者的程式碼其實一個字都沒改;加了之後畫面換成「這兩筆的鍵不是同一種」那一句
+  (`contrastChanges.ts` 的 `notes()`,比「工具版本不同」那句重——後者每個 patch 都會出現)。
+  報告裡沒有 keyVersion,XamlContrast 只把它寫進 baseline 檔,所以只能照 `toolVersion` 推。
+  `/changes` 依 run 的工具回兩種形狀(parity 的 `RunChanges`、XamlContrast 的 `ContrastChanges`),前端照 run 的 tool 讀。
 - **部署相關的設定鍵**(`ServerSettings`):`Parity:PublicUrl`、`Parity:KeysDirectory`;容器映像預設
   `PARITY_SERVER_DB=/data/parity-server.db`、`Parity__KeysDirectory=/data/keys`。本機沒有 Docker,`Dockerfile`
   只在 CI 的 `docker-image` job 真的被建過——改 Dockerfile 或伺服器的專案結構時,推上去看那個 job。

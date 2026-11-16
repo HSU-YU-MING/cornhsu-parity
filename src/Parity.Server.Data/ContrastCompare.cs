@@ -6,12 +6,16 @@ namespace Parity.Server.Data;
 /// XamlContrast 的「跟上次比變了什麼」。PrevRunId = null 表示這是該分支第一筆 XamlContrast 的 run。
 /// PrevToolVersion／PrevExitCode 讓畫面能誠實提醒:兩筆用的工具版本不同時,變化可能來自工具本身;
 /// 上一筆被判為不可信(exit 3)時,拿它當基準也不可信。
+/// KeyVersion／PrevKeyVersion 是更強的那一種:鍵的寫法本身換了版,整排「新增」與「修好」
+/// 都只是同一組配對換了名字(見 <see cref="ContrastCompare.KeyVersionOf"/>)。
 /// </summary>
 public sealed record ContrastChanges(
     Guid? PrevRunId,
     DateTimeOffset? PrevCreatedAt,
     string? PrevToolVersion,
     int? PrevExitCode,
+    int? KeyVersion,
+    int? PrevKeyVersion,
     IReadOnlyList<ContrastChange> Regressions,
     IReadOnlyList<ContrastChange> Worsened,
     IReadOnlyList<ContrastChange> Improved,
@@ -42,13 +46,41 @@ public sealed record ContrastChange(
 /// 比 baseline 多一格「好轉」:處數變少或比值變好、但還低於 AA。baseline 把它算進已知債,
 /// 這裡是給人看的變化,修了一部分也該看得到。
 /// ⚠ 伺服器沒有引用 XamlContrast 的組件,鍵是照它的寫法手刻的。XamlContrast 改了產生鍵的方式
-/// (它的 <c>Baseline.KeyVersion</c> 遞增)時,這裡要一起看;報告裡沒有 keyVersion,
-/// 所以畫面在兩筆的 toolVersion 不同時提醒「變化可能來自工具」。
+/// (它的 <c>Baseline.KeyVersion</c> 遞增)時,這裡要一起看:比法本身不必動(鍵的欄位沒變),
+/// 但 <see cref="KeyVersionOf"/> 要加那一版的邊界,畫面才說得出「這兩筆的鍵不是同一種」。
+/// 報告裡沒有 keyVersion,所以只能照版本號推;toolVersion 不同但鍵同版時,照舊只提醒
+/// 「變化可能來自工具」(稽核語意每個 minor 都可能改進)。
 /// </summary>
 public static class ContrastCompare
 {
     public const int MaxLines = 20;
     private const double RatioTolerance = 0.01; // 與 XamlContrast 的 Baseline.Compare 同一個容差
+
+    /// <summary>
+    /// 這個工具版本產生的鍵是第幾版(XamlContrast 的 <c>Baseline.KeyVersion</c>)。
+    /// 鍵的「寫法」屬稽核語意,1.x 的 minor 就可以改 —— 改了之後同一組配對在新舊兩筆 run 裡
+    /// 身分不同,比對會冒出一整排「新增」與「修好」,而那些都不是真的變化。XamlContrast 自己的
+    /// <c>--baseline</c> 遇到這種情況是直接拒讀舊檔並叫人重寫;伺服器沒有那個選項(兩筆 run 都已經收了),
+    /// 所以至少要說得出「這兩筆的鍵不是同一種」。
+    /// 報告裡沒有 keyVersion(XamlContrast 只寫進 baseline 檔),所以這裡照版本號推:
+    /// <list type="bullet">
+    /// <item>1.6.0 起 = 2 —— element 帶隱含樣式的鏈路徑(<c>⊕Style[implicit …]/base</c>)、
+    /// bg 改成模板裡真正畫底的那一層</item>
+    /// <item>1.6.0 之前(含 0.x)= 1</item>
+    /// <item>認不出來的一律 null,**不猜**:空的、讀不懂的,以及 <c>0.0.0-*</c>(原始碼建置,
+    /// 可能是任何一版的程式碼)</item>
+    /// </list>
+    /// ⚠ XamlContrast 下一次遞增 KeyVersion 時,這裡要加一條邊界 —— 否則儀表板會把鍵的改版
+    /// 讀成使用者的程式碼變差了。
+    /// </summary>
+    public static int? KeyVersionOf(string? toolVersion)
+    {
+        if (string.IsNullOrWhiteSpace(toolVersion)) return null;
+        var core = toolVersion.Split('-', '+')[0];
+        if (!Version.TryParse(core, out var v)) return null;
+        if (v.Major == 0 && v.Minor == 0) return null; // 0.0.0-dev／0.0.0-ci:看不出是哪一版的程式碼
+        return v >= new Version(1, 6, 0) ? 2 : 1;
+    }
 
     /// <summary>run 不存在、非成員、或不是 XamlContrast 的 run → null;是第一筆 → PrevRunId 為 null 的空比對。</summary>
     public static async Task<ContrastChanges?> ChangesAsync(
@@ -57,9 +89,10 @@ public static class ContrastCompare
         var visible = Membership.ProjectIdsFor(db, userId);
         var run = await db.Runs
             .Where(r => r.Id == runId && visible.Contains(r.ProjectId) && r.Tool == RunTool.XamlContrast)
-            .Select(r => new { r.ProjectId, r.Branch, r.CreatedAt, r.RawReportGzip })
+            .Select(r => new { r.ProjectId, r.Branch, r.CreatedAt, r.RawReportGzip, r.Contrast!.ToolVersion })
             .FirstOrDefaultAsync(ct);
         if (run is null) return null;
+        var keyVersion = KeyVersionOf(run.ToolVersion);
 
         // 「上一筆」只算 XamlContrast 的:同分支夾著的 parity run 不是它的基準
         var prev = await db.Runs
@@ -69,7 +102,7 @@ public static class ContrastCompare
             .Select(r => new { r.Id, r.CreatedAt, r.RawReportGzip, r.Contrast!.ToolVersion, r.Contrast.ExitCode })
             .FirstOrDefaultAsync(ct);
         if (prev is null)
-            return new ContrastChanges(null, null, null, null, [], [], [], [], 0);
+            return new ContrastChanges(null, null, null, null, keyVersion, null, [], [], [], [], 0);
 
         var now = Groups(ContrastIngest.Findings(run.RawReportGzip));
         var before = Groups(ContrastIngest.Findings(prev.RawReportGzip));
@@ -88,6 +121,7 @@ public static class ContrastCompare
 
         return new ContrastChanges(
             prev.Id, prev.CreatedAt, prev.ToolVersion, prev.ExitCode,
+            keyVersion, KeyVersionOf(prev.ToolVersion),
             Ordered(regressions), Ordered(worsened), Ordered(improved), Ordered(fixedPairs), unchanged);
     }
 

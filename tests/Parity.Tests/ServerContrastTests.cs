@@ -464,7 +464,32 @@ public class ServerContrastEndpointTests : IAsyncLifetime
         Assert.Equal([30], Lines(gone)); // 修好的那組給上一次的行號
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await Client().GetAsync($"/api/runs/{second}/changes")).StatusCode);
+
+        // 兩筆都是原始碼建置(0.0.0-dev):鍵是第幾版看不出來,一律 null —— 不猜
+        Assert.Equal((JsonValueKind.Null, JsonValueKind.Null),
+            (changes.GetProperty("keyVersion").ValueKind, changes.GetProperty("prevKeyVersion").ValueKind));
     }
+
+    /// <summary>
+    /// 鍵的寫法換版時,「新增」與「修好」整排都只是同一組配對換了名字。伺服器沒有 keyVersion
+    /// 可讀(XamlContrast 只寫進 baseline 檔),所以照 toolVersion 推;推不出來的一律 null,不猜。
+    /// ⚠ XamlContrast 下一次遞增 Baseline.KeyVersion 時,這條會提醒這裡要加那一版的邊界。
+    /// </summary>
+    [Theory]
+    [InlineData("1.6.0", 2)]       // 隱含樣式走鏈路徑 + 模板裡真正畫底的那一層
+    [InlineData("1.6.1", 2)]
+    [InlineData("2.0.0", 2)]       // 之後的版本沿用,直到下一次遞增時在這裡加邊界
+    [InlineData("1.6.0-rc.1", 2)]  // 預覽版跟它的正式版同一種鍵
+    [InlineData("1.5.0", 1)]
+    [InlineData("1.0.0", 1)]
+    [InlineData("0.6.1", 1)]       // 0.x 沒有 keyVersion 欄位,等於 1
+    [InlineData("0.0.0-dev", null)] // 原始碼建置:可能是任何一版的程式碼
+    [InlineData("0.0.0-ci", null)]
+    [InlineData("", null)]
+    [InlineData("not-a-version", null)]
+    [InlineData(null, null)]
+    public void Contrast_key_version_is_derived_from_the_tool_version_and_never_guessed(string? toolVersion, int? expected)
+        => Assert.Equal(expected, ContrastCompare.KeyVersionOf(toolVersion));
 
     [Fact]
     public async Task Deleting_an_xamlcontrast_run_removes_its_summary_row()
