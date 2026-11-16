@@ -237,6 +237,10 @@ export interface ContrastChanges {
   prevCreatedAt: string | null
   prevToolVersion: string | null
   prevExitCode: number | null
+  // 鍵的寫法是第幾版(伺服器照 toolVersion 推;認不出來 = null,不猜)。兩邊都知道而且不同時,
+  // 「新增」與「修好」多半只是同一組配對換了名字 —— contrastChanges.ts 的 notes() 會說
+  keyVersion: number | null
+  prevKeyVersion: number | null
   regressions: ContrastChange[]
   worsened: ContrastChange[]
   improved: ContrastChange[]

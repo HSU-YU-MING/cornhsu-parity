@@ -4,6 +4,19 @@
 
 ## 未發佈
 
+- **儀表板:XamlContrast 換了鍵的寫法時,「跟上次比」會明講那一排不是真的變化**(none)。
+  XamlContrast 1.6.0 把 baseline 鍵的 `element` 改成帶隱含樣式的鏈路徑、`bg` 改成模板裡真正
+  畫底的那一層(它的 `Baseline.KeyVersion` 1 → 2)。伺服器這邊照它的寫法手刻了一份同樣的鍵
+  (`ContrastCompare`),鍵的**欄位**沒變,所以比法一個字都不必動 —— 但同一組配對在新舊兩筆 run 裡
+  身分不同,於是跨版本的比對會冒出一整排「新增」與「修好」,而那些都不是使用者的程式碼變差了。
+  XamlContrast 自己的 `--baseline` 遇到這種情況是拒讀舊檔並叫人重寫;伺服器沒有那個選項
+  (兩筆 run 都已經收了),所以至少要說得出「這兩筆的鍵不是同一種」。
+  `ContrastCompare.KeyVersionOf` 照 `toolVersion` 推鍵的版本(1.6.0 起 = 2、之前 = 1),
+  `/api/runs/{id}/changes` 多回 `keyVersion` 與 `prevKeyVersion`,畫面在兩邊不同時換成更重的那一句。
+  **推不出來的一律 null,不猜** —— 空的、讀不懂的,以及 `0.0.0-*`(原始碼建置,可能是任何一版的程式碼)。
+  原本只有「兩筆的工具版本不同」那一句,它每個 patch 都會出現,等於沒有人會當它一回事。
+  ⚠ XamlContrast 下一次遞增 `KeyVersion` 時,`KeyVersionOf` 要加那一版的邊界(測試會提醒)。
+
 - **發版流程**(none):GitHub Release 的內容改成在**推上 nuget.org 之前**就抽好,
   抽不到就直接擋下。原本抽取放在最後一步「Create GitHub Release」,抽不到會安靜退回
   一句 `See CHANGELOG.md.` —— 而那一步跑到的時候套件已經不可逆地發出去了,在那裡失敗
