@@ -4,6 +4,8 @@
 
 ## 未發佈
 
+- **套件中繼資料:搜尋標籤補上「設計還原度」這一類的說法**(none)。NuGet 的 `PackageTags` 加 `design-fidelity`、`property-level-design-qa`、`figma-to-code`,npm 的 `keywords` 加 `design-fidelity`、`figma-to-code`。原有的標籤一個都沒拿掉。只影響套件頁面與搜尋,下一次發版才會出現在 nuget.org／npm。
+
 - **儀表板:XamlContrast 換了鍵的寫法時,「跟上次比」會明講那一排不是真的變化**(none)。
   XamlContrast 1.6.0 把 baseline 鍵的 `element` 改成帶隱含樣式的鏈路徑、`bg` 改成模板裡真正
   畫底的那一層(它的 `Baseline.KeyVersion` 1 → 2)。伺服器這邊照它的寫法手刻了一份同樣的鍵
