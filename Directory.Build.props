@@ -22,7 +22,7 @@
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
-    <PackageTags>design;figma;design-qa;visual-regression;ui-testing;pixel-perfect;playwright;electron;ci;dotnet-tool</PackageTags>
+    <PackageTags>design;figma;design-qa;design-fidelity;property-level-design-qa;figma-to-code;visual-regression;ui-testing;pixel-perfect;playwright;electron;ci;dotnet-tool</PackageTags>
 
     <!-- 可除錯性:讓使用者能 step-in 進原始碼 -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
